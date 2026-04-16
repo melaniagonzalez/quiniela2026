@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Información del usuario y su puntuación en la quiniela",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "ID único del usuario" },
+        "displayName": { "type": "string", "description": "Nombre visible del usuario" },
+        "photoURL": { "type": "string", "description": "URL de la foto de perfil" },
+        "totalPoints": { "type": "number", "description": "Puntos totales acumulados" },
+        "correctResults": { "type": "number", "description": "Número de resultados exactos acertados" },
+        "correctWinners": { "type": "number", "description": "Número de ganadores acertados" }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "UserPrediction": {
+      "title": "UserPrediction",
+      "description": "Predicción de un usuario para un partido específico",
+      "type": "object",
+      "properties": {
+        "matchId": { "type": "string", "description": "ID del partido" },
+        "homeScore": { "type": "number", "description": "Goles equipo local" },
+        "awayScore": { "type": "number", "description": "Goles equipo visitante" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Fecha de última actualización" }
+      },
+      "required": ["matchId", "homeScore", "awayScore"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Perfiles de usuario y estadísticas"
+    },
+    "/users/{userId}/predictions/{matchId}": {
+      "schema": "UserPrediction",
+      "description": "Predicciones individuales por partido"
+    }
+  }
+}
