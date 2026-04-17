@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
-import { TEAMS_2022, MATCHES_2022 } from './simulationData';
+import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team } from './types';
 import { calculateStandings } from './lib/calculations';
 import { cn } from './lib/utils';
@@ -31,15 +31,71 @@ import { doc, setDoc, getDoc, collection, onSnapshot, query, orderBy, limit, wri
 
 export default function App() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
-  const [simulatedDate, setSimulatedDate] = useState('2022-11-23T00:00:00Z');
+  const [simulatedDate, setSimulatedDate] = useState('2026-06-11T00:00:00Z');
   const [clickCount, setClickCount] = useState(0);
 
+  const [apiTeams, setApiTeams] = useState<Team[]>([]);
+  const [apiMatches, setApiMatches] = useState<Match[]>([]);
+  const [apiStandings, setApiStandings] = useState<any[]>([]);
+  const [apiScorers, setApiScorers] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const currentMatches = useMemo(() => {
-    const baseMatches = isSimulationMode ? MATCHES_2022 : MATCHES;
+    // Both modes now use 2026 data, but simulation uses local constants with mocked results
+    const baseMatches = isSimulationMode ? MATCHES : (apiMatches.length > 0 ? apiMatches : MATCHES);
     return [...baseMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [isSimulationMode]);
+  }, [isSimulationMode, apiMatches]);
 
-  const currentTeams = isSimulationMode ? TEAMS_2022 : TEAMS;
+  const currentTeams = isSimulationMode ? TEAMS : (apiTeams.length > 0 ? apiTeams : TEAMS);
+
+  const currentScorers = useMemo(() => {
+    return isSimulationMode ? SCORERS_MOCK : apiScorers;
+  }, [isSimulationMode, apiScorers]);
+
+  const simulatedStandings = useMemo(() => {
+    if (!isSimulationMode) return [];
+    
+    const groupsMap: Record<string, any[]> = {};
+    MATCHES.forEach(m => {
+      if (m.group && m.group.length === 1) { // Standard groups A-H in constants
+        if (!groupsMap[m.group]) groupsMap[m.group] = [];
+        groupsMap[m.group].push(m);
+      }
+    });
+
+    return Object.entries(groupsMap).sort().map(([groupName, matches]) => {
+      const stats: Record<string, any> = {};
+      
+      matches.forEach(m => {
+        [m.homeTeamId, m.awayTeamId].forEach(id => {
+          if (!stats[id]) {
+            const team = TEAMS.find(t => t.id === id);
+            stats[id] = { id, name: team?.name || id, crest: team?.flag || '🏳️', playedGames: 0, points: 0, goalDifference: 0 };
+          }
+        });
+
+        if (new Date(m.date) < new Date(simulatedDate)) {
+          const hs = m.actualHomeScore ?? 0;
+          const as = m.actualAwayScore ?? 0;
+          stats[m.homeTeamId].playedGames++;
+          stats[m.awayTeamId].playedGames++;
+          stats[m.homeTeamId].goalDifference += (hs - as);
+          stats[m.awayTeamId].goalDifference += (as - hs);
+          if (hs > as) stats[m.homeTeamId].points += 3;
+          else if (as > hs) stats[m.awayTeamId].points += 3;
+          else {
+            stats[m.homeTeamId].points += 1;
+            stats[m.awayTeamId].points += 1;
+          }
+        }
+      });
+
+      return {
+        group: `GROUP_${groupName}`,
+        table: Object.values(stats).sort((a,b) => b.points - a.points || b.goalDifference - a.goalDifference)
+      };
+    });
+  }, [isSimulationMode, simulatedDate]);
 
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -47,15 +103,88 @@ export default function App() {
     currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }))
   );
 
-  // Update predictions when switching modes
+  // Update predictions when switching modes or when API data arrives
   useEffect(() => {
     setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
     setNewsData(null);
+  }, [isSimulationMode, apiMatches]);
+
+  // Sync World Cup Data on Mount
+  useEffect(() => {
+    if (!isSimulationMode) {
+      syncWorldCupData();
+    }
   }, [isSimulationMode]);
+
+  const syncWorldCupData = async () => {
+    setIsSyncing(true);
+    try {
+      const response = await fetch('/api/world-cup-sync');
+      if (!response.ok) throw new Error('Sync failed');
+      const data = await response.json();
+      if (data.teams && data.matches) {
+        setApiTeams(data.teams);
+        setApiMatches(data.matches);
+        setApiStandings(data.standings || []);
+        setApiScorers(data.scorers || []);
+        toast.success('Datos del Mundial 2026 sincronizados');
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+      toast.error('Error al sincronizar datos oficiales');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [newsData, setNewsData] = useState<any>(null);
   const [loadingNews, setLoadingNews] = useState(false);
   const [activeTab, setActiveTab] = useState('quiniela');
+
+  const calculateUserPoints = (userPredictions: Prediction[]) => {
+    let totalPoints = 0;
+    let correctResults = 0;
+    let correctWinners = 0;
+
+    userPredictions.forEach(pred => {
+      if (pred.homeScore === null || pred.awayScore === null) return;
+
+      const actualMatch = isSimulationMode 
+        ? MATCHES.find(m => m.id === pred.matchId) 
+        : apiMatches.find(m => m.id === pred.matchId);
+      
+      if (!actualMatch) return;
+
+      const isFinished = isSimulationMode 
+        ? new Date(actualMatch.date) < new Date(simulatedDate)
+        : actualMatch.status === 'FINISHED';
+      
+      if (!isFinished) return;
+
+      const homeRes = actualMatch.actualHomeScore;
+      const awayRes = actualMatch.actualAwayScore;
+
+      if (homeRes === null || awayRes === null) return;
+
+      // Check for Exact Result (3 points)
+      if (pred.homeScore === homeRes && pred.awayScore === awayRes) {
+        totalPoints += 3;
+        correctResults++;
+      } 
+      // Check for Correct Winner/Draw (1 point)
+      else {
+        const predResult = Math.sign(pred.homeScore - pred.awayScore);
+        const actualResult = Math.sign(homeRes - awayRes);
+        
+        if (predResult === actualResult) {
+          totalPoints += 1;
+          correctWinners++;
+        }
+      }
+    });
+
+    return { totalPoints, correctResults, correctWinners };
+  };
 
   // Seed Test Users
   const seedTestUsers = async () => {
@@ -207,13 +336,13 @@ export default function App() {
         }, 800);
         return;
       }
-      const response = await fetch('/api/world-cup-data');
-      if (!response.ok) throw new Error('Error al cargar noticias');
+      const response = await fetch('/api/world-cup-results');
+      if (!response.ok) throw new Error('Error al cargar resultados');
       const data = await response.json();
       setNewsData(data);
     } catch (error) {
       console.error(error);
-      toast.error('No se pudieron cargar las noticias. Verifica tu API Key.');
+      toast.error('No se pudieron cargar los resultados. Verifica la configuración del servidor.');
     } finally {
       setLoadingNews(false);
     }
@@ -234,13 +363,28 @@ export default function App() {
     // If logged in, sync to Firestore
     if (user) {
       const predictionRef = doc(db, 'users', user.uid, 'predictions', matchId);
+      const userRef = doc(db, 'users', user.uid);
       try {
         const currentPred = newPredictions.find(p => p.matchId === matchId)!;
-        // We allow partial saves (only one score) now that rules are relaxed
-        await setDoc(predictionRef, {
+        
+        // Use batch to ensure both prediction and user total points are updated
+        const batch = writeBatch(db);
+        
+        batch.set(predictionRef, {
           ...currentPred,
           updatedAt: new Date().toISOString()
         });
+
+        // Calculate and update total points
+        const { totalPoints, correctResults, correctWinners } = calculateUserPoints(newPredictions);
+        batch.update(userRef, {
+          totalPoints,
+          correctResults,
+          correctWinners,
+          lastUpdatedAt: new Date().toISOString()
+        });
+
+        await batch.commit();
       } catch (error) {
         console.error("Score change error:", error);
         toast.error('Error al guardar predicción');
@@ -273,7 +417,9 @@ export default function App() {
     });
   };
 
-  const groups = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  const groups = useMemo(() => {
+    return Array.from(new Set(currentTeams.map(t => t.group).filter(g => g && g.length === 1))).sort();
+  }, [currentTeams]);
 
   const matchdays = useMemo(() => {
     const days = Array.from(new Set<number>(currentMatches.map(m => m.matchday || 1))).sort((a, b) => a - b);
@@ -312,9 +458,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
       {/* Header */}
-      <header className="px-6 lg:px-16 pt-10 pb-6 border-b border-border flex flex-col md:flex-row justify-between items-end gap-6 bg-gradient-to-br from-purple/10 via-background to-primary/10">
+      <header className="px-6 lg:px-16 pt-6 pb-4 border-b border-border flex flex-col md:flex-row justify-between items-end gap-6 bg-gradient-to-br from-purple/10 via-background to-primary/10">
         <div className="flex flex-col">
-          <h1 className="text-[60px] lg:text-[80px] font-black leading-[0.8] tracking-[-0.05em] uppercase">
+          <h1 className="text-[32px] lg:text-[42px] font-black leading-[0.9] tracking-[-0.05em] uppercase">
             <span className="text-purple">Quiniela</span><br />
             <span className="text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mundial</span>
           </h1>
@@ -348,15 +494,11 @@ export default function App() {
                 Iniciar Sesión
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={resetPredictions} className="text-muted-foreground hover:text-foreground hover:bg-white/5 uppercase text-[10px] font-black tracking-widest">
-              <RotateCcw className="h-3 w-3 mr-2" />
-              Reiniciar
-            </Button>
           </div>
         </div>
       </header>
 
-      <main className="px-6 lg:px-16 py-12">
+      <main className="px-6 lg:px-16 pt-6 pb-16">
         <Toaster position="top-center" />
         
         {/* Secret Simulation Panel */}
@@ -374,11 +516,11 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Fecha Simulada (Qatar 2022)</label>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Fecha Simulada (United 2026)</label>
                   <input 
                     type="date" 
-                    min="2022-11-20" 
-                    max="2022-12-18"
+                    min="2026-06-11" 
+                    max="2026-07-24"
                     value={simulatedDate.split('T')[0]}
                     onChange={(e) => setSimulatedDate(`${e.target.value}T12:00:00Z`)}
                     className="w-full bg-background border border-border px-3 py-2 text-xs font-mono"
@@ -388,24 +530,25 @@ export default function App() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Saltar a Jornada</label>
                   <div className="flex flex-wrap gap-2">
-                    {[1, 2, 3, 4, 5, 6, 7].map(day => (
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(day => (
                       <Button
                         key={day}
                         size="sm"
                         variant={currentMatchday === day ? "default" : "outline"}
                         onClick={() => {
-                          const dates = {
-                            1: '2022-11-20T12:00:00Z',
-                            2: '2022-11-25T12:00:00Z',
-                            3: '2022-11-29T12:00:00Z',
-                            4: '2022-12-03T12:00:00Z',
-                            5: '2022-12-09T12:00:00Z',
-                            6: '2022-12-13T12:00:00Z',
-                            7: '2022-12-17T12:00:00Z'
+                          const dates: Record<number, string> = {
+                            1: '2026-06-11T12:00:00Z', // Grupos J1
+                            2: '2026-06-23T12:00:00Z', // Grupos J2
+                            3: '2026-07-05T12:00:00Z', // Grupos J3
+                            4: '2026-07-15T12:00:00Z', // Round of 32
+                            5: '2026-07-20T12:00:00Z', // Round of 16
+                            6: '2026-07-24T12:00:00Z', // Quarter Final
+                            7: '2026-07-28T12:00:00Z', // Semi Final
+                            8: '2026-08-02T12:00:00Z'  // Final
                           };
-                          setSimulatedDate(dates[day as keyof typeof dates]);
+                          setSimulatedDate(dates[day]);
                         }}
-                        className="text-[10px] font-black h-8 flex-1 min-w-[40px]"
+                        className="text-[10px] font-black h-8 flex-1 min-w-[32px] px-1"
                       >
                         J{day}
                       </Button>
@@ -415,14 +558,14 @@ export default function App() {
               </div>
               <div className="flex items-center">
                 <p className="text-[10px] text-muted-foreground leading-relaxed uppercase tracking-wider bg-black/20 p-4 border-l-2 border-purple">
-                  Al seleccionar una jornada, la fecha se ajustará al inicio de la misma. Los partidos anteriores aparecerán como finalizados.
+                  Mueva la fecha hacia atrás o adelante para simular el avance del Mundial 2026. Los partidos anteriores a la fecha elegida aparecerán con resultados (simulados) y se calcularán tus puntos.
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        <div className="mb-12 flex border-b border-border overflow-x-auto">
+        <div className="mb-8 flex border-b border-border overflow-x-auto">
           <button
             onClick={() => setActiveTab('quiniela')}
             className={cn(
@@ -454,14 +597,25 @@ export default function App() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            Noticias & Resultados
+            Noticias
+          </button>
+          <button
+            onClick={() => setActiveTab('resultados')}
+            className={cn(
+              "px-8 py-4 text-[12px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap",
+              activeTab === 'resultados' 
+                ? "border-primary text-primary" 
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Resultados
           </button>
         </div>
 
         {activeTab === 'quiniela' ? (
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-16">
             {/* Left Column: Matches */}
-            <div className="space-y-10">
+            <div className="space-y-6">
               {!user && (
                 <div className="bg-primary/10 border border-primary/30 p-4 mb-6">
                   <p className="text-[11px] font-black uppercase tracking-widest text-primary text-center">
@@ -469,30 +623,6 @@ export default function App() {
                   </p>
                 </div>
               )}
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[9px] font-black uppercase tracking-widest px-2 py-0.5">
-                      Jornada Actual: {currentMatchday}
-                    </Badge>
-                  </div>
-                  
-                  {/* Countdown Section moved here */}
-                  <div className="bg-primary/5 border border-primary/20 px-4 py-2 flex items-center gap-5">
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-4 h-4 text-primary" />
-                      <div className="flex flex-col">
-                        <h3 className="text-[11px] font-black text-primary uppercase tracking-widest leading-none">Límite J{currentMatchday}</h3>
-                        <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-tight">Cierre de predicciones</p>
-                      </div>
-                    </div>
-                    <span className="text-lg font-black tracking-tighter text-primary">
-                      14H 22M
-                    </span>
-                  </div>
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 gap-12">
                 {matchdays.filter(day => day === viewingMatchday).map(day => (
                   <div key={day} className="space-y-6">
@@ -510,9 +640,9 @@ export default function App() {
                             <ChevronLeft className="h-6 w-6" />
                           </Button>
                           
-                          <h3 className="text-[16px] font-black text-primary uppercase tracking-[0.4em] px-8 py-2 border border-primary/30 bg-primary/5 min-w-[200px] text-center">
+                          <span className="text-[12px] sm:text-[14px] font-black text-primary uppercase tracking-[0.4em] px-8 py-2 border border-primary/30 bg-primary/5 min-w-[200px] text-center block">
                             Jornada {day}
-                          </h3>
+                          </span>
 
                           <Button 
                             variant="outline" 
@@ -525,9 +655,17 @@ export default function App() {
                           </Button>
                         </div>
                         {day === currentMatchday && (
-                          <span className="text-[9px] font-black text-lime uppercase tracking-widest animate-pulse">
-                            • En Calificación •
-                          </span>
+                          <div className="flex flex-col items-center gap-1.5 mt-1">
+                            <div className="flex items-center gap-2">
+                              <div className="w-1 h-1 rounded-full bg-lime animate-pulse" />
+                              <span className="text-[10px] font-black text-lime uppercase tracking-[0.2em]">Jornada Actual</span>
+                            </div>
+                            <div className="bg-primary/5 px-3 py-1 border border-primary/20">
+                              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                                Cierre de predicciones: <span className="text-primary font-black text-[11px] ml-1">14H 22M</span>
+                              </span>
+                            </div>
+                          </div>
                         )}
                       </div>
                       <div className="h-[1px] flex-1 bg-border" />
@@ -558,10 +696,11 @@ export default function App() {
                                 // Logic to hide teams in knockout stages until they are "known"
                                 const isTBD = match.matchday >= 4 && (
                                   !isSimulationMode || 
-                                  (match.matchday === 4 && new Date(simulatedDate) < new Date('2022-12-03T00:00:00Z')) ||
-                                  (match.matchday === 5 && new Date(simulatedDate) < new Date('2022-12-07T00:00:00Z')) ||
-                                  (match.matchday === 6 && new Date(simulatedDate) < new Date('2022-12-11T00:00:00Z')) ||
-                                  (match.matchday === 7 && new Date(simulatedDate) < new Date('2022-12-15T00:00:00Z'))
+                                  (match.matchday === 4 && new Date(simulatedDate) < new Date('2026-07-12T00:00:00Z')) ||
+                                  (match.matchday === 5 && new Date(simulatedDate) < new Date('2026-07-15T00:00:00Z')) ||
+                                  (match.matchday === 6 && new Date(simulatedDate) < new Date('2026-07-19T00:00:00Z')) ||
+                                  (match.matchday === 7 && new Date(simulatedDate) < new Date('2026-07-22T00:00:00Z')) ||
+                                  (match.matchday === 8 && new Date(simulatedDate) < new Date('2026-07-24T00:00:00Z'))
                                 );
 
                                 const displayHome = isTBD ? { name: 'Por definir', flag: '🏳️' } : homeTeam;
@@ -570,7 +709,7 @@ export default function App() {
                                 const prediction = predictions.find(p => p.matchId === match.id) || { matchId: match.id, homeScore: null, awayScore: null };
 
                                 const isFinished = isSimulationMode && new Date(match.date) < new Date(simulatedDate);
-                                const actualMatch = isSimulationMode ? (MATCHES_2022.find(m => m.id === match.id)) : null;
+                                const actualMatch = isSimulationMode ? (MATCHES.find(m => m.id === match.id)) : null;
 
                                 return (
                                   <motion.div
@@ -595,7 +734,11 @@ export default function App() {
 
                                       {/* Home Team */}
                                       <div className="flex items-center gap-4">
-                                        <span className={cn("text-3xl transition-all", isTBD && "opacity-20")}>{displayHome.flag}</span>
+                                        {displayHome.flag.startsWith('http') ? (
+                                          <img src={displayHome.flag} alt="" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <span className={cn("text-3xl transition-all", isTBD && "opacity-20")}>{displayHome.flag}</span>
+                                        )}
                                         <span className={cn("text-lg font-black uppercase tracking-tight", isTBD && "text-muted-foreground/50")}>{displayHome.name}</span>
                                       </div>
 
@@ -633,7 +776,11 @@ export default function App() {
                                       {/* Away Team */}
                                       <div className="flex items-center justify-end gap-4 text-right">
                                         <span className={cn("text-lg font-black uppercase tracking-tight", isTBD && "text-muted-foreground/50")}>{displayAway.name}</span>
-                                        <span className={cn("text-3xl transition-all", isTBD && "opacity-20")}>{displayAway.flag}</span>
+                                        {displayAway.flag.startsWith('http') ? (
+                                          <img src={displayAway.flag} alt="" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <span className={cn("text-3xl transition-all", isTBD && "opacity-20")}>{displayAway.flag}</span>
+                                        )}
                                       </div>
                                     </div>
                                   </motion.div>
@@ -648,23 +795,6 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Simplified Progress Section */}
-              <div className="mt-12 bg-card border border-border p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-[9px] font-black text-lime uppercase tracking-[0.2em]">Progreso Quiniela</h3>
-                  <span className="text-[14px] font-black">
-                    {predictions.filter(p => p.homeScore !== null && p.awayScore !== null).length} / {currentMatches.length}
-                  </span>
-                </div>
-                <div className="h-[1px] w-full bg-white/10">
-                  <motion.div 
-                    className="h-full bg-lime shadow-[0_0_8px_rgba(163,230,53,0.5)]"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(predictions.filter(p => p.homeScore !== null && p.awayScore !== null).length / currentMatches.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-
               <div className="pt-6 flex justify-center sm:justify-start">
                 <Button 
                   onClick={() => toast.success('Pronósticos guardados correctamente')}
@@ -677,26 +807,29 @@ export default function App() {
             </div>
 
             {/* Right Column: Standings */}
-            <div className="space-y-8">
+            <div className="space-y-8 bg-sky-950/20 border border-sky-500/10 p-6 rounded-xl">
               <div className="space-y-2">
-                <h2 className="text-[12px] font-bold text-primary uppercase tracking-[0.3em]">
-                  Tu Tabla Proyectada
-                </h2>
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                  <h2 className="text-[12px] font-bold text-sky-400 uppercase tracking-[0.3em]">
+                    Tu Tabla Proyectada
+                  </h2>
+                </div>
                 <p className="text-[9px] text-muted-foreground uppercase leading-tight font-bold">
-                  * Esta tabla se calcula automáticamente según los marcadores que ingresas. No son resultados oficiales.
+                  * Esta tabla se calcula automáticamente según tus marcadores.
                 </p>
               </div>
 
               <div className="space-y-12">
                 {allGroupStandings.map(({ group, standings }) => (
                   <div key={group} className="space-y-4">
-                    <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest border-l-2 border-primary pl-3">
+                    <span className="text-[10px] font-black text-sky-400/70 uppercase tracking-widest border-l-2 border-sky-500/50 pl-3 block">
                       Posiciones Grupo {group}
-                    </h3>
-                    <div className="border-t border-border">
+                    </span>
+                    <div className="border-t border-sky-500/10">
                       <Table>
                         <TableHeader>
-                          <TableRow className="border-b border-border hover:bg-transparent">
+                          <TableRow className="border-b border-sky-500/10 hover:bg-transparent">
                             <TableHead className="w-[40px] text-[10px] font-black text-muted-foreground uppercase tracking-widest">#</TableHead>
                             <TableHead className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Equipo</TableHead>
                             <TableHead className="text-right text-[10px] font-black text-muted-foreground uppercase tracking-widest">Pts</TableHead>
@@ -714,18 +847,22 @@ export default function App() {
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
                                   exit={{ opacity: 0 }}
-                                  className="border-b border-border hover:bg-white/5 transition-colors"
+                                  className="border-b border-sky-500/5 hover:bg-sky-400/5 transition-colors"
                                 >
-                                  <TableCell className="py-3 text-[13px] font-black text-primary">
+                                  <TableCell className="py-3 text-[13px] font-black text-sky-400">
                                     {(idx + 1).toString().padStart(2, '0')}
                                   </TableCell>
                                   <TableCell className="py-3">
                                     <div className="flex items-center gap-3">
-                                      <span className="text-lg">{team.flag}</span>
+                                      {team.flag.startsWith('http') ? (
+                                        <img src={team.flag} alt="" className="w-6 h-6 object-contain" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <span className="text-lg">{team.flag}</span>
+                                      )}
                                       <span className="font-bold text-[13px] uppercase tracking-tight">{team.name}</span>
                                     </div>
                                   </TableCell>
-                                  <TableCell className="py-3 text-right font-black text-[13px]">
+                                  <TableCell className="py-3 text-right font-black text-[13px] text-sky-400">
                                     {standing.points}
                                   </TableCell>
                                 </motion.tr>
@@ -746,8 +883,8 @@ export default function App() {
           <h2 className="text-[12px] font-bold text-muted-foreground uppercase tracking-[0.4em]">
             Ranking Global de Expertos
           </h2>
-          <p className="text-[11px] text-muted-foreground uppercase tracking-widest">
-            Los puntos se calculan comparando tus predicciones con los resultados oficiales.
+          <p className="text-[11px] text-muted-foreground uppercase tracking-widest max-w-2xl mx-auto">
+            Gana 1 punto por acertar el ganador o empate, y 3 puntos por el marcador exacto. 
           </p>
         </div>
 
@@ -824,90 +961,402 @@ export default function App() {
           </Table>
         </div>
       </div>
-    ) : (
-          <div className="space-y-12">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[12px] font-bold text-muted-foreground uppercase tracking-[0.3em]">
-                Resultados en Vivo & Próximos Partidos
-              </h2>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={fetchNews} 
-                disabled={loadingNews}
-                className="text-[10px] font-black uppercase tracking-widest border-border"
-              >
-                Actualizar
-              </Button>
+    ) : activeTab === 'noticias' ? (
+      <div className="space-y-12">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-12">
+          {/* Content from the original 'resultados' sub-tab: Matches and Scorers */}
+          <div className="space-y-8">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between border-b border-border pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">{isSimulationMode ? `Resultados Simulados` : 'Últimos Resultados Sincronizados'}</span>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={syncWorldCupData} 
+                  disabled={isSyncing}
+                  className="text-[9px] font-black uppercase tracking-widest border-border h-8 px-4"
+                >
+                  {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(() => {
+                  const displayResults = isSimulationMode 
+                    ? MATCHES.filter(m => new Date(m.date) < new Date(simulatedDate))
+                    : apiMatches.filter(m => m.status === 'FINISHED' || m.status === 'LIVE' || m.status === 'IN_PLAY');
+                  
+                  if (displayResults.length > 0) {
+                    return displayResults
+                      .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .slice(0, 8)
+                      .map(match => {
+                        const homeTeam = TEAMS.find(t => t.id === match.homeTeamId);
+                        const awayTeam = TEAMS.find(t => t.id === match.awayTeamId);
+                        return (
+                          <div key={match.id} className="bg-card border border-border p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
+                            <div className="flex justify-between items-center text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                              <span>{new Date(match.date).toLocaleDateString()}</span>
+                              <span className={(!isSimulationMode && (match.status === 'LIVE' || match.status === 'IN_PLAY')) ? "text-lime animate-pulse" : "text-muted-foreground"}>
+                                {isSimulationMode ? "FINALIZADO (SIM)" : match.status}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                {isSimulationMode ? <span className="text-xl">{homeTeam?.flag}</span> : ((match as any).homeTeamLogo ? <img src={(match as any).homeTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
+                                <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? homeTeam?.name : (match as any).homeTeamName}</span>
+                              </div>
+                              <div className="bg-white/5 px-3 py-1 border border-border min-w-[60px] text-center">
+                                <span className="text-[14px] font-black tracking-tight">{match.actualHomeScore ?? '-'} : {match.actualAwayScore ?? '-'}</span>
+                              </div>
+                              <div className="flex items-center gap-3 flex-1 justify-end text-right overflow-hidden">
+                                <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? awayTeam?.name : (match as any).awayTeamName}</span>
+                                {isSimulationMode ? <span className="text-xl">{awayTeam?.flag}</span> : ((match as any).awayTeamLogo ? <img src={(match as any).awayTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      });
+                  }
+                  return (
+                    <div className="col-span-full py-12 text-center bg-white/5 border border-dashed border-border">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest italic">Aún no hay resultados para mostrar</p>
+                    </div>
+                  );
+                })()}
+              </div>
+              
+              <div className="pt-8 space-y-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">Próximos Encuentros</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(() => {
+                    const displayUpcoming = isSimulationMode
+                      ? MATCHES.filter(m => new Date(m.date) >= new Date(simulatedDate))
+                      : apiMatches.filter(m => m.status === 'SCHEDULED' || m.status === 'TIMED');
+                    
+                    if (displayUpcoming.length > 0) {
+                      return displayUpcoming
+                        .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .slice(0, 6)
+                        .map(match => {
+                          const homeTeam = TEAMS.find(t => t.id === match.homeTeamId);
+                          const awayTeam = TEAMS.find(t => t.id === match.awayTeamId);
+                          return (
+                            <div key={match.id} className="bg-card border border-border p-5 flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                {isSimulationMode ? <span className="text-lg">{homeTeam?.flag}</span> : ((match as any).homeTeamLogo ? <img src={(match as any).homeTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
+                                <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? homeTeam?.name : (match as any).homeTeamName}</span>
+                              </div>
+                              <div className="flex flex-col items-center">
+                                <span className="text-[9px] font-black text-primary uppercase">VS</span>
+                                <span className="text-[8px] text-muted-foreground whitespace-nowrap">{new Date(match.date).toLocaleDateString()}</span>
+                              </div>
+                              <div className="flex items-center gap-3 flex-1 justify-end text-right overflow-hidden">
+                                <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? awayTeam?.name : (match as any).awayTeamName}</span>
+                                {isSimulationMode ? <span className="text-lg">{awayTeam?.flag}</span> : ((match as any).awayTeamLogo ? <img src={(match as any).awayTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
+                              </div>
+                            </div>
+                          );
+                        });
+                    }
+                    return null;
+                  })()}
+                </div>
+              </div>
             </div>
 
-            {loadingNews ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1, 2, 3, 4, 5, 6].map(i => (
-                  <div key={i} className="bg-card border border-border p-6 space-y-4">
-                    <Skeleton className="h-4 w-1/2 bg-white/5" />
-                    <div className="flex justify-between items-center">
-                      <Skeleton className="h-10 w-10 rounded-full bg-white/5" />
-                      <Skeleton className="h-8 w-12 bg-white/5" />
-                      <Skeleton className="h-10 w-10 rounded-full bg-white/5" />
+            {/* Sidebar for players */}
+            <div className="space-y-8 bg-sky-950/10 border border-sky-500/10 p-8">
+              <div className="flex items-center gap-3 border-b border-sky-500/20 pb-4">
+                <Trophy className="w-4 h-4 text-sky-400" />
+                <span className="text-[9px]! font-black uppercase tracking-tight text-sky-400 leading-none block">Goleadores</span>
+              </div>
+              <div className="space-y-4">
+                {currentScorers.length > 0 ? (
+                  currentScorers.slice(0, 10).map((scorer, i) => (
+                    <div key={i} className="flex items-center justify-between border-b border-sky-500/5 pb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-black text-sky-400/50">{(i+1).toString().padStart(2, '0')}</span>
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-black uppercase tracking-tight">{scorer.player.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            {isSimulationMode ? <span>{scorer.team.crest}</span> : (scorer.team.crest && <img src={scorer.team.crest} className="w-3 h-3 object-contain" referrerPolicy="no-referrer" />)}
+                            <span className="text-[9px] text-muted-foreground uppercase">{scorer.team.name}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-sky-500/10 px-3 py-1 border border-sky-500/20">
+                        <span className="text-[14px] font-black text-sky-400">{scorer.goals}</span>
+                      </div>
                     </div>
-                    <Skeleton className="h-3 w-full bg-white/5" />
+                  ))
+                ) : (
+                  <p className="text-[9px] text-muted-foreground uppercase italic pb-10">Sin datos de goleadores</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ) : activeTab === 'resultados' ? (
+      <div className="space-y-12">
+        <div className="space-y-20">
+            <div className="space-y-8">
+              <div className="flex items-center gap-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">
+                  {isSimulationMode ? "Tablas de Clasificación (Simuladas)" : "Tablas de Clasificación Oficiales"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {(isSimulationMode ? simulatedStandings : apiStandings.filter(s => s.type === 'TOTAL')).map((standing: any) => (
+                  <div key={standing.group} className="bg-card border border-border overflow-hidden">
+                    <div className="bg-primary/10 px-4 py-2 border-b border-border">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-primary">Grupo {standing.group.replace('GROUP_', '')}</span>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent border-b border-border">
+                          <TableHead className="text-[9px] font-black uppercase py-4">Equipo</TableHead>
+                          <TableHead className="text-center text-[9px] font-black uppercase py-4">PJ</TableHead>
+                          <TableHead className="text-right text-[9px] font-black uppercase py-4">PTS</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {standing.table.map((row: any) => (
+                          <TableRow key={isSimulationMode ? row.id : row.team.id} className="hover:bg-white/5 border-b border-white/5">
+                            <TableCell className="py-2">
+                              <div className="flex items-center gap-2">
+                                {isSimulationMode ? (
+                                  <span className="text-lg">{row.crest}</span>
+                                ) : (
+                                  <img src={row.team.crest} className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
+                                )}
+                                <span className="text-[10px] font-bold uppercase truncate">
+                                  {isSimulationMode ? row.name : (row.team.shortName || row.team.name)}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-[10px]">{row.playedGames}</TableCell>
+                            <TableCell className="text-right font-black text-lime text-[11px]">{row.points}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 ))}
               </div>
-            ) : newsData?.response ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {newsData.response.map((fixture: any) => (
-                  <motion.div
-                    key={fixture.fixture.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="bg-card border border-border p-6 flex flex-col justify-between hover:border-primary/30 transition-colors"
-                  >
-                    <div className="flex justify-between items-start mb-6">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                        {new Date(fixture.fixture.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
-                      </span>
-                      <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest border-primary/30 text-primary">
-                        {fixture.fixture.status.short}
-                      </Badge>
-                    </div>
+            </div>
 
-                    <div className="flex justify-between items-center gap-4 mb-6">
-                      <div className="flex flex-col items-center gap-2 flex-1">
-                        <img src={fixture.teams.home.logo} alt={fixture.teams.home.name} className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
-                        <span className="text-[11px] font-black uppercase text-center truncate w-full">{fixture.teams.home.name}</span>
-                      </div>
-                      
-                      <div className="flex flex-col items-center">
-                        <span className="text-2xl font-black tracking-tighter">
-                          {fixture.goals.home ?? '-'} : {fixture.goals.away ?? '-'}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-col items-center gap-2 flex-1">
-                        <img src={fixture.teams.away.logo} alt={fixture.teams.away.name} className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
-                        <span className="text-[11px] font-black uppercase text-center truncate w-full">{fixture.teams.away.name}</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-border mt-auto">
-                      <p className="text-[9px] text-muted-foreground uppercase tracking-widest text-center">
-                        {fixture.fixture.venue.name}, {fixture.fixture.venue.city}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+            <div className="space-y-12 pb-20">
+              <div className="flex items-center gap-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">Llaves finales</span>
               </div>
-            ) : (
-              <div className="bg-card border border-border p-12 text-center">
-                <p className="text-muted-foreground uppercase text-[12px] font-black tracking-widest">
-                  No hay datos disponibles. Configura tu APISPORTS_KEY en los secretos.
-                </p>
+              
+              <div className="grid grid-cols-1 overflow-x-auto pb-6">
+                <div className="flex min-w-[1200px] justify-between gap-8 h-auto">
+                  {/* Round of 32 */}
+                  <div className="flex flex-col gap-4 w-[220px]">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center border-b border-border pb-2">Round of 32 (J4)</span>
+                    <div className="space-y-3">
+                      {(() => {
+                        const knockoutMatches = isSimulationMode 
+                          ? MATCHES.filter(m => m.matchday === 4)
+                          : apiMatches.filter(m => m.stage === 'LAST_32');
+                        
+                        if (knockoutMatches.length > 0) {
+                          return knockoutMatches.slice(0, 16).map(m => {
+                            const home = TEAMS.find(t => t.id === m.homeTeamId);
+                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
+                            return (
+                              <div key={m.id} className="bg-card border border-border p-2 text-[9px] font-black uppercase tracking-tighter hover:border-primary/50 transition-all">
+                                <div className="flex justify-between border-b border-white/5 pb-1 mb-1">
+                                  <div className="flex items-center gap-1.5 overflow-hidden">
+                                    <span className="text-[10px] grayscale-0">{home?.flag}</span>
+                                    <span className="truncate">{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
+                                  </div>
+                                  <span>{isFinished ? m.actualHomeScore : '-'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <div className="flex items-center gap-1.5 overflow-hidden">
+                                    <span className="text-[10px] grayscale-0">{away?.flag}</span>
+                                    <span className="truncate">{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
+                                  </div>
+                                  <span>{isFinished ? m.actualAwayScore : '-'}</span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        }
+                        return <div className="h-full flex items-center justify-center border border-dashed border-border opacity-30 italic text-[9px] uppercase font-black px-4 text-center">Datos por definir</div>;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Round of 16 */}
+                  <div className="flex flex-col gap-4 w-[220px]">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center border-b border-border pb-2">Round of 16 (J5)</span>
+                    <div className="space-y-8 mt-4">
+                      {(() => {
+                        const knockoutMatches = isSimulationMode 
+                          ? MATCHES.filter(m => m.matchday === 5)
+                          : apiMatches.filter(m => m.stage === 'LAST_16');
+                        
+                        if (knockoutMatches.length > 0) {
+                          return knockoutMatches.slice(0, 8).map(m => {
+                            const home = TEAMS.find(t => t.id === m.homeTeamId);
+                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
+                            return (
+                              <div key={m.id} className="bg-card border border-primary/20 p-3 text-[10px] font-black uppercase tracking-tighter shadow-[0_0_15px_rgba(237,28,36,0.05)]">
+                                <div className="flex justify-between border-b border-white/5 pb-1 mb-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs">{home?.flag}</span>
+                                    <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
+                                  </div>
+                                  <span className="text-primary">{isFinished ? m.actualHomeScore : '-'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs">{away?.flag}</span>
+                                    <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
+                                  </div>
+                                  <span className="text-primary">{isFinished ? m.actualAwayScore : '-'}</span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        }
+                        return <div className="h-full flex items-center justify-center border border-dashed border-border opacity-30 italic text-[9px] uppercase font-black">Por definir</div>;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Quarter Finals */}
+                  <div className="flex flex-col gap-4 w-[220px]">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center border-b border-border pb-2">Quarter Final (J6)</span>
+                    <div className="space-y-20 mt-12">
+                      {(() => {
+                        const knockoutMatches = isSimulationMode 
+                          ? MATCHES.filter(m => m.matchday === 6)
+                          : apiMatches.filter(m => m.stage === 'QUARTER_FINALS');
+                        
+                        if (knockoutMatches.length > 0) {
+                          return knockoutMatches.slice(0, 4).map(m => {
+                            const home = TEAMS.find(t => t.id === m.homeTeamId);
+                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
+                            return (
+                              <div key={m.id} className="bg-primary/5 border border-primary/30 p-4 text-[11px] font-black uppercase tracking-tighter">
+                                <div className="flex justify-between border-b border-primary/10 pb-2 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">{home?.flag}</span>
+                                    <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
+                                  </div>
+                                  <span>{isFinished ? m.actualHomeScore : '-'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">{away?.flag}</span>
+                                    <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
+                                  </div>
+                                  <span>{isFinished ? m.actualAwayScore : '-'}</span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        }
+                        return <div className="h-full flex items-center justify-center border border-dashed border-border opacity-30 italic text-[9px] uppercase font-black">Por definir</div>;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Semi Finals */}
+                  <div className="flex flex-col gap-4 w-[220px]">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest text-center border-b border-border pb-2">Semi Final (J7)</span>
+                    <div className="space-y-40 mt-24">
+                      {(() => {
+                        const knockoutMatches = isSimulationMode 
+                          ? MATCHES.filter(m => m.matchday === 7)
+                          : apiMatches.filter(m => m.stage === 'SEMI_FINALS');
+                        
+                        if (knockoutMatches.length > 0) {
+                          return knockoutMatches.slice(0, 2).map(m => {
+                            const home = TEAMS.find(t => t.id === m.homeTeamId);
+                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
+                            return (
+                              <div key={m.id} className="bg-primary/10 border-2 border-primary/40 p-5 text-[12px] font-black uppercase tracking-tighter">
+                                <div className="flex justify-between border-b border-primary/20 pb-2 mb-2">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xl">{home?.flag}</span>
+                                    <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
+                                  </div>
+                                  <span className="text-lime">{isFinished ? m.actualHomeScore : '-'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xl">{away?.flag}</span>
+                                    <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
+                                  </div>
+                                  <span className="text-lime">{isFinished ? m.actualAwayScore : '-'}</span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        }
+                        return <div className="h-full flex items-center justify-center border border-dashed border-border opacity-30 italic text-[9px] uppercase font-black">Por definir</div>;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Final */}
+                  <div className="flex flex-col gap-4 w-[220px]">
+                    <span className="text-[10px] font-black text-primary uppercase tracking-[0.3em] text-center border-b-2 border-primary pb-2">Final (J8)</span>
+                    <div className="flex flex-col items-center gap-4 mt-[90px]">
+                      <Trophy className="w-12 h-12 text-primary animate-bounce mb-4" />
+                      {(() => {
+                        const finalMatches = isSimulationMode 
+                          ? MATCHES.filter(m => m.matchday === 8)
+                          : apiMatches.filter(m => m.stage === 'FINAL');
+                        
+                        return finalMatches.map(m => {
+                          const home = TEAMS.find(t => t.id === m.homeTeamId);
+                          const away = TEAMS.find(t => t.id === m.awayTeamId);
+                          const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
+                          return (
+                            <div key={m.id} className="w-full bg-gradient-to-br from-primary/20 to-purple/20 border-2 border-primary p-6 rounded-none text-[14px] font-black uppercase text-center">
+                              <div className="flex flex-col items-center gap-2 mb-2">
+                                <span className="text-4xl mb-1">{home?.flag}</span>
+                                <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
+                              </div>
+                              <div className="text-4xl text-primary my-4">
+                                {isFinished ? (m.actualHomeScore ?? '-') : '-'} : {isFinished ? (m.actualAwayScore ?? '-') : '-'}
+                              </div>
+                              <div className="flex flex-col items-center gap-2">
+                                <span className="text-4xl mb-1">{away?.flag}</span>
+                                <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
+            </div>
           </div>
-        )}
+        ) : null}
       </main>
 
 

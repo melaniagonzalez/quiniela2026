@@ -25,9 +25,26 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Fecha de última actualización" }
       },
       "required": ["matchId", "homeScore", "awayScore"]
+    },
+    "ActualMatch": {
+      "title": "ActualMatch",
+      "description": "Resultado oficial de un partido sincronizado desde la API",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID del partido" },
+        "homeScore": { "type": "number", "description": "Goles reales equipo local" },
+        "awayScore": { "type": "number", "description": "Goles reales equipo visitante" },
+        "status": { "type": "string", "description": "Estado del partido (FT, LIVE, etc)" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Sincronizado el..." }
+      },
+      "required": ["id", "homeScore", "awayScore", "status"]
     }
   },
   "firestore": {
+    "/results/{matchId}": {
+      "schema": "ActualMatch",
+      "description": "Resultados oficiales sincronizados"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Perfiles de usuario y estadísticas"

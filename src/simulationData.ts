@@ -120,3 +120,16 @@ export const MATCHES_2022: (Match & { actualHomeScore: number, actualAwayScore: 
   { id: '2022_m64', homeTeamId: 'croatia', awayTeamId: 'morocco', date: '2022-12-17T15:00:00Z', group: 'Tercer Lugar', stadium: 'Khalifa International', actualHomeScore: 2, actualAwayScore: 1, matchday: 7 },
   { id: '2022_m16', homeTeamId: 'argentina', awayTeamId: 'france', date: '2022-12-18T15:00:00Z', group: 'Final', stadium: 'Lusail', actualHomeScore: 3, actualAwayScore: 3, matchday: 7 },
 ];
+
+export const SCORERS_MOCK = [
+  { player: { name: 'Kylian Mbappé', nationality: 'Francia' }, team: { name: 'Francia', crest: '🇫🇷' }, goals: 8 },
+  { player: { name: 'Lionel Messi', nationality: 'Argentina' }, team: { name: 'Argentina', crest: '🇦🇷' }, goals: 7 },
+  { player: { name: 'Julián Álvarez', nationality: 'Argentina' }, team: { name: 'Argentina', crest: '🇦🇷' }, goals: 4 },
+  { player: { name: 'Olivier Giroud', nationality: 'Francia' }, team: { name: 'Francia', crest: '🇫🇷' }, goals: 4 },
+  { player: { name: 'Gonçalo Ramos', nationality: 'Portugal' }, team: { name: 'Portugal', crest: '🇵🇹' }, goals: 3 },
+  { player: { name: 'Alvaro Morata', nationality: 'España' }, team: { name: 'España', crest: '🇪🇸' }, goals: 3 },
+  { player: { name: 'Marcus Rashford', nationality: 'Inglaterra' }, team: { name: 'Inglaterra', crest: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' }, goals: 3 },
+  { player: { name: 'Richarlison', nationality: 'Brasil' }, team: { name: 'Brasil', crest: '🇧🇷' }, goals: 3 },
+  { player: { name: 'Bukayo Saka', nationality: 'Inglaterra' }, team: { name: 'Inglaterra', crest: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' }, goals: 3 },
+  { player: { name: 'Cody Gakpo', nationality: 'Países Bajos' }, team: { name: 'Países Bajos', crest: '🇳🇱' }, goals: 3 },
+];

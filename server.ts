@@ -10,43 +10,129 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Import firebase config to allow backend to interact if needed
+// though for now we'll simulate the DB storage or use a proxy
+// Since it's a sandbox, we'll keep it simple: the server acts as a proxy for the free API
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Simple in-memory cache
-  let cache: { data: any; timestamp: number } | null = null;
-  const CACHE_DURATION = 1000 * 60 * 60; // 1 hour
+  // Simple in-memory cache for data
+  let worldCupCache: { teams: any[]; matches: any[]; standings: any[]; scorers: any[]; timestamp: number } | null = null;
+  const CACHE_DURATION = 1000 * 60 * 60 * 6; // 6 hours
 
-  app.get("/api/world-cup-data", async (req, res) => {
+  app.get("/api/world-cup-sync", async (req, res) => {
     const now = Date.now();
     
-    if (cache && now - cache.timestamp < CACHE_DURATION) {
-      console.log("Serving from cache");
-      return res.json(cache.data);
+    if (worldCupCache && now - worldCupCache.timestamp < CACHE_DURATION) {
+      console.log("Serving World Cup data from sync cache");
+      return res.json(worldCupCache);
     }
 
-    const apiKey = process.env.APISPORTS_KEY;
-    if (!apiKey || apiKey === "MY_APISPORTS_KEY") {
-      return res.status(500).json({ error: "APISPORTS_KEY not configured" });
+    const apiKey = process.env.FOOTBALL_DATA_KEY;
+    if (!apiKey || apiKey === "MY_API_KEY") {
+      console.warn("FOOTBALL_DATA_KEY not configured. Returning empty data.");
+      return res.json({ teams: [], matches: [] });
     }
 
     try {
-      // League 1 is World Cup, Season 2022 (latest completed)
-      // In a real 2026 scenario, we would use 2026
-      const response = await axios.get("https://v3.football.api-sports.io/fixtures", {
-        params: { league: "1", season: "2022" },
-        headers: {
-          "x-apisports-key": apiKey,
-        },
+      console.log("Fetching fresh data from football-data.org...");
+      
+      // Fetch Matches
+      const matchesResponse = await axios.get("https://api.football-data.org/v4/competitions/WC/matches", {
+        headers: { "X-Auth-Token": apiKey }
       });
 
-      cache = { data: response.data, timestamp: now };
-      res.json(response.data);
+      // Fetch Teams
+      const teamsResponse = await axios.get("https://api.football-data.org/v4/competitions/WC/teams", {
+        headers: { "X-Auth-Token": apiKey }
+      });
+
+      // Fetch Official Standings
+      const standingsResponse = await axios.get("https://api.football-data.org/v4/competitions/WC/standings", {
+        headers: { "X-Auth-Token": apiKey }
+      });
+
+      // Fetch Scorers
+      const scorersResponse = await axios.get("https://api.football-data.org/v4/competitions/WC/scorers", {
+        headers: { "X-Auth-Token": apiKey }
+      });
+
+      const teamsMap = new Map();
+      const formattedTeams = teamsResponse.data.teams.map((t: any) => {
+        const teamData = {
+          id: `${t.id}`,
+          name: t.name,
+          shortName: t.shortName,
+          tla: t.tla,
+          flag: t.crest,
+          group: "" 
+        };
+        teamsMap.set(t.id, teamData);
+        return teamData;
+      });
+
+      const formattedMatches = matchesResponse.data.matches.map((m: any) => {
+        const group = m.group ? m.group.replace('GROUP_', '') : m.stage;
+        
+        if (m.stage === 'GROUP_STAGE') {
+          if (teamsMap.has(m.homeTeam.id)) teamsMap.get(m.homeTeam.id).group = group;
+          if (teamsMap.has(m.awayTeam.id)) teamsMap.get(m.awayTeam.id).group = group;
+        }
+
+        return {
+          id: `m${m.id}`,
+          homeTeamId: m.homeTeam?.id ? `${m.homeTeam.id}` : null,
+          awayTeamId: m.awayTeam?.id ? `${m.awayTeam.id}` : null,
+          homeTeamName: m.homeTeam?.name || "TBD",
+          awayTeamName: m.awayTeam?.name || "TBD",
+          homeTeamLogo: m.homeTeam?.crest || null,
+          awayTeamLogo: m.awayTeam?.crest || null,
+          date: m.utcDate,
+          group: group,
+          stage: m.stage,
+          stadium: m.venue || "TBD",
+          matchday: m.matchday,
+          status: m.status,
+          actualHomeScore: m.score.fullTime.home,
+          actualAwayScore: m.score.fullTime.away
+        };
+      });
+
+      worldCupCache = { 
+        teams: Array.from(teamsMap.values()), 
+        matches: formattedMatches,
+        standings: standingsResponse.data.standings,
+        scorers: scorersResponse.data.scorers,
+        timestamp: now 
+      };
+      
+      res.json(worldCupCache);
     } catch (error: any) {
-      console.error("Error fetching World Cup data:", error.message);
-      res.status(500).json({ error: "Failed to fetch data from API-Football" });
+      console.error("Error syncing football-data.org:", error.response?.data || error.message);
+      res.status(500).json({ error: "Failed to sync data from football-data.org" });
     }
+  });
+
+  // Legacy individual endpoints for backward compatibility
+  app.get("/api/world-cup-results", async (req, res) => {
+    // Return just matches from the common cache or fetch if needed
+    if (!worldCupCache) {
+      return res.redirect("/api/world-cup-sync");
+    }
+    res.json({ matches: worldCupCache.matches.map(m => ({
+      ...m,
+      // Restore format expected by News tab
+      homeTeam: { name: worldCupCache?.teams.find(t => t.id === m.homeTeamId)?.name, logo: worldCupCache?.teams.find(t => t.id === m.homeTeamId)?.flag },
+      awayTeam: { name: worldCupCache?.teams.find(t => t.id === m.awayTeamId)?.name, logo: worldCupCache?.teams.find(t => t.id === m.awayTeamId)?.flag },
+      homeScore: m.actualHomeScore,
+      awayScore: m.actualAwayScore
+    })) });
+  });
+
+  app.get("/api/world-cup-data", async (req, res) => {
+    res.redirect("/api/world-cup-sync");
   });
 
   // Vite middleware for development

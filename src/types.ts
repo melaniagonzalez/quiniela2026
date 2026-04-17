@@ -11,8 +11,11 @@ export interface Match {
   awayTeamId: string;
   date: string;
   group: string;
-  stadium: string;
+  stadium?: string;
   matchday?: number;
+  status?: string;
+  actualHomeScore?: number | null;
+  actualAwayScore?: number | null;
 }
 
 export interface Prediction {
