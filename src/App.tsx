@@ -501,12 +501,18 @@ export default function App() {
         return;
       }
       const response = await fetch('/api/world-cup-results');
-      if (!response.ok) throw new Error('Error al cargar resultados');
-      const data = await response.json();
-      setNewsData(data);
+      if (response.ok) {
+        const data = await response.json();
+        setNewsData(data);
+      } else {
+        // En entornos como Netlify sin backend, usamos un fallback silencioso
+        console.warn('Backend API no disponible (404). Usando datos locales.');
+        setNewsData({ fixtures: [], simulated: false });
+      }
     } catch (error) {
-      console.error(error);
-      toast.error('No se pudieron cargar los resultados. Verifica la configuración del servidor.');
+      console.error('Error fetching results:', error);
+      // Fallback para evitar que la UI se rompa
+      setNewsData({ fixtures: [], simulated: false });
     } finally {
       setLoadingNews(false);
     }
