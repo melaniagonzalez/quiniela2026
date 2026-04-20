@@ -7,6 +7,9 @@
       "properties": {
         "uid": { "type": "string", "description": "ID único del usuario" },
         "displayName": { "type": "string", "description": "Nombre visible del usuario" },
+        "email": { "type": "string", "description": "Correo del usuario" },
+        "searchName": { "type": "string", "description": "Nombre en minúsculas para búsquedas" },
+        "searchEmail": { "type": "string", "description": "Correo en minúsculas para búsquedas" },
         "photoURL": { "type": "string", "description": "URL de la foto de perfil" },
         "totalPoints": { "type": "number", "description": "Puntos totales acumulados" },
         "correctResults": { "type": "number", "description": "Número de resultados exactos acertados" },

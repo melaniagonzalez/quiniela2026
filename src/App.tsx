@@ -250,22 +250,28 @@ export default function App() {
 
   const searchUsers = async (term: string) => {
     setUserSearchTerm(term);
-    if (term.trim().length < 3) {
+    const cleanTerm = term.trim().toLowerCase();
+    if (cleanTerm.length < 3) {
       setFoundUsers([]);
       return;
     }
     
     try {
+      // Intentamos buscar por nombre (lowercase) o por email
+      const isEmail = cleanTerm.includes('@');
+      const searchField = isEmail ? 'searchEmail' : 'searchName';
+      
       const q = query(
         collection(db, 'users'),
-        where('displayName', '>=', term),
-        where('displayName', '<=', term + '\uf8ff'),
-        limit(5)
+        where(searchField, '>=', cleanTerm),
+        where(searchField, '<=', cleanTerm + '\uf8ff'),
+        limit(10)
       );
+      
       const snapshot = await getDocs(q);
       const results = snapshot.docs
         .map(doc => doc.data())
-        .filter(u => !selectedLeague?.memberUids.includes(u.uid));
+        .filter(u => u.uid !== user?.uid && !selectedLeague?.memberUids.includes(u.uid));
       setFoundUsers(results);
     } catch (error) {
       console.error("Error searching users:", error);
@@ -371,15 +377,22 @@ export default function App() {
         const userRef = doc(db, 'users', currentUser.uid);
         try {
           const userDoc = await getDoc(userRef);
+          const userData: any = {
+            uid: currentUser.uid,
+            displayName: currentUser.displayName || 'Usuario Anónimo',
+            email: currentUser.email || '',
+            searchName: (currentUser.displayName || 'Usuario Anónimo').toLowerCase(),
+            searchEmail: (currentUser.email || '').toLowerCase(),
+            photoURL: currentUser.photoURL || '',
+          };
+          
           if (!userDoc.exists()) {
-            await setDoc(userRef, {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName || 'Usuario Anónimo',
-              photoURL: currentUser.photoURL || '',
-              totalPoints: 0,
-              correctResults: 0,
-              correctWinners: 0
-            });
+            userData.totalPoints = 0;
+            userData.correctResults = 0;
+            userData.correctWinners = 0;
+            await setDoc(userRef, userData);
+          } else {
+            await updateDoc(userRef, userData);
           }
         } catch (error) {
           console.error("Error setting up user profile:", error);
@@ -883,7 +896,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b border-border pt-[5px] pb-4">
+            <div className="flex items-center justify-between border-b border-border pt-[5px] pb-[5px]">
               <div className="flex items-center gap-4">
                  <Button 
                   variant="ghost" 
@@ -894,8 +907,24 @@ export default function App() {
                   <ChevronLeft className="w-6 h-6" />
                 </Button>
                 <div className="flex flex-col">
-                  <h2 className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight">{selectedLeague?.name}</h2>
-                  <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Cambiar de Quiniela</span>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setActiveTab('quiniela')}
+                      disabled={activeTab === 'quiniela'}
+                      className={cn(
+                        "text-[14px] sm:text-[18px] font-black uppercase tracking-tight transition-colors",
+                        activeTab !== 'quiniela' ? "text-muted-foreground hover:text-primary cursor-pointer" : "text-foreground"
+                      )}
+                    >
+                      {selectedLeague?.name}
+                    </button>
+                    {activeTab === 'settings' && (
+                      <>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight text-primary">Configuración</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1465,7 +1494,7 @@ export default function App() {
         </div>
       </div>
         ) : activeTab === 'settings' ? (
-          <div className="max-w-4xl mx-auto space-y-12 pb-20">
+          <div className="max-w-4xl mx-auto space-y-12 pb-20 pt-4">
             {/* Header section (Renaming - Only for Creator) */}
             {selectedLeague?.creatorId === user?.uid && (
               <div className="bg-card border border-border p-8 space-y-6">
