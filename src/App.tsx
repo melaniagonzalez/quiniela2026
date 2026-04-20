@@ -5,10 +5,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
-import { Prediction, GroupStanding, Match, Team } from './types';
+import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
 import { calculateStandings } from './lib/calculations';
 import { cn } from './lib/utils';
 
@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import { Skeleton } from './components/ui/skeleton';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, onSnapshot, query, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, onSnapshot, query, orderBy, limit, writeBatch, where, addDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, getDocs } from 'firebase/firestore';
 
 export default function App() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
@@ -139,7 +139,164 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [newsData, setNewsData] = useState<any>(null);
   const [loadingNews, setLoadingNews] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activeTab, setActiveTab] = useState('quiniela');
+
+  const [leagues, setLeagues] = useState<League[]>([]);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const selectedLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+
+  const [isCreatingLeague, setIsCreatingLeague] = useState(false);
+  const [newLeagueName, setNewLeagueName] = useState('');
+  const [leagueInvites, setLeagueInvites] = useState<Record<string, string>>({});
+  const [leagueLeaderboards, setLeagueLeaderboards] = useState<Record<string, any[]>>({});
+
+  useEffect(() => {
+    if (user) {
+      const q = query(collection(db, 'leagues'), where('memberUids', 'array-contains', user.uid));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const leaguesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as League));
+        setLeagues(leaguesData);
+      });
+      return () => unsubscribe();
+    }
+  }, [user]);
+
+  const handleCreateLeague = async () => {
+    if (!user) return;
+    if (!newLeagueName.trim()) {
+      toast.error('El nombre de la liga es obligatorio');
+      return;
+    }
+
+    const userLeagues = leagues.filter(l => l.creatorId === user.uid);
+    if (userLeagues.length >= 3) {
+      toast.error('Solo puedes crear hasta 3 ligas privadas');
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, 'leagues'), {
+        name: newLeagueName,
+        creatorId: user.uid,
+        creatorName: user.displayName || 'Usuario',
+        memberUids: [user.uid],
+        createdAt: new Date().toISOString(),
+        isPrivate: true
+      });
+      setNewLeagueName('');
+      setIsCreatingLeague(false);
+      setSelectedLeagueId(docRef.id);
+      toast.success('Quiniela creada correctamente');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'leagues');
+    }
+  };
+
+  const inviteToLeague = async (leagueId: string) => {
+    const inviteEmail = leagueInvites[leagueId];
+    if (!inviteEmail) return;
+
+    toast.loading('Invitando...');
+    // Real implementation would need a user search, but for now we'll simulate or wait for proper member management
+    // In a real app, you might send an email or check if user exists.
+    // Here we'll just show info how to share the league ID.
+    toast.dismiss();
+    toast.info(`Para invitar, comparte el ID de la liga: ${leagueId}`);
+  };
+
+  const joinLeagueById = async (id: string) => {
+    if (!user) return;
+    try {
+      const leagueRef = doc(db, 'leagues', id);
+      await updateDoc(leagueRef, {
+        memberUids: arrayUnion(user.uid)
+      });
+      setSelectedLeagueId(id);
+      toast.success('Te has unido a la quiniela');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'leagues');
+    }
+  };
+
+  const leaveLeague = async (leagueId: string) => {
+    if (!user) return;
+    try {
+      const leagueRef = doc(db, 'leagues', leagueId);
+      await updateDoc(leagueRef, {
+        memberUids: arrayRemove(user.uid)
+      });
+      toast.success('Has salido de la quiniela');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'leagues');
+    }
+  };
+
+  const deleteLeague = async (leagueId: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'leagues', leagueId));
+      toast.success('Quiniela eliminada');
+      setSelectedLeagueId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'leagues');
+    }
+  };
+
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [foundUsers, setFoundUsers] = useState<any[]>([]);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [editLeagueName, setEditLeagueName] = useState('');
+
+  const searchUsers = async (term: string) => {
+    setUserSearchTerm(term);
+    if (term.trim().length < 3) {
+      setFoundUsers([]);
+      return;
+    }
+    
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('displayName', '>=', term),
+        where('displayName', '<=', term + '\uf8ff'),
+        limit(5)
+      );
+      const snapshot = await getDocs(q);
+      const results = snapshot.docs
+        .map(doc => doc.data())
+        .filter(u => !selectedLeague?.memberUids.includes(u.uid));
+      setFoundUsers(results);
+    } catch (error) {
+      console.error("Error searching users:", error);
+    }
+  };
+
+  const updateLeagueName = async () => {
+    if (!selectedLeagueId || !editLeagueName.trim()) return;
+    try {
+      await updateDoc(doc(db, 'leagues', selectedLeagueId), {
+        name: editLeagueName
+      });
+      setIsRenaming(false);
+      toast.success('Nombre actualizado');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'leagues');
+    }
+  };
+
+  const inviteUser = async (targetUid: string) => {
+    if (!selectedLeagueId) return;
+    try {
+      await updateDoc(doc(db, 'leagues', selectedLeagueId), {
+        memberUids: arrayUnion(targetUid)
+      });
+      toast.success('Usuario agregado a la quiniela');
+      setFoundUsers(prev => prev.filter(u => u.uid !== targetUid));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'leagues');
+    }
+  };
 
   const calculateUserPoints = (userPredictions: Prediction[]) => {
     let totalPoints = 0;
@@ -264,15 +421,22 @@ export default function App() {
 
   // Sync Leaderboard
   useEffect(() => {
-    if (activeTab === 'leaderboard') {
+    if (activeTab === 'leaderboard' && user) {
       const usersRef = collection(db, 'users');
-      // Remove orderBy to avoid potential index/permission issues during debug
+      // If a quiniela is selected, we want to filter, but Firestore "in" is limited.
+      // We'll fetch the top 100 and filter client-side for simplicity in this demo.
+      // For a production app, we might need a different data structure or Cloud Functions.
       const q = query(usersRef, limit(100));
       
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const data = snapshot.docs.map(doc => doc.data());
-        // Sort client-side
-        const sortedData = data.sort((a: any, b: any) => (b.totalPoints || 0) - (a.totalPoints || 0));
+        
+        let filteredData = data;
+        if (selectedLeagueId && selectedLeague) {
+          filteredData = data.filter((u: any) => selectedLeague.memberUids.includes(u.uid));
+        }
+
+        const sortedData = filteredData.sort((a: any, b: any) => (b.totalPoints || 0) - (a.totalPoints || 0));
         setLeaderboard(sortedData);
       }, (error) => {
         console.error("Leaderboard error:", error);
@@ -282,7 +446,7 @@ export default function App() {
       
       return () => unsubscribe();
     }
-  }, [activeTab]);
+  }, [activeTab, selectedLeagueId, leagues, user]);
 
   const handleLogin = async () => {
     try {
@@ -359,24 +523,26 @@ export default function App() {
     );
 
     setPredictions(newPredictions);
+    setHasUnsavedChanges(true);
+  };
 
-    // If logged in, sync to Firestore
-    if (user) {
-      const predictionRef = doc(db, 'users', user.uid, 'predictions', matchId);
-      const userRef = doc(db, 'users', user.uid);
-      try {
-        const currentPred = newPredictions.find(p => p.matchId === matchId)!;
-        
-        // Use batch to ensure both prediction and user total points are updated
+  const handleSavePredictions = async () => {
+    if (!hasUnsavedChanges) return;
+    
+    setIsSyncing(true);
+    try {
+      if (user) {
         const batch = writeBatch(db);
-        
-        batch.set(predictionRef, {
-          ...currentPred,
-          updatedAt: new Date().toISOString()
+        predictions.forEach(p => {
+          const predictionRef = doc(db, 'users', user.uid, 'predictions', p.matchId);
+          batch.set(predictionRef, {
+            ...p,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
         });
 
-        // Calculate and update total points
-        const { totalPoints, correctResults, correctWinners } = calculateUserPoints(newPredictions);
+        const { totalPoints, correctResults, correctWinners } = calculateUserPoints(predictions);
+        const userRef = doc(db, 'users', user.uid);
         batch.update(userRef, {
           totalPoints,
           correctResults,
@@ -385,11 +551,16 @@ export default function App() {
         });
 
         await batch.commit();
-      } catch (error) {
-        console.error("Score change error:", error);
-        toast.error('Error al guardar predicción');
-        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/predictions/${matchId}`);
       }
+      
+      localStorage.setItem('wc_predictions', JSON.stringify(predictions));
+      setHasUnsavedChanges(false);
+      toast.success('Cambios guardados correctamente');
+    } catch (error) {
+      console.error("Error saving predictions:", error);
+      toast.error('Error al guardar las predicciones');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -397,6 +568,7 @@ export default function App() {
     if (confirm('¿Estás seguro de que quieres reiniciar todas tus predicciones?')) {
       const empty = MATCHES.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
       setPredictions(empty);
+      setHasUnsavedChanges(true);
       
       if (user) {
         // In a real app, we might want to delete the collection docs
@@ -458,15 +630,15 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
       {/* Header */}
-      <header className="px-6 lg:px-16 pt-6 pb-4 border-b border-border flex flex-col md:flex-row justify-between items-end gap-6 bg-gradient-to-br from-purple/10 via-background to-primary/10">
+      <header className="px-4 lg:px-16 py-3 sm:py-6 border-b border-border flex flex-row justify-between items-center gap-4 bg-gradient-to-br from-purple/10 via-background to-primary/10 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex flex-col">
-          <h1 className="text-[32px] lg:text-[42px] font-black leading-[0.9] tracking-[-0.05em] uppercase">
-            <span className="text-purple">Quiniela</span><br />
-            <span className="text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mundial</span>
+          <h1 className="text-[20px] sm:text-[32px] lg:text-[42px] font-black leading-none tracking-tight uppercase flex flex-col sm:block">
+            <span className="text-purple">Quiniela</span>
+            <span className="sm:inline-block sm:ml-2 text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mundial</span>
           </h1>
         </div>
         
-        <div className="flex flex-col items-end text-right">
+        <div className="flex items-center gap-3 sm:gap-6">
           <button 
             onClick={() => {
               setClickCount(prev => prev + 1);
@@ -476,34 +648,44 @@ export default function App() {
                 toast.info(isSimulationMode ? 'Modo 2026 Activado' : 'Modo Simulación 2022 Activado');
               }
             }}
-            className="bg-lime text-black px-3 py-1 text-[10px] font-black uppercase tracking-widest mb-3 hover:scale-105 transition-transform"
+            className="hidden sm:block bg-lime text-black px-3 py-1 text-[9px] font-black uppercase tracking-widest hover:scale-105 transition-transform shrink-0"
           >
-            {isSimulationMode ? 'Simulación 2022' : 'United 2026'}
+            {isSimulationMode ? 'Simulador 22' : 'United 2026'}
           </button>
-          <div className="flex items-center gap-4">
+          
+          <div className="flex items-center gap-2 sm:gap-4">
             {user ? (
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 sm:gap-4">
+                {selectedLeagueId && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setSelectedLeagueId(null)}
+                    className="hidden md:flex text-[9px] font-black uppercase tracking-widest gap-2 opacity-60 hover:opacity-100"
+                  >
+                    <Home className="w-3 h-3" /> Mis Quinielas
+                  </Button>
+                )}
                 <div className="flex flex-col items-end">
-                  <span className="text-[10px] font-black uppercase tracking-widest">{user.displayName}</span>
-                  <button onClick={handleLogout} className="text-[9px] text-muted-foreground hover:text-primary uppercase font-bold tracking-widest">Cerrar Sesión</button>
+                  <span className="text-[11px] sm:text-[12px] font-black uppercase tracking-widest max-w-[140px] sm:max-w-none truncate">{user.displayName}</span>
+                  <button onClick={handleLogout} className="text-[12px] text-muted-foreground hover:text-primary uppercase font-bold tracking-widest">Salir</button>
                 </div>
-                {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border border-primary/30" referrerPolicy="no-referrer" />}
+                {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-primary/30" referrerPolicy="no-referrer" />}
               </div>
             ) : (
-              <Button size="sm" onClick={handleLogin} className="bg-white text-black hover:bg-white/90 uppercase text-[10px] font-black tracking-widest px-6 h-10">
-                Iniciar Sesión
+              <Button size="sm" onClick={handleLogin} className="bg-white text-black hover:bg-white/90 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10">
+                Entrar
               </Button>
             )}
           </div>
         </div>
       </header>
 
-      <main className="px-6 lg:px-16 pt-6 pb-16">
+      <main className="px-6 lg:px-16 pb-16">
         <Toaster position="top-center" />
         
-        {/* Secret Simulation Panel */}
         {isSimulationMode && (
-          <div className="mb-12 p-6 bg-purple/10 border border-purple/30 rounded-lg space-y-4">
+          <div className="mb-12 p-6 pt-[5px] bg-purple/10 border border-purple/30 rounded-lg space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-purple font-black uppercase text-xs tracking-widest">
                 <FlaskConical className="h-4 w-4" />
@@ -541,8 +723,8 @@ export default function App() {
                             2: '2026-06-23T12:00:00Z', // Grupos J2
                             3: '2026-07-05T12:00:00Z', // Grupos J3
                             4: '2026-07-15T12:00:00Z', // Round of 32
-                            5: '2026-07-20T12:00:00Z', // Round of 16
-                            6: '2026-07-24T12:00:00Z', // Quarter Final
+                            5: '2026-07-21T12:00:00Z', // Round of 16
+                            6: '2026-07-25T12:00:00Z', // Quarter Final
                             7: '2026-07-28T12:00:00Z', // Semi Final
                             8: '2026-08-02T12:00:00Z'  // Final
                           };
@@ -558,62 +740,229 @@ export default function App() {
               </div>
               <div className="flex items-center">
                 <p className="text-[10px] text-muted-foreground leading-relaxed uppercase tracking-wider bg-black/20 p-4 border-l-2 border-purple">
-                  Mueva la fecha hacia atrás o adelante para simular el avance del Mundial 2026. Los partidos anteriores a la fecha elegida aparecerán con resultados (simulados) y se calcularán tus puntos.
+                  Mueva la fecha hacia atrás or adelante para simular el avance del Mundial 2026. Los partidos anteriores a la fecha elegida aparecerán con resultados (simulados) y se calcularán tus puntos.
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        <div className="mb-8 flex border-b border-border overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('quiniela')}
-            className={cn(
-              "px-8 py-4 text-[12px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap",
-              activeTab === 'quiniela' 
-                ? "border-primary text-primary" 
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Mi Quiniela
-          </button>
-          <button
-            onClick={() => setActiveTab('leaderboard')}
-            className={cn(
-              "px-8 py-4 text-[12px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap",
-              activeTab === 'leaderboard' 
-                ? "border-primary text-primary" 
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Ranking
-          </button>
-          <button
-            onClick={() => setActiveTab('noticias')}
-            className={cn(
-              "px-8 py-4 text-[12px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap",
-              activeTab === 'noticias' 
-                ? "border-primary text-primary" 
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Noticias
-          </button>
-          <button
-            onClick={() => setActiveTab('resultados')}
-            className={cn(
-              "px-8 py-4 text-[12px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap",
-              activeTab === 'resultados' 
-                ? "border-primary text-primary" 
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Resultados
-          </button>
-        </div>
+        {!user ? (
+           <div className="py-20 text-center space-y-8">
+              <div className="inline-flex p-4 bg-primary/10 border border-primary/30 rounded-full mb-4">
+                <Trophy className="w-12 h-12 text-primary" />
+              </div>
+              <div className="max-w-md mx-auto space-y-4">
+                <h2 className="text-3xl font-black uppercase tracking-tight">Bienvenido a la Quiniela</h2>
+                <p className="text-muted-foreground uppercase text-[11px] font-bold tracking-widest leading-relaxed">
+                  Crea tus grupos, invita a tus amigos y compite por ser el mejor pronosticador del Mundial United 2026.
+                </p>
+                <Button onClick={handleLogin} className="w-full h-14 text-sm font-black uppercase tracking-[0.2em] mt-8 shadow-[0_0_20px_rgba(237,28,36,0.3)]">
+                  Iniciar Sesión con Google
+                </Button>
+              </div>
+           </div>
+        ) : !selectedLeagueId ? (
+          <div className="space-y-12 max-w-5xl mx-auto py-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
+              <div className="space-y-2">
+                <h2 className="text-[24px] font-black uppercase tracking-tight text-primary">Mis Quinielas</h2>
+                <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest">Selecciona una quiniela para ver tus resultados y ranking</p>
+              </div>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={() => {
+                    const id = prompt('Ingresa el ID de la quiniela:');
+                    if (id) joinLeagueById(id);
+                  }}
+                  className="h-12 text-[10px] font-black uppercase tracking-widest px-8 bg-sky-600 hover:bg-sky-700 text-white border-none transition-all"
+                >
+                  Unirse con ID
+                </Button>
+                <div className="relative group">
+                   <Button 
+                    onClick={() => setIsCreatingLeague(true)} 
+                    className="h-12 text-[10px] font-black uppercase tracking-widest px-8 shadow-lg shadow-primary/20"
+                    disabled={leagues.filter(l => l.creatorId === user?.uid).length >= 3}
+                  >
+                    <Plus className="w-4 h-4 mr-2" /> Crear Nueva
+                  </Button>
+                  {leagues.filter(l => l.creatorId === user?.uid).length >= 3 && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-purple text-white text-[9px] font-black uppercase px-2 py-1 whitespace-nowrap hidden group-hover:block z-10">
+                      Límite de 3 quinielas alcanzado
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
 
-        {activeTab === 'quiniela' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-16">
+            {isCreatingLeague && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-card border-4 border-primary p-10 space-y-8 relative overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rotate-45 translate-x-16 -translate-y-16" />
+                <div className="space-y-3 relative">
+                  <span className="text-[11px] font-black uppercase text-primary tracking-[0.3em]">Nueva Competición</span>
+                  <h3 className="text-2xl font-black uppercase tracking-tight">Personaliza tu Quiniela</h3>
+                  <Input 
+                    placeholder="NOMBRE DE TU QUINIELA (EJ: MUNDIALISTAS 2026)" 
+                    value={newLeagueName}
+                    onChange={(e) => setNewLeagueName(e.target.value)}
+                    className="h-16 text-[18px] font-black uppercase tracking-tight bg-background border-2 border-border focus:border-primary transition-all rounded-none"
+                  />
+                </div>
+                <div className="flex gap-4 relative">
+                  <Button 
+                    onClick={handleCreateLeague} 
+                    className="flex-1 h-14 text-[12px] font-black uppercase tracking-widest"
+                  >
+                    Crear Quiniela
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => setIsCreatingLeague(false)}
+                    className="flex-1 h-14 text-[12px] font-black uppercase tracking-widest"
+                  >
+                    Cerrar
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {leagues.length > 0 ? (
+                leagues.map((league) => (
+                  <Card 
+                    key={league.id} 
+                    className="group relative bg-card border-2 border-border rounded-none overflow-hidden hover:border-primary transition-all flex flex-col cursor-pointer"
+                    onClick={() => setSelectedLeagueId(league.id)}
+                  >
+                    <div className="absolute top-0 left-0 w-full h-1 bg-primary scale-x-0 group-hover:scale-x-100 transition-transform origin-left" />
+                    <CardHeader className="p-8 pb-4">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 bg-primary/5 rounded-none border border-primary/20">
+                          <Users className="w-5 h-5 text-primary" />
+                        </div>
+                        {league.creatorId === user?.uid && (
+                          <Badge className="bg-primary text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-none">Admin</Badge>
+                        )}
+                      </div>
+                      <CardTitle className="text-[20px] font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors">{league.name}</CardTitle>
+                      <CardDescription className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-2 pt-2">
+                        {league.memberUids.length} Participantes
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-8 pt-0 flex-1 flex flex-col">
+                      <div className="flex-1" />
+                      <Button className="w-full h-12 text-[10px] font-black uppercase tracking-widest mt-6 bg-transparent border-2 border-primary text-primary hover:bg-primary hover:text-white transition-all">
+                        Ver Quiniela
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <div className="col-span-full py-32 text-center border-4 border-dashed border-border/50">
+                  <div className="bg-muted w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Users className="w-10 h-10 text-muted-foreground/30" />
+                  </div>
+                  <p className="text-[14px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-8">No tienes quinielas activas</p>
+                  <Button onClick={() => setIsCreatingLeague(true)} size="lg" className="h-14 text-[12px] font-black uppercase tracking-widest px-12 shadow-xl shadow-primary/30">
+                    Empezar mi primera Quiniela
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between border-b border-border pt-[5px] pb-4">
+              <div className="flex items-center gap-4">
+                 <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setSelectedLeagueId(null)}
+                  className="h-10 w-10 p-0 hover:bg-primary/5 text-muted-foreground hover:text-primary"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </Button>
+                <div className="flex flex-col">
+                  <h2 className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight">{selectedLeague?.name}</h2>
+                  <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Cambiar de Quiniela</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    setActiveTab('settings');
+                    if (selectedLeague) setEditLeagueName(selectedLeague.name);
+                  }}
+                  className="h-9 text-[10px] font-black uppercase px-4 flex items-center gap-2 border-border hover:bg-white/5 transition-all"
+                >
+                  <Settings className="w-3.5 h-3.5" /> Configurar
+                </Button>
+              </div>
+            </div>
+
+            {activeTab !== 'settings' && (
+              <div className="grid grid-cols-4 sm:flex border-b border-border">
+                <button
+                  onClick={() => setActiveTab('quiniela')}
+                  className={cn(
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    activeTab === 'quiniela' 
+                      ? "border-primary text-primary" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <span className="text-[8px] sm:text-[12px] text-center"> Quiniela</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('leaderboard')}
+                  className={cn(
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    activeTab === 'leaderboard' 
+                      ? "border-primary text-primary" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Trophy className="w-3.5 h-3.5" />
+                  <span className="text-[8px] sm:text-[12px] text-center">Ranking</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('noticias')}
+                  className={cn(
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    activeTab === 'noticias' 
+                      ? "border-primary text-primary" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Newspaper className="w-3.5 h-3.5" />
+                  <span className="text-[8px] sm:text-[12px] text-center">Noticias</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('resultados')}
+                  className={cn(
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    activeTab === 'resultados' 
+                      ? "border-primary text-primary" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span className="text-[8px] sm:text-[12px] text-center">Resultados</span>
+                </button>
+              </div>
+            )}
+
+            {activeTab === 'quiniela' ? (
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-16">
             {/* Left Column: Matches */}
             <div className="space-y-6">
               {!user && (
@@ -625,8 +974,8 @@ export default function App() {
               )}
               <div className="grid grid-cols-1 gap-12">
                 {matchdays.filter(day => day === viewingMatchday).map(day => (
-                  <div key={day} className="space-y-6">
-                    <div className="flex items-center gap-4">
+                  <div key={day} className="space-y-6 mt-[5px] mb-[14px]">
+                    <div className="flex items-center gap-4 pt-[5px]">
                       <div className="h-[1px] flex-1 bg-border" />
                       <div className="flex flex-col items-center gap-2">
                         <div className="flex items-center gap-4">
@@ -640,8 +989,13 @@ export default function App() {
                             <ChevronLeft className="h-6 w-6" />
                           </Button>
                           
-                          <span className="text-[12px] sm:text-[14px] font-black text-primary uppercase tracking-[0.4em] px-8 py-2 border border-primary/30 bg-primary/5 min-w-[200px] text-center block">
+                          <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border border-primary/30 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden">
                             Jornada {day}
+                            {day === currentMatchday && (
+                              <span className="absolute top-0 left-0 h-full flex items-center pl-4">
+                                <span className="text-[8px] font-black tracking-widest text-[#FFD700] animate-pulse">ACTUAL</span>
+                              </span>
+                            )}
                           </span>
 
                           <Button 
@@ -654,21 +1008,25 @@ export default function App() {
                             <ChevronRight className="h-6 w-6" />
                           </Button>
                         </div>
-                        {day === currentMatchday && (
-                          <div className="flex flex-col items-center gap-1.5 mt-1">
-                            <div className="flex items-center gap-2">
-                              <div className="w-1 h-1 rounded-full bg-lime animate-pulse" />
-                              <span className="text-[10px] font-black text-lime uppercase tracking-[0.2em]">Jornada Actual</span>
-                            </div>
-                            <div className="bg-primary/5 px-3 py-1 border border-primary/20">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                                Cierre de predicciones: <span className="text-primary font-black text-[11px] ml-1">14H 22M</span>
-                              </span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                       <div className="h-[1px] flex-1 bg-border" />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
+                      <div className="flex items-center gap-2">
+                        {day === currentMatchday && (
+                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                            Cierre de predicciones: <span className="text-primary font-black text-[11px] ml-1">14H 22M</span>
+                          </span>
+                        )}
+                      </div>
+                      <Button 
+                        onClick={handleSavePredictions}
+                        disabled={!hasUnsavedChanges || isSyncing}
+                        className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      >
+                        {isSyncing ? 'Guardando...' : 'Guardar'}
+                      </Button>
                     </div>
                     
                     <div className="space-y-12">
@@ -718,10 +1076,10 @@ export default function App() {
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: idx * 0.02 }}
                                   >
-                                    <div className="bg-card border border-border p-6 grid grid-cols-[1fr_auto_1fr] items-center gap-6 group hover:border-primary/50 transition-colors relative overflow-hidden">
+                                    <div className="bg-card border border-border p-4 sm:p-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-6 group hover:border-primary/50 transition-colors relative overflow-hidden">
                                       <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-purple via-primary to-lime opacity-50" />
                                       
-                                      <div className="absolute top-2 right-2 flex gap-2">
+                                      <div className="absolute top-[6px] right-2 flex gap-2">
                                         <div className="bg-white/5 text-muted-foreground text-[8px] font-black px-2 py-0.5 uppercase tracking-widest border border-border">
                                           {new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                         </div>
@@ -733,38 +1091,38 @@ export default function App() {
                                       </div>
 
                                       {/* Home Team */}
-                                      <div className="flex items-center gap-4">
+                                      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                                         {displayHome.flag.startsWith('http') ? (
-                                          <img src={displayHome.flag} alt="" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+                                          <img src={displayHome.flag} alt="" className="w-5 h-5 sm:w-8 sm:h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
                                         ) : (
-                                          <span className={cn("text-3xl transition-all", isTBD && "opacity-20")}>{displayHome.flag}</span>
+                                          <span className={cn("text-xl sm:text-3xl transition-all shrink-0", isTBD && "opacity-20")}>{displayHome.flag}</span>
                                         )}
-                                        <span className={cn("text-lg font-black uppercase tracking-tight", isTBD && "text-muted-foreground/50")}>{displayHome.name}</span>
+                                        <span className={cn("text-[11px] sm:text-lg font-black uppercase tracking-tight truncate", isTBD && "text-muted-foreground/50")}>{displayHome.name}</span>
                                       </div>
 
                                       {/* Score Inputs / Result */}
-                                      <div className="flex items-center gap-3">
+                                      <div className="flex items-center gap-1 sm:gap-3 shrink-0">
                                         {isFinished ? (
-                                          <div className="flex items-center gap-4">
-                                            <span className="text-2xl font-black">{actualMatch?.actualHomeScore}</span>
-                                            <span className="text-muted-foreground font-bold text-xs">X</span>
-                                            <span className="text-2xl font-black">{actualMatch?.actualAwayScore}</span>
+                                          <div className="flex items-center gap-2 sm:gap-4">
+                                            <span className="text-xl sm:text-2xl font-black">{actualMatch?.actualHomeScore}</span>
+                                            <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
+                                            <span className="text-xl sm:text-2xl font-black">{actualMatch?.actualAwayScore}</span>
                                           </div>
                                         ) : (
                                           <>
                                             <Input
                                               type="number"
                                               disabled={isTBD}
-                                              className="w-12 h-12 bg-background border-border text-center text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-20"
+                                              className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-20"
                                               value={prediction.homeScore ?? ''}
                                               onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
                                               placeholder="-"
                                             />
-                                            <span className="text-muted-foreground font-bold text-xs">X</span>
+                                            <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
                                             <Input
                                               type="number"
                                               disabled={isTBD}
-                                              className="w-12 h-12 bg-background border-border text-center text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-20"
+                                              className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-20"
                                               value={prediction.awayScore ?? ''}
                                               onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
                                               placeholder="-"
@@ -774,12 +1132,12 @@ export default function App() {
                                       </div>
 
                                       {/* Away Team */}
-                                      <div className="flex items-center justify-end gap-4 text-right">
-                                        <span className={cn("text-lg font-black uppercase tracking-tight", isTBD && "text-muted-foreground/50")}>{displayAway.name}</span>
+                                      <div className="flex items-center justify-end gap-2 sm:gap-4 text-right min-w-0">
+                                        <span className={cn("text-[11px] sm:text-lg font-black uppercase tracking-tight truncate", isTBD && "text-muted-foreground/50")}>{displayAway.name}</span>
                                         {displayAway.flag.startsWith('http') ? (
-                                          <img src={displayAway.flag} alt="" className="w-8 h-8 object-contain" referrerPolicy="no-referrer" />
+                                          <img src={displayAway.flag} alt="" className="w-5 h-5 sm:w-8 sm:h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
                                         ) : (
-                                          <span className={cn("text-3xl transition-all", isTBD && "opacity-20")}>{displayAway.flag}</span>
+                                          <span className={cn("text-xl sm:text-3xl transition-all shrink-0", isTBD && "opacity-20")}>{displayAway.flag}</span>
                                         )}
                                       </div>
                                     </div>
@@ -795,13 +1153,13 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="pt-6 flex justify-center sm:justify-start">
+              <div className="pt-6 flex justify-end">
                 <Button 
-                  onClick={() => toast.success('Pronósticos guardados correctamente')}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground uppercase text-[11px] font-black tracking-widest px-10 h-14 w-full sm:w-auto shadow-[0_0_20px_rgba(237,28,36,0.2)]"
+                  onClick={handleSavePredictions}
+                  disabled={!hasUnsavedChanges || isSyncing}
+                  className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
-                  <Save className="w-4 h-4 mr-2" />
-                  Guardar Mis Pronósticos
+                  {isSyncing ? 'Guardando...' : 'Guardar'}
                 </Button>
               </div>
             </div>
@@ -878,96 +1236,92 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === 'leaderboard' ? (
-      <div className="space-y-12 max-w-4xl mx-auto">
-        <div className="text-center space-y-4">
-          <h2 className="text-[12px] font-bold text-muted-foreground uppercase tracking-[0.4em]">
-            Ranking Global de Expertos
-          </h2>
-          <p className="text-[11px] text-muted-foreground uppercase tracking-widest max-w-2xl mx-auto">
-            Gana 1 punto por acertar el ganador o empate, y 3 puntos por el marcador exacto. 
-          </p>
-        </div>
-
-        <div className="border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead className="w-[60px] text-[10px] font-black text-purple uppercase tracking-widest text-center">Pos</TableHead>
-                <TableHead className="text-[10px] font-black text-purple uppercase tracking-widest">Usuario</TableHead>
-                <TableHead className="text-center text-[10px] font-black text-purple uppercase tracking-widest">Exactos</TableHead>
-                <TableHead className="text-center text-[10px] font-black text-purple uppercase tracking-widest">Ganadores</TableHead>
-                <TableHead className="text-right text-[10px] font-black text-purple uppercase tracking-widest">Total Pts</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leaderboard.length > 0 ? (
-                leaderboard.map((entry, idx) => (
-                  <motion.tr
-                    key={entry.uid}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className={cn(
-                      "border-b border-border hover:bg-white/5 transition-colors",
-                      user?.uid === entry.uid && "bg-primary/5"
-                    )}
-                  >
-                    <TableCell className="py-6 text-center">
-                      <span className={cn(
-                        "text-[14px] font-black",
-                        idx === 0 ? "text-primary" : "text-muted-foreground"
-                      )}>
-                        {(idx + 1).toString().padStart(2, '0')}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-6">
-                      <div className="flex items-center gap-4">
-                        {entry.photoURL ? (
-                          <img src={entry.photoURL} alt="" className="w-8 h-8 rounded-full border border-border" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-black">
-                            {entry.displayName?.charAt(0) || '?'}
-                          </div>
+          <div className="space-y-12">
+            <div className="max-w-4xl mx-auto bg-card border border-border">
+              <div className="p-8 border-b border-border bg-primary/5 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div className="space-y-1 text-center md:text-left">
+                  <h2 className="text-[14px] font-black uppercase tracking-widest text-primary">Ranking de Mi Quiniela</h2>
+                  <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-tight">Participantes de {selectedLeague?.name}</p>
+                </div>
+                <div className="flex items-center gap-8">
+                  <div className="text-center">
+                    <p className="text-[18px] font-black text-lime">{leaderboard.length}</p>
+                    <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Usuarios</p>
+                  </div>
+                  <div className="w-[1px] h-8 bg-border" />
+                  <div className="text-center">
+                    <p className="text-[18px] font-black text-lime">{leaderboard.find(u => u.uid === user?.uid)?.totalPoints || 0}</p>
+                    <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Mis Puntos</p>
+                  </div>
+                </div>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent border-b border-border">
+                    <TableHead className="w-[60px] text-center text-[10px] font-black uppercase py-6">Pos</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase py-6">Usuario</TableHead>
+                    <TableHead className="text-right text-[10px] font-black uppercase py-6">Puntos</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {leaderboard.length > 0 ? (
+                    leaderboard.map((entry, index) => (
+                      <motion.tr 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        key={entry.uid}
+                        className={cn(
+                          "group hover:bg-white/5 border-b border-white/5 transition-colors",
+                          entry.uid === user?.uid && "bg-primary/5"
                         )}
-                        <span className="font-black text-[14px] uppercase tracking-tight">
-                          {entry.displayName}
-                          {user?.uid === entry.uid && <span className="ml-2 text-[9px] text-primary">(Tú)</span>}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-6 text-center font-bold text-[13px] text-muted-foreground">
-                      {entry.correctResults || 0}
-                    </TableCell>
-                    <TableCell className="py-6 text-center font-bold text-[13px] text-muted-foreground">
-                      {entry.correctWinners || 0}
-                    </TableCell>
-                    <TableCell className="py-6 text-right">
-                      <span className="text-[16px] font-black text-lime">
-                        {entry.totalPoints || 0} <span className="text-[10px] text-muted-foreground ml-1">PTS</span>
-                      </span>
-                    </TableCell>
-                  </motion.tr>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-20 text-center">
-                    <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">
-                      Aún no hay usuarios en el ranking. ¡Sé el primero!
-                    </p>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    ) : activeTab === 'noticias' ? (
+                      >
+                        <TableCell className="py-6 text-center">
+                          <span className={cn(
+                            "text-[12px] font-black",
+                            index === 0 ? "text-lime" : index === 1 ? "text-gray-300" : index === 2 ? "text-amber-600" : ""
+                          )}>
+                            {(index + 1).toString().padStart(2, '0')}
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-6">
+                          <div className="flex items-center gap-3">
+                            <img src={entry.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.uid}`} className="w-8 h-8 rounded-full border border-border" referrerPolicy="no-referrer" />
+                            <div className="flex flex-col">
+                              <span className="text-[12px] font-black uppercase truncate max-w-[200px]">
+                                {entry.displayName || 'Anonimo'}
+                              </span>
+                              {entry.uid === user?.uid && <span className="text-[8px] font-black text-primary uppercase tracking-widest">Tú</span>}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-6 text-right">
+                          <span className="text-[16px] font-black text-lime">
+                            {entry.totalPoints || 0} <span className="text-[10px] text-muted-foreground ml-1">PTS</span>
+                          </span>
+                        </TableCell>
+                      </motion.tr>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-20 text-center">
+                        <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">
+                          Aún no hay usuarios en esta quiniela.
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : activeTab === 'noticias' ? (
       <div className="space-y-12">
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-12">
           {/* Content from the original 'resultados' sub-tab: Matches and Scorers */}
           <div className="space-y-8">
             <div className="space-y-8">
-              <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="flex items-center justify-between border-b border-border pt-[5px] pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">{isSimulationMode ? `Resultados Simulados` : 'Últimos Resultados Sincronizados'}</span>
@@ -1104,7 +1458,149 @@ export default function App() {
           </div>
         </div>
       </div>
-    ) : activeTab === 'resultados' ? (
+        ) : activeTab === 'settings' ? (
+          <div className="max-w-4xl mx-auto space-y-12 pb-20">
+            {/* Header section (Renaming - Only for Creator) */}
+            {selectedLeague?.creatorId === user?.uid && (
+              <div className="bg-card border border-border p-8 space-y-6">
+                <div className="flex items-center gap-3 border-b border-border pb-4">
+                  <Edit className="w-5 h-5 text-primary" />
+                  <h2 className="text-[14px] font-black uppercase tracking-widest text-primary">Gestionar Quiniela</h2>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_200px] gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Nombre de la Quiniela</label>
+                    <Input 
+                      value={editLeagueName}
+                      onChange={(e) => setEditLeagueName(e.target.value)}
+                      className="h-12 text-[14px] font-black uppercase tracking-tight"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button 
+                      onClick={updateLeagueName}
+                      className="w-full h-12 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20"
+                    >
+                      Guardar Cambios
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Invitations section (Only for Creator) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              {selectedLeague?.creatorId === user?.uid && (
+                <div className="bg-card border border-border p-8 space-y-6">
+                  <div className="flex items-center gap-3 border-b border-border pb-4">
+                    <UserPlus className="w-5 h-5 text-sky-400" />
+                    <h3 className="text-[12px] font-black uppercase tracking-widest text-primary">Invitar Usuarios</h3>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input 
+                        placeholder="BUSCAR POR NOMBRE..." 
+                        className="pl-10 h-11 text-[11px] font-black uppercase tracking-widest"
+                        value={userSearchTerm}
+                        onChange={(e) => searchUsers(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                      {foundUsers.length > 0 ? (
+                        foundUsers.map(u => (
+                          <div key={u.uid} className="flex items-center justify-between p-3 bg-primary/5 border border-primary/10 hover:bg-primary/10 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <img src={u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.uid}`} className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
+                              <span className="text-[11px] font-black uppercase truncate max-w-[120px]">{u.displayName}</span>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => inviteUser(u.uid)}
+                              className="h-8 w-8 p-0 text-sky-400 hover:bg-sky-400 hover:text-white"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))
+                      ) : userSearchTerm.length >= 3 ? (
+                        <p className="text-[10px] text-muted-foreground uppercase text-center py-4">No se encontraron usuarios</p>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground uppercase text-center py-10 opacity-50 italic">Busca amigos para invitarlos a tu quiniela</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className={cn("bg-card border border-border p-8 space-y-6", selectedLeague?.creatorId !== user?.uid && "col-span-full")}>
+                <div className="flex items-center gap-3 border-b border-border pb-4">
+                  <Info className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-[12px] font-black uppercase tracking-widest text-primary">Información de Acceso</h3>
+                </div>
+                <div className="space-y-4">
+                   <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-bold">
+                    ID único de la quiniela. Compártelo con las personas que desees invitar.
+                  </p>
+                  <div className="p-6 bg-black/20 border-2 border-dashed border-primary/30 text-center space-y-3">
+                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">ID de esta Quiniela</span>
+                    <p className="text-[16px] font-mono font-black text-primary select-all break-all">{selectedLeagueId}</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedLeagueId || '');
+                        toast.success('ID copiado');
+                      }}
+                      className="text-[10px] font-black uppercase h-9 border-primary/30 shadow-inner group transition-all"
+                    >
+                      <Share2 className="w-3 h-3 mr-2 group-hover:scale-110 transition-transform" />
+                      Copiar ID
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-destructive/10 border border-destructive/30 p-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-1 text-center md:text-left">
+                  <h3 className="text-[14px] font-black uppercase tracking-tight text-destructive">Zona de Peligro</h3>
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase">
+                    {selectedLeague?.creatorId === user?.uid 
+                      ? 'Eliminar permanentemente la quiniela y todo su progreso.' 
+                      : 'Salir de esta quiniela. Ya no podrás ver sus datos a menos que te vuelvas a unir.'}
+                  </p>
+                </div>
+                <Button 
+                  variant="destructive"
+                  onClick={() => {
+                    const isCreator = selectedLeague?.creatorId === user?.uid;
+                    const confirmMsg = isCreator 
+                      ? '¿ESTÁS SEGURO? Se borrará permanentemente la quiniela y todos sus datos.' 
+                      : '¿Seguro que deseas salir de esta quiniela?';
+                    
+                    if (confirm(confirmMsg)) {
+                      if (isCreator) {
+                        deleteLeague(selectedLeagueId || '');
+                      } else {
+                        leaveLeague(selectedLeagueId || '');
+                      }
+                      setSelectedLeagueId(null);
+                    }
+                  }}
+                  className="h-12 px-10 text-[10px] font-black uppercase tracking-widest"
+                >
+                  {selectedLeague?.creatorId === user?.uid ? 'Eliminar Quiniela' : 'Salir de la Quiniela'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'resultados' ? (
       <div className="space-y-12">
         <div className="space-y-20">
             <div className="space-y-8">
@@ -1351,13 +1847,15 @@ export default function App() {
                       })()}
                     </div>
                   </div>
+                  </div>
                 </div>
               </div>
             </div>
-            </div>
           </div>
         ) : null}
-      </main>
+      </>
+    )}
+    </main>
 
 
       {/* Footer */}

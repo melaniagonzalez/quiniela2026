@@ -24,6 +24,25 @@ export interface Prediction {
   awayScore: number | null;
 }
 
+export interface League {
+  id: string;
+  name: string;
+  creatorId: string;
+  creatorName: string;
+  memberUids: string[];
+  createdAt: string;
+  isPrivate: boolean;
+}
+
+export interface LeagueMember {
+  uid: string;
+  displayName: string;
+  photoURL?: string;
+  totalPoints: number;
+  correctResults: number;
+  correctWinners: number;
+}
+
 export interface GroupStanding {
   teamId: string;
   played: number;

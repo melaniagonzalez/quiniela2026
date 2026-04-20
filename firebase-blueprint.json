@@ -38,12 +38,31 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Sincronizado el..." }
       },
       "required": ["id", "homeScore", "awayScore", "status"]
+    },
+    "League": {
+      "title": "League",
+      "description": "Una liga o grupo de amigos para competir en la quiniela",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "memberUids": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isPrivate": { "type": "boolean" }
+      },
+      "required": ["id", "name", "creatorId", "memberUids"]
     }
   },
   "firestore": {
     "/results/{matchId}": {
       "schema": "ActualMatch",
       "description": "Resultados oficiales sincronizados"
+    },
+    "/leagues/{leagueId}": {
+      "schema": "League",
+      "description": "Definición de las ligas"
     },
     "/users/{userId}": {
       "schema": "UserProfile",
