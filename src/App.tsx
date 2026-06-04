@@ -758,6 +758,27 @@ export default function App() {
         role: 'admin',
         maxLeaguesAllowed: 3
       }, { merge: true });
+
+      // Update user profile flags as approved admin
+      try {
+        await updateDoc(doc(db, 'users', request.uid), {
+          isAdmin: true,
+          adminRequestStatus: 'approved',
+          adminRole: 'admin'
+        });
+      } catch (err) {
+        await setDoc(doc(db, 'users', request.uid), {
+          uid: request.uid,
+          displayName: request.displayName || 'Administrador',
+          email: emailLower,
+          searchName: (request.displayName || 'Administrador').toLowerCase(),
+          searchEmail: emailLower,
+          photoURL: request.photoURL || '',
+          isAdmin: true,
+          adminRequestStatus: 'approved',
+          adminRole: 'admin'
+        }, { merge: true });
+      }
       
       toast.success(`Solicitud de ${request.email} aprobada correctamente`);
     } catch (error) {
@@ -780,6 +801,17 @@ export default function App() {
         try {
           await deleteDoc(doc(db, 'admins', docId));
         } catch (e) {
+          // ignore if doesn't exist
+        }
+
+        // Update user profile flags as rejected
+        try {
+          await updateDoc(doc(db, 'users', request.uid), {
+            isAdmin: false,
+            adminRequestStatus: 'rejected',
+            adminRole: 'none'
+          });
+        } catch (err) {
           // ignore if doesn't exist
         }
         
@@ -1194,15 +1226,46 @@ export default function App() {
         // Ensure user profile exists in Firestore
         const userRef = doc(db, 'users', currentUser.uid);
         try {
+          const emailLower = currentUser.email?.toLowerCase() || '';
+          const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+          
+          let isReallyAdmin = isAdminEmail(currentUser.email);
+          let adminRole = isReallyAdmin ? (emailLower === 'melaniagonzalez@gmail.com' ? 'superadmin' : 'admin') : 'none';
+          let requestStatus = 'none';
+
+          // Check if admins document exists
+          if (!isReallyAdmin && docId) {
+            const adminDoc = await getDoc(doc(db, 'admins', docId));
+            if (adminDoc.exists()) {
+              isReallyAdmin = true;
+              adminRole = adminDoc.data().role || 'admin';
+            }
+          }
+
+          // Check requestStatus
+          const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
+          if (reqDoc.exists()) {
+            requestStatus = reqDoc.data().status || 'pending';
+            if (requestStatus === 'approved') {
+              isReallyAdmin = true;
+              adminRole = 'admin';
+            }
+          }
+
           const userDoc = await getDoc(userRef);
+          const defaultName = isReallyAdmin ? 'Administrador' : 'Usuario de Quiniela';
+          const finalDisplayName = currentUser.displayName || defaultName;
+
           const userData: any = {
             uid: currentUser.uid,
-            displayName: currentUser.displayName || 'Administrador',
+            displayName: finalDisplayName,
             email: currentUser.email || '',
-            searchName: (currentUser.displayName || 'Administrador').toLowerCase(),
+            searchName: finalDisplayName.toLowerCase(),
             searchEmail: (currentUser.email || '').toLowerCase(),
             photoURL: currentUser.photoURL || '',
-            isAdmin: true
+            isAdmin: isReallyAdmin,
+            adminRequestStatus: requestStatus,
+            adminRole: adminRole
           };
           
           if (!userDoc.exists()) {
@@ -1378,6 +1441,15 @@ export default function App() {
             notified: false,
             createdAt: new Date().toISOString()
           });
+          try {
+            await updateDoc(doc(db, 'users', currentUser.uid), {
+              adminRequestStatus: 'pending',
+              adminRole: 'none',
+              isAdmin: false
+            });
+          } catch (e) {
+            // ignore if document doesn't exist yet
+          }
           setJustRequestedInSession(true);
           setUser(currentUser);
           setAdminLoginState(null);
@@ -1386,7 +1458,8 @@ export default function App() {
       }
     } catch (error) {
       console.error("Authentication error during admin flow:", error);
-      toast.error('Error al iniciar sesión');
+      const errMsg = error instanceof Error ? error.message : String(error);
+      toast.error(`Error al iniciar sesión: ${errMsg}`);
       setUser(null);
       await signOut(auth);
       setAdminLoginState('ask');
@@ -4232,12 +4305,23 @@ export default function App() {
                             notified: false,
                             createdAt: new Date().toISOString()
                           });
+                          try {
+                            await updateDoc(doc(db, 'users', pendingApprovalUser.uid), {
+                              adminRequestStatus: 'pending',
+                              adminRole: 'none',
+                              isAdmin: false
+                            });
+                          } catch (e) {
+                            // ignore if document doesn't exist yet
+                          }
                           setJustRequestedInSession(true);
                           setUser(pendingApprovalUser);
                           setAdminLoginState(null);
                         } catch (e) {
                           console.error(e);
-                          toast.error("Error al enviar la solicitud");
+                          const errMsg = e instanceof Error ? e.message : String(e);
+                          toast.error(`Error al enviar la solicitud: ${errMsg}`);
+                          setAdminLoginState('ask');
                         }
                       }
                     }}
