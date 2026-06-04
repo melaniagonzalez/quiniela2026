@@ -16,11 +16,11 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.email == "melaniagonzalez@gmail.com" ||
+        (exists(/databases/{database}/documents/users/$(request.auth.uid)) && 
+         get(/databases/{database}/documents/users/$(request.auth.uid)).data.adminRole == "superadmin") ||
         ('email' in request.auth.token && (
-          (exists(/databases/{database}/documents/admins/$(request.auth.token.email)) && 
-           get(/databases/{database}/documents/admins/$(request.auth.token.email)).data.role == "superadmin") ||
-          (exists(/databases/{database}/documents/admins/$(request.auth.token.email.lower())) && 
-           get(/databases/{database}/documents/admins/$(request.auth.token.email.lower())).data.role == "superadmin")
+          exists(/databases/{database}/documents/admins/$(request.auth.token.email)) && 
+          get(/databases/{database}/documents/admins/$(request.auth.token.email)).data.role == "superadmin"
         ))
       );
     }
@@ -35,10 +35,9 @@ service cloud.firestore {
          get(/databases/{database}/documents/users/$(request.auth.uid)).data.isAdmin == true) ||
         (exists(/databases/{database}/documents/adminRequests/$(request.auth.uid)) && 
          get(/databases/{database}/documents/adminRequests/$(request.auth.uid)).data.status == "approved") ||
-        ('email' in request.auth.token && (
-          exists(/databases/{database}/documents/admins/$(request.auth.token.email)) ||
-          exists(/databases/{database}/documents/admins/$(request.auth.token.email.lower()))
-        ))
+        ('email' in request.auth.token && 
+          exists(/databases/{database}/documents/admins/$(request.auth.token.email))
+        )
       );
     }
 
@@ -77,8 +76,7 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() ||
-        adminId == request.auth.token.email ||
-        adminId == request.auth.token.email.lower()
+        adminId == request.auth.token.email
       );
       allow write: if isSuperAdmin();
     }

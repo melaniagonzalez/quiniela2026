@@ -2946,7 +2946,7 @@ export default function App() {
                       )}
 
                       <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-                        {user && isAdminEmail(user.email) ? (
+                        {isApprovedAdmin ? (
                           isEditingName ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -3046,7 +3046,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {user && isAdminEmail(user.email) && activeParticipantId && (
+                    {isApprovedAdmin && activeParticipantId && (
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -3445,7 +3445,7 @@ export default function App() {
           <div className="space-y-12">
             <div className="max-w-4xl mx-auto bg-card border border-border">
               <div className="p-4 sm:p-8 border-b border-border bg-primary/5 flex flex-row justify-between items-center gap-4">
-                {user && isAdminEmail(user.email) && (
+                {isApprovedAdmin && (
                   <div className="flex items-center gap-2">
                     {!isAddingParticipant ? (
                       <Button 
@@ -3485,7 +3485,7 @@ export default function App() {
                     )}
                   </div>
                 )}
-                {(!user || !isAdminEmail(user.email)) && <div />}
+                {!isApprovedAdmin && <div />}
                 <div className="flex items-center gap-8 ml-auto">
                   <div className="text-center">
                     <p className="text-[18px] font-black text-lime">{leaderboard.length}</p>
@@ -3601,7 +3601,7 @@ export default function App() {
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right pr-3 sm:pr-8 pl-1.5 sm:pl-4">
                           <div className="flex items-center justify-end gap-1.5 sm:gap-2">
-                            {user && isAdminEmail(user.email) ? (
+                            {isApprovedAdmin ? (
                               <Button
                                 size="sm"
                                 variant="outline"
