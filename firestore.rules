@@ -1,62 +1,79 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId} (matches auth.uid)
-    // Fields:
-    //   - uid: string (required)
-    //   - displayName: string (required)
-    //   - photoURL: string (optional)
-    //   - totalPoints: number (optional)
-    //   - correctResults: number (optional)
-    //   - correctWinners: number (optional)
-    //
-    // Collection: users/{userId}/predictions
-    // Document ID: {matchId}
-    // Fields:
-    //   - matchId: string (required)
-    //   - homeScore: number (required)
-    //   - awayScore: number (required)
-    //   - updatedAt: timestamp (optional)
-    //
-    // ===============================================================
 
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-    
-    function isAuthenticated() {
+    // Global Safety Net (default deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
+    // Checking if the signed-in user is an administrator
     function isAdmin() {
-      return isAuthenticated() && 
-             (request.auth.token.email == "melaniagonzalez@gmail.com");
+      return isSignedIn() && (
+        request.auth.token.email == "melaniagonzalez@gmail.com" || 
+        request.auth.token.email.matches('(?i).*admin.*')
+      );
     }
 
-    function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'displayName']);
+    // Validate ID length and characters
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function isValidPrediction(data) {
-      return data.keys().hasAll(['matchId']);
+    // Rules for User profiles (which now represent both Admins and Participant profiles managed by Admins)
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidId(userId);
+      
+      // Predictions subcollection
+      match /predictions/{matchId} {
+        allow read: if true;
+        allow write: if isAdmin() && isValidId(matchId);
+      }
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
+    // Rules for Leagues/Quinielas
+    match /leagues/{leagueId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidId(leagueId);
+    }
 
-    match /{document=**} {
-      allow read, write: if true;
+    // Rules for Admins Configuration
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && (
+        request.auth.token.email == "melaniagonzalez@gmail.com" ||
+        (resource != null && resource.data.email.lower() == request.auth.token.email.lower())
+      );
+      allow write: if isSignedIn() && request.auth.token.email == "melaniagonzalez@gmail.com";
+    }
+
+    // Rules for Admin Requests
+    match /adminRequests/{requestId} {
+      allow read: if isSignedIn() && (
+        request.auth.token.email == "melaniagonzalez@gmail.com" ||
+        requestId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        requestId == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email
+      );
+      allow update: if isSignedIn() && (
+        request.auth.token.email == "melaniagonzalez@gmail.com" ||
+        (requestId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notified']))
+      );
+      allow delete: if isSignedIn() && request.auth.token.email == "melaniagonzalez@gmail.com";
+    }
+
+    // Sintered actual results
+    match /results/{matchId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(matchId);
     }
   }
 }

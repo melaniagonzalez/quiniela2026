@@ -1,0 +1,83 @@
+{
+  "explicacion": "Este archivo detalla la estructura y los resultados que entrega el endpoint '/api/sync/WC' (o '/api/results/WC') en nuestro backend.",
+  "caso_1_api_configurado_ejemplo": {
+    "info": "Si la clave FOOTBALL_DATA_KEY de football-data.org está en el archivo .env, el backend trae datos oficiales en tiempo real.",
+    "timestamp": 1780539384000,
+    "teams": [
+      {
+        "id": "758",
+        "name": "Uruguay",
+        "shortName": "Uruguay",
+        "tla": "URU",
+        "flag": "https://crests.thefootballapi.com/uruguay.svg",
+        "group": "A"
+      },
+      {
+        "id": "762",
+        "name": "Argentina",
+        "shortName": "Argentina",
+        "tla": "ARG",
+        "flag": "https://crests.thefootballapi.com/argentina.svg",
+        "group": "B"
+      }
+    ],
+    "matches": [
+      {
+        "id": "m456123",
+        "homeTeamId": "758",
+        "awayTeamId": "762",
+        "homeTeamName": "Uruguay",
+        "awayTeamName": "Argentina",
+        "homeTeamLogo": "https://crests.thefootballapi.com/uruguay.svg",
+        "awayTeamLogo": "https://crests.thefootballapi.com/argentina.svg",
+        "date": "2026-06-11T18:00:00Z",
+        "group": "A",
+        "stage": "GROUP_STAGE",
+        "stadium": "Estadio Azteca",
+        "matchday": 1,
+        "status": "SCHEDULED",
+        "actualHomeScore": null,
+        "actualAwayScore": null
+      }
+    ]
+  },
+  "caso_2_sin_api_key_por_defecto": {
+    "info": "Si FOOTBALL_DATA_KEY no está configurada, el API local responde vacía y el frontend utiliza la BASE DE DATOS LOCAL PRE-CARGADA (src/constants.ts).",
+    "endpoint_raw_response": {
+      "teams": [],
+      "matches": []
+    },
+    "fixture_local_utilizado_en_frontend_ejemplo": [
+      {
+        "id": "m1_a",
+        "homeTeamId": "mex",
+        "awayTeamId": "sen",
+        "homeTeamName": "México",
+        "awayTeamName": "Senegal",
+        "homeTeamLogo": null,
+        "awayTeamLogo": null,
+        "date": "2026-06-11T18:00:00Z",
+        "group": "A",
+        "stadium": "Azteca",
+        "matchday": 1,
+        "actualHomeScore": null,
+        "actualAwayScore": null
+      },
+      {
+        "id": "m7_d",
+        "homeTeamId": "usa",
+        "awayTeamId": "ned",
+        "homeTeamName": "Estados Unidos",
+        "awayTeamName": "Países Bajos",
+        "homeTeamLogo": null,
+        "awayTeamLogo": null,
+        "date": "2026-06-14T18:00:00Z",
+        "group": "D",
+        "stadium": "AT&T Stadium",
+        "matchday": 1,
+        "actualHomeScore": null,
+        "actualAwayScore": null
+      }
+    ]
+  }
+}

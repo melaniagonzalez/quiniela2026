@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -29,22 +29,249 @@ import { auth, db, googleProvider, handleFirestoreError, OperationType } from '.
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, onSnapshot, query, orderBy, limit, writeBatch, where, addDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, getDocs } from 'firebase/firestore';
 
+const ADMIN_EMAILS = ['melaniagonzalez@gmail.com'];
+const DYNAMIC_ADMIN_EMAILS = [...ADMIN_EMAILS];
+
+const isAdminEmail = (email: string | null) => {
+  if (!email) return false;
+  const lower = email.toLowerCase();
+  return DYNAMIC_ADMIN_EMAILS.includes(lower) || lower === 'melaniagonzalez@gmail.com';
+};
+
+const getDeterministicSimulationScore = (matchId: string): { home: number; away: number } => {
+  let hash = 0;
+  for (let i = 0; i < matchId.length; i++) {
+    hash = matchId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const home = Math.abs(hash % 4); // 0 to 3 goals
+  const away = Math.abs((hash >> 3) % 4); // 0 to 3 goals
+  return { home, away };
+};
+
+const AVATARS_LIST = [
+  { name: 'Sofia (Chica - Piel clara, pelo negro)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Sofia&skinColor=ffdbb4&hairColor=000000' },
+  { name: 'Elena (Chica - Piel clara, pelo castaño)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Elena&skinColor=ffdbb4&hairColor=4a3728' },
+  { name: 'Clara (Chica - Piel clara, pelo naranja)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Clara&skinColor=ffdbb4&hairColor=b55716' },
+  { name: 'Luna (Chica - Piel clara, pelo rosa)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Luna&skinColor=ffdbb4&hairColor=e54b80' },
+  { name: 'Maya (Chica - Piel morena, pelo negro)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Maya&skinColor=edb98a&hairColor=000000' },
+  { name: 'Chloe (Chica - Piel morena, pelo castaño)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Chloe&skinColor=d28943&hairColor=4a3728' },
+  { name: 'Zara (Chica - Piel negra, pelo negro)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Zara&skinColor=804005&hairColor=000000' },
+  { name: 'Zoe (Chica - Piel negra, pelo azul)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Zoe&skinColor=804005&hairColor=2c45ea' },
+  { name: 'Kael (Chico - Piel clara, pelo negro)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Kael&skinColor=ffdbb4&hairColor=000000' },
+  { name: 'Leo (Chico - Piel clara, pelo castaño)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Leo&skinColor=ffdbb4&hairColor=4a3728' },
+  { name: 'Max (Chico - Piel clara, pelo rubio)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Max&skinColor=ffdbb4&hairColor=e5c158' },
+  { name: 'Oliver (Chico - Piel clara, pelo azul)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Oliver&skinColor=ffdbb4&hairColor=2c45ea' },
+  { name: 'Alex (Chico - Piel morena, pelo negro)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Alex&skinColor=edb98a&hairColor=000000' },
+  { name: 'Sam (Chico - Piel morena, pelo castaño)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Sam&skinColor=d28943&hairColor=4a3728' },
+  { name: 'Mateo (Chico - Piel morena, pelo naranja)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Mateo&skinColor=d28943&hairColor=b55716' },
+  { name: 'Ryan (Chico - Piel negra, pelo negro)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Ryan&skinColor=804005&hairColor=1c1c1c' },
+  { name: 'Emma (Chica - Piel clara, pelo rubio)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Emma&skinColor=ffdbb4&hairColor=e5c158' },
+  { name: 'Julia (Chica - Piel clara, pelo largo café)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Julia&skinColor=ffdbb4&hairColor=4a3728' },
+  { name: 'Lucas (Chico - Piel clara, pelo verde corto)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Lucas&skinColor=ffdbb4&hairColor=2ca74a' },
+  { name: 'Sara (Chica - Piel clara, pelo corto castaño)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Sara&skinColor=ffdbb4&hairColor=4a3728' },
+  { name: 'Héctor (Chico - Piel morena, pelo canoso)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Hector&skinColor=edb98a&hairColor=e1e1e1' },
+  { name: 'Mia (Chica - Piel morena, pelo café)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Mia&skinColor=edb98a&hairColor=4a3728' },
+  { name: 'Aria (Chica - Piel clara, pelo morado)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Aria&skinColor=ffdbb4&hairColor=6c2ca7' },
+  { name: 'Marta (Señora - Piel morena, pelo gris)', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Marta&skinColor=d28943&hairColor=e1e1e1' }
+];
+
+const getAvatarForUser = (name: string): string => {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash % AVATARS_LIST.length);
+  return AVATARS_LIST[index].url;
+};
+
 export default function App() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedDate, setSimulatedDate] = useState('2026-06-11T00:00:00Z');
   const [clickCount, setClickCount] = useState(0);
+
+  const [leagues, setLeagues] = useState<League[]>([]);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const selectedLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+
+  const [guestLeagueId, setGuestLeagueId] = useState<string | null>(() => localStorage.getItem('guest_league_id'));
+  const [guestLeague, setGuestLeague] = useState<League | null>(null);
 
   const [apiTeams, setApiTeams] = useState<Team[]>([]);
   const [apiMatches, setApiMatches] = useState<Match[]>([]);
   const [apiStandings, setApiStandings] = useState<any[]>([]);
   const [apiScorers, setApiScorers] = useState<any[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dbLastUpdated, setDbLastUpdated] = useState<string | null>(null);
+  const [nowTimeState, setNowTimeState] = useState<number>(Date.now());
   
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTimeState(Date.now());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  useEffect(() => {
+    const fetchDbStatus = async () => {
+      try {
+        const res = await fetch('/api/db-status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.lastUpdated) {
+            setDbLastUpdated(data.lastUpdated);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching db status:', err);
+      }
+    };
+    fetchDbStatus();
+  }, [isSyncing]);
+
   const currentMatches = useMemo(() => {
     // Both modes now use 2026 data, but simulation uses local constants with mocked results
     const baseMatches = isSimulationMode ? MATCHES : (apiMatches.length > 0 ? apiMatches : MATCHES);
-    return [...baseMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [isSimulationMode, apiMatches]);
+    let processedMatches = baseMatches.map(m => ({ ...m }));
+    
+    if (isSimulationMode) {
+      // First, map simulated scores to make them actual results in simulator mode
+      processedMatches = processedMatches.map(m => {
+        const isFinished = new Date(m.date) < new Date(simulatedDate);
+        if (isFinished) {
+          const simScore = getDeterministicSimulationScore(m.id);
+          return {
+            ...m,
+            actualHomeScore: simScore.home,
+            actualAwayScore: simScore.away
+          };
+        }
+        return m;
+      });
+
+      // Compute group standings based on simulated results
+      const groups = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+      const groupStandings: Record<string, { teamId: string; points: number; gd: number; gf: number }[]> = {};
+      
+      groups.forEach(g => {
+        const groupTeams = TEAMS.filter(t => t.group === g);
+        const teamStats: Record<string, { teamId: string; points: number; gd: number; gf: number }> = {};
+        groupTeams.forEach(t => {
+          teamStats[t.id] = { teamId: t.id, points: 0, gd: 0, gf: 0 };
+        });
+        
+        const groupMatches = processedMatches.filter(m => m.group === g && m.matchday && m.matchday <= 3);
+        groupMatches.forEach(m => {
+          if (!m.homeTeamId || !m.awayTeamId) return;
+          const hs = m.actualHomeScore;
+          const as = m.actualAwayScore;
+          if (hs !== undefined && hs !== null && as !== undefined && as !== null) {
+            if (teamStats[m.homeTeamId]) {
+              teamStats[m.homeTeamId].gf += hs;
+              teamStats[m.homeTeamId].gd += (hs - as);
+            }
+            if (teamStats[m.awayTeamId]) {
+              teamStats[m.awayTeamId].gf += as;
+              teamStats[m.awayTeamId].gd += (as - hs);
+            }
+            if (hs > as) {
+              if (teamStats[m.homeTeamId]) teamStats[m.homeTeamId].points += 3;
+            } else if (as > hs) {
+              if (teamStats[m.awayTeamId]) teamStats[m.awayTeamId].points += 3;
+            } else {
+              if (teamStats[m.homeTeamId]) teamStats[m.homeTeamId].points += 1;
+              if (teamStats[m.awayTeamId]) teamStats[m.awayTeamId].points += 1;
+            }
+          }
+        });
+        
+        groupStandings[g] = Object.values(teamStats).sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+      });
+
+      // Find the 8 best third place teams
+      const thirdPlaces: { teamId: string; points: number; gd: number; gf: number }[] = [];
+      groups.forEach(g => {
+        if (groupStandings[g] && groupStandings[g][2]) {
+          thirdPlaces.push(groupStandings[g][2]);
+        }
+      });
+      const bestThirdPlacesSorted = [...thirdPlaces].sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+      const best8Third = bestThirdPlacesSorted.slice(0, 8).map(x => x.teamId);
+
+      // Helper to get winner ID of a match with tie-breaker
+      const getWinnerId = (m: any) => {
+        if (!m.homeTeamId || !m.awayTeamId) return '';
+        const hs = m.actualHomeScore;
+        const as = m.actualAwayScore;
+        if (hs === undefined || hs === null || as === undefined || as === null) return '';
+        if (hs > as) return m.homeTeamId;
+        if (as > hs) return m.awayTeamId;
+        // Deterministic tie-breaker
+        let val = 0;
+        for (let i = 0; i < m.id.length; i++) {
+          val += m.id.charCodeAt(i);
+        }
+        return val % 2 === 0 ? m.homeTeamId : m.awayTeamId;
+      };
+
+      // 1. Resolve Matchday 4 (LAST_32)
+      const last32Matches = processedMatches.filter(m => m.matchday === 4);
+      last32Matches.forEach((m, idx) => {
+        let homeId = '';
+        let awayId = '';
+        if (idx < 12) {
+          const currentGroup = groups[idx];
+          const nextGroup = groups[(idx + 1) % 12];
+          homeId = groupStandings[currentGroup]?.[0]?.teamId || '';
+          awayId = groupStandings[nextGroup]?.[1]?.teamId || '';
+        } else {
+          const thirdIdx = idx - 12; // 0, 1, 2, 3
+          const oppIdx = 7 - thirdIdx; // 7, 6, 5, 4
+          homeId = best8Third[thirdIdx] || '';
+          awayId = best8Third[oppIdx] || '';
+        }
+        m.homeTeamId = (homeId || null) as any;
+        m.awayTeamId = (awayId || null) as any;
+      });
+
+      // 2. Resolve Matchday 5 (ROUND_OF_16)
+      const last16Matches = processedMatches.filter(m => m.matchday === 5);
+      last16Matches.forEach((m, idx) => {
+        const matchA = last32Matches[idx * 2];
+        const matchB = last32Matches[idx * 2 + 1];
+        m.homeTeamId = ((matchA ? getWinnerId(matchA) : '') || null) as any;
+        m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
+      });
+
+      // 3. Resolve Matchday 6 (QUARTER_FINALS)
+      const quarterMatches = processedMatches.filter(m => m.matchday === 6);
+      quarterMatches.forEach((m, idx) => {
+        const matchA = last16Matches[idx * 2];
+        const matchB = last16Matches[idx * 2 + 1];
+        m.homeTeamId = ((matchA ? getWinnerId(matchA) : '') || null) as any;
+        m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
+      });
+
+      // 4. Resolve Matchday 7 (SEMI_FINALS)
+      const semiMatches = processedMatches.filter(m => m.matchday === 7);
+      semiMatches.forEach((m, idx) => {
+        const matchA = quarterMatches[idx * 2];
+        const matchB = quarterMatches[idx * 2 + 1];
+        m.homeTeamId = ((matchA ? getWinnerId(matchA) : '') || null) as any;
+        m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
+      });
+
+      // 5. Resolve Matchday 8 (FINAL)
+      const finalMatches = processedMatches.filter(m => m.matchday === 8);
+      finalMatches.forEach((m, idx) => {
+        const matchA = semiMatches[idx * 2];
+        const matchB = semiMatches[idx * 2 + 1];
+        m.homeTeamId = ((matchA ? getWinnerId(matchA) : '') || null) as any;
+        m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
+      });
+    }
+    
+    return processedMatches.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [isSimulationMode, apiMatches, simulatedDate]);
 
   const currentTeams = isSimulationMode ? TEAMS : (apiTeams.length > 0 ? apiTeams : TEAMS);
 
@@ -52,16 +279,16 @@ export default function App() {
     return isSimulationMode ? SCORERS_MOCK : apiScorers;
   }, [isSimulationMode, apiScorers]);
 
-  const simulatedStandings = useMemo(() => {
-    if (!isSimulationMode) return [];
-    
+  const computedStandings = useMemo(() => {
     const groupsMap: Record<string, any[]> = {};
-    MATCHES.forEach(m => {
-      if (m.group && m.group.length === 1) { // Standard groups A-H in constants
+    currentMatches.forEach(m => {
+      if (m.group && m.group.length === 1) { // Standard groups A-L
         if (!groupsMap[m.group]) groupsMap[m.group] = [];
         groupsMap[m.group].push(m);
       }
     });
+
+    const compareDate = isSimulationMode ? new Date(simulatedDate) : new Date();
 
     return Object.entries(groupsMap).sort().map(([groupName, matches]) => {
       const stats: Record<string, any> = {};
@@ -69,23 +296,25 @@ export default function App() {
       matches.forEach(m => {
         [m.homeTeamId, m.awayTeamId].forEach(id => {
           if (!stats[id]) {
-            const team = TEAMS.find(t => t.id === id);
+            const team = currentTeams.find(t => t.id === id);
             stats[id] = { id, name: team?.name || id, crest: team?.flag || '🏳️', playedGames: 0, points: 0, goalDifference: 0 };
           }
         });
 
-        if (new Date(m.date) < new Date(simulatedDate)) {
-          const hs = m.actualHomeScore ?? 0;
-          const as = m.actualAwayScore ?? 0;
-          stats[m.homeTeamId].playedGames++;
-          stats[m.awayTeamId].playedGames++;
-          stats[m.homeTeamId].goalDifference += (hs - as);
-          stats[m.awayTeamId].goalDifference += (as - hs);
-          if (hs > as) stats[m.homeTeamId].points += 3;
-          else if (as > hs) stats[m.awayTeamId].points += 3;
-          else {
-            stats[m.homeTeamId].points += 1;
-            stats[m.awayTeamId].points += 1;
+        if (new Date(m.date) < compareDate) {
+          const hs = m.actualHomeScore !== undefined && m.actualHomeScore !== null ? m.actualHomeScore : null;
+          const as = m.actualAwayScore !== undefined && m.actualAwayScore !== null ? m.actualAwayScore : null;
+          if (hs !== null && as !== null) {
+            stats[m.homeTeamId].playedGames++;
+            stats[m.awayTeamId].playedGames++;
+            stats[m.homeTeamId].goalDifference += (hs - as);
+            stats[m.awayTeamId].goalDifference += (as - hs);
+            if (hs > as) stats[m.homeTeamId].points += 3;
+            else if (as > hs) stats[m.awayTeamId].points += 3;
+            else {
+              stats[m.homeTeamId].points += 1;
+              stats[m.awayTeamId].points += 1;
+            }
           }
         }
       });
@@ -95,31 +324,97 @@ export default function App() {
         table: Object.values(stats).sort((a,b) => b.points - a.points || b.goalDifference - a.goalDifference)
       };
     });
-  }, [isSimulationMode, simulatedDate]);
+  }, [isSimulationMode, simulatedDate, currentMatches, currentTeams]);
 
   const [user, setUser] = useState<User | null>(null);
+  const activeLeagueId = user ? selectedLeagueId : guestLeagueId;
+  const activeLeague = useMemo(() => {
+    if (user) {
+      return leagues.find(l => l.id === selectedLeagueId) || null;
+    }
+    return guestLeague;
+  }, [user, leagues, selectedLeagueId, guestLeague]);
+
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [predictions, setPredictions] = useState<Prediction[]>(() => 
     currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }))
   );
 
-  // Update predictions when switching modes or when API data arrives
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
+  const [isAddingParticipant, setIsAddingParticipant] = useState(false);
+  const [newParticipantName, setNewParticipantName] = useState('');
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+
+  // Admins state & parameters
+  const [dbAdmins, setDbAdmins] = useState<any[]>([]);
+  const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
+  const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
+  const [adminFormEmail, setAdminFormEmail] = useState('');
+  const [adminFormRole, setAdminFormRole] = useState<'admin' | 'superadmin'>('admin');
+  const [adminFormMaxLeagues, setAdminFormMaxLeagues] = useState<number>(3);
+  const [editingAdminId, setEditingAdminId] = useState<string | null>(null);
+  const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [allRegisteredUsers, setAllRegisteredUsers] = useState<any[]>([]);
+  const [allLeagues, setAllLeagues] = useState<any[]>([]);
+
+  // Admin access request and login wizard states
+  const [adminRequests, setAdminRequests] = useState<any[]>([]);
+  const [adminLoginState, setAdminLoginState] = useState<string | null>(null);
+  const [pendingApprovalUser, setPendingApprovalUser] = useState<any | null>(null);
+
+  // State variables for editing participant and delete confirmation dialog
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameValue, setEditingNameValue] = useState('');
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [participantToDelete, setParticipantToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const maxLeaguesAllowed = currentUserAdminConfig?.maxLeaguesAllowed ?? 3;
+
+  // Clear news data when switching modes or when API data arrives
   useEffect(() => {
-    setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
     setNewsData(null);
   }, [isSimulationMode, apiMatches]);
 
-  // Sync World Cup Data on Mount
+  // Sync Guest League Document if viewer is in Guest Spectator mode
   useEffect(() => {
-    if (!isSimulationMode) {
-      syncWorldCupData();
+    if (!user && guestLeagueId) {
+      const getLeagueDoc = async () => {
+        try {
+          const docRef = doc(db, 'leagues', guestLeagueId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setGuestLeague({ id: docSnap.id, ...docSnap.data() } as League);
+          } else {
+            console.error("League not found");
+            setGuestLeague(null);
+            setGuestLeagueId(null);
+            localStorage.removeItem('guest_league_id');
+            toast.error('No se encontró ninguna quiniela con este código');
+          }
+        } catch (error) {
+          console.error("Error loading guest league doc:", error);
+        }
+      };
+      getLeagueDoc();
+    } else if (user) {
+      setGuestLeague(null);
+      setGuestLeagueId(null);
+      localStorage.removeItem('guest_league_id');
     }
-  }, [isSimulationMode]);
+  }, [user, guestLeagueId]);
 
-  const syncWorldCupData = async () => {
+  // Sync Competition Data
+  useEffect(() => {
+    if (!isSimulationMode && activeLeague?.competition) {
+      syncCompetitionData(activeLeague.competition);
+    }
+  }, [isSimulationMode, activeLeague?.competition]);
+
+  const syncCompetitionData = async (comp: string) => {
     setIsSyncing(true);
     try {
-      const response = await fetch('/api/world-cup-sync');
+      const response = await fetch(`/api/sync/${comp}`);
       if (!response.ok) throw new Error('Sync failed');
       const data = await response.json();
       if (data.teams && data.matches) {
@@ -127,7 +422,7 @@ export default function App() {
         setApiMatches(data.matches);
         setApiStandings(data.standings || []);
         setApiScorers(data.scorers || []);
-        toast.success('Datos del Mundial 2026 sincronizados');
+        toast.success(`Datos de ${comp === 'WC' ? 'el Mundial' : 'la Champions'} sincronizados`);
       }
     } catch (error) {
       console.error("Sync error:", error);
@@ -140,13 +435,23 @@ export default function App() {
   const [newsData, setNewsData] = useState<any>(null);
   const [loadingNews, setLoadingNews] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [activeTab, setActiveTab] = useState('quiniela');
+  const [activeTab, setActiveTab] = useState('leaderboard');
+  const [predictionsEditMode, setPredictionsEditMode] = useState(false);
+  const [predictionsReadOnly, setPredictionsReadOnly] = useState(false);
 
-  const [leagues, setLeagues] = useState<League[]>([]);
-  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
-  const selectedLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+  // Reset navigation and edit states when entering or leaving a pool
+  useEffect(() => {
+    setActiveTab('leaderboard');
+    setPredictionsEditMode(false);
+    setActiveParticipantId(null);
+    setPredictionsReadOnly(false);
+  }, [activeLeagueId]);
+
+  const [predictionsStats, setPredictionsStats] = useState<Record<string, { filled: number; total: number }>>({});
+  const [participantsPredictions, setParticipantsPredictions] = useState<Record<string, Prediction[]>>({});
 
   const [isCreatingLeague, setIsCreatingLeague] = useState(false);
+  const [newLeagueCompetition, setNewLeagueCompetition] = useState<'WC' | 'CL'>('WC');
   const [newLeagueName, setNewLeagueName] = useState('');
   const [leagueInvites, setLeagueInvites] = useState<Record<string, string>>({});
   const [leagueLeaderboards, setLeagueLeaderboards] = useState<Record<string, any[]>>({});
@@ -162,31 +467,417 @@ export default function App() {
     }
   }, [user]);
 
+  // Load ALL leagues for the Super Admin
+  useEffect(() => {
+    if (user && user.email === 'melaniagonzalez@gmail.com' && showSuperAdminPanel) {
+      const unsubscribe = onSnapshot(collection(db, 'leagues'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllLeagues(list);
+      }, (error) => {
+        console.error("Error loading all leagues:", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, showSuperAdminPanel]);
+
+  // Load ALL user profiles for the Super Admin
+  useEffect(() => {
+    if (user && user.email === 'melaniagonzalez@gmail.com' && showSuperAdminPanel) {
+      const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllRegisteredUsers(list);
+      }, (error) => {
+        console.error("Error loading all users:", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, showSuperAdminPanel]);
+
+  // Load ALL admin requests for the Super Admin
+  useEffect(() => {
+    if (user && user.email === 'melaniagonzalez@gmail.com' && showSuperAdminPanel) {
+      const unsubscribe = onSnapshot(collection(db, 'adminRequests'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAdminRequests(list);
+      }, (error) => {
+        console.error("Error loading admin requests:", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, showSuperAdminPanel]);
+
+  // Fetch and manage all authorized admins
+  useEffect(() => {
+    if (user) {
+      if (user.email === 'melaniagonzalez@gmail.com') {
+        const unsubscribe = onSnapshot(collection(db, 'admins'), async (snapshot) => {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+          
+          // Perform automatic clean up of older seeded placeholders if any exist
+          const dummyIds = ['admin_quiniela_com', 'administrador_quiniela_com'];
+          let hasDummy = false;
+          for (const docObj of snapshot.docs) {
+            if (dummyIds.includes(docObj.id) || docObj.id.startsWith('admin_') || docObj.id.startsWith('administrador_')) {
+              hasDummy = true;
+              try {
+                await deleteDoc(doc(db, 'admins', docObj.id));
+              } catch (e) {
+                console.error("Clean up error:", e);
+              }
+            }
+          }
+
+          if (hasDummy) {
+            // Let the next snapshot handle the updated list cleanly
+            return;
+          }
+
+          const filteredList = list.filter(adm => adm.email !== 'admin@quiniela.com' && adm.email !== 'administrador@quiniela.com');
+
+          if (filteredList.length === 0) {
+            console.log("Seeding default admins...");
+            const initialAdmins = [
+              { email: 'melaniagonzalez@gmail.com', role: 'superadmin', maxLeaguesAllowed: 10 }
+            ];
+            const batch = writeBatch(db);
+            initialAdmins.forEach(adm => {
+              const docId = adm.email.replace(/[^a-z0-9]/g, '_');
+              batch.set(doc(db, 'admins', docId), adm);
+            });
+            try {
+              await batch.commit();
+            } catch (err) {
+              console.error("Error seeding initial admins:", err);
+            }
+          } else {
+            setDbAdmins(filteredList);
+            // Sync with dynamic admin emails array
+            filteredList.forEach(adm => {
+              const lowerEmail = adm.email.toLowerCase();
+              if (!DYNAMIC_ADMIN_EMAILS.includes(lowerEmail)) {
+                DYNAMIC_ADMIN_EMAILS.push(lowerEmail);
+              }
+            });
+          }
+        }, (error) => {
+          console.error("Error loading admins list:", error);
+        });
+        return () => unsubscribe();
+      }
+    }
+  }, [user]);
+
+  // Fetch the current user admin permissions config
+  useEffect(() => {
+    if (user && user.email) {
+      const sanitizedId = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const unsubscribe = onSnapshot(doc(db, 'admins', sanitizedId), (docSnap) => {
+        if (docSnap.exists()) {
+          setCurrentUserAdminConfig(docSnap.data());
+        } else {
+          if (isAdminEmail(user.email)) {
+            setCurrentUserAdminConfig({
+              email: user.email,
+              role: user.email === 'melaniagonzalez@gmail.com' ? 'superadmin' : 'admin',
+              maxLeaguesAllowed: user.email === 'melaniagonzalez@gmail.com' ? 10 : 3
+            });
+          } else {
+            setCurrentUserAdminConfig(null);
+          }
+        }
+      }, (error) => {
+        if (isAdminEmail(user.email)) {
+          setCurrentUserAdminConfig({
+            email: user.email,
+            role: user.email === 'melaniagonzalez@gmail.com' ? 'superadmin' : 'admin',
+            maxLeaguesAllowed: user.email === 'melaniagonzalez@gmail.com' ? 10 : 3
+          });
+        } else {
+          setCurrentUserAdminConfig(null);
+        }
+      });
+      return () => unsubscribe();
+    } else {
+      setCurrentUserAdminConfig(null);
+    }
+  }, [user]);
+
+  // If a league is selected, exit from the Super Admin Panel
+  useEffect(() => {
+    if (selectedLeagueId) {
+      setShowSuperAdminPanel(false);
+    }
+  }, [selectedLeagueId]);
+
+  // Sincronizar participantes de la quiniela seleccionada
+  useEffect(() => {
+    if (!activeLeagueId) {
+      setParticipants([]);
+      setActiveParticipantId(null);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'users'),
+      where('leagueId', '==', activeLeagueId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data());
+      // Ordenar por totalPoints descendente para que actúe como leaderboard
+      const sorted = list.sort((a: any, b: any) => (b.totalPoints || 0) - (a.totalPoints || 0));
+      setParticipants(sorted);
+      
+      // Auto-seleccionar el primer participante si ninguno está seleccionado
+      if (sorted.length > 0) {
+        setActiveParticipantId(prev => {
+          if (prev && sorted.some((p: any) => p.uid === prev)) {
+            return prev;
+          }
+          return sorted[0].uid;
+        });
+      } else {
+        setActiveParticipantId(null);
+      }
+    }, (error) => {
+      console.error("Error loading participants:", error);
+      toast.error("Error al cargar los participantes de la quiniela");
+    });
+
+    return () => unsubscribe();
+  }, [activeLeagueId]);
+
+  const [guestInputCode, setGuestInputCode] = useState('');
+
+  const handleJoinAsGuest = async () => {
+    const code = guestInputCode.trim();
+    if (!code) {
+      toast.error('Por favor ingresa un código de quiniela');
+      return;
+    }
+    
+    const loadingToast = toast.loading('Buscando quiniela...');
+    try {
+      const docRef = doc(db, 'leagues', code);
+      const docSnap = await getDoc(docRef);
+      toast.dismiss(loadingToast);
+      if (docSnap.exists()) {
+        const leagueData = { id: docSnap.id, ...docSnap.data() } as League;
+        setGuestLeague(leagueData);
+        setGuestLeagueId(code);
+        localStorage.setItem('guest_league_id', code);
+        toast.success(`Quiniela "${leagueData.name}" cargada correctamente`);
+      } else {
+        toast.error('No se encontró ninguna quiniela con este código');
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      console.error("Error joining as guest:", error);
+      toast.error('Error al unirse a la quiniela');
+    }
+  };
+
+  // Admin Management Handlers
+  const handleSaveAdmin = async (e: any) => {
+    e.preventDefault();
+    if (!adminFormEmail.trim()) {
+      toast.error('El correo electrónico es obligatorio');
+      return;
+    }
+    const emailLower = adminFormEmail.trim().toLowerCase();
+    
+    setIsSavingAdmin(true);
+    const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+    
+    try {
+      await setDoc(doc(db, 'admins', docId), {
+        email: emailLower,
+        role: adminFormRole,
+        maxLeaguesAllowed: Number(adminFormMaxLeagues) || 3
+      }, { merge: true });
+      
+      toast.success(editingAdminId ? 'Administrador actualizado' : 'Administrador autorizado');
+      setAdminFormEmail('');
+      setAdminFormRole('admin');
+      setAdminFormMaxLeagues(3);
+      setEditingAdminId(null);
+    } catch (error) {
+      console.error("Error saving admin:", error);
+      toast.error('No se pudo guardar el administrador. Revisa tus permisos.');
+    } finally {
+      setIsSavingAdmin(false);
+    }
+  };
+
+  const handleEditAdminClick = (admin: any) => {
+    setEditingAdminId(admin.id);
+    setAdminFormEmail(admin.email);
+    setAdminFormRole(admin.role);
+    setAdminFormMaxLeagues(admin.maxLeaguesAllowed || 3);
+  };
+
+  // Approval Handlers for Admin Requests
+  const handleApproveRequest = async (request: any) => {
+    try {
+      const emailLower = request.email.trim().toLowerCase();
+      const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+      
+      // Update request status
+      await updateDoc(doc(db, 'adminRequests', request.uid), {
+        status: 'approved',
+        notified: false
+      });
+      
+      // Add user to authorized admins list
+      await setDoc(doc(db, 'admins', docId), {
+        email: emailLower,
+        role: 'admin',
+        maxLeaguesAllowed: 3
+      }, { merge: true });
+      
+      toast.success(`Solicitud de ${request.email} aprobada correctamente`);
+    } catch (error) {
+      console.error("Error approving admin request:", error);
+      toast.error("No se pudo aprobar la solicitud");
+    }
+  };
+
+  const handleRejectRequest = async (request: any) => {
+    if (confirm(`¿Estás seguro de que deseas rechazar la solicitud de ${request.email}?`)) {
+      try {
+        await updateDoc(doc(db, 'adminRequests', request.uid), {
+          status: 'rejected',
+          notified: true
+        });
+        
+        // Ensure not in admins collection just in case
+        const emailLower = request.email.trim().toLowerCase();
+        const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+        try {
+          await deleteDoc(doc(db, 'admins', docId));
+        } catch (e) {
+          // ignore if doesn't exist
+        }
+        
+        toast.info(`Solicitud de ${request.email} rechazada`);
+      } catch (error) {
+        console.error("Error rejecting admin request:", error);
+        toast.error("No se pudo rechazar la solicitud");
+      }
+    }
+  };
+
+  const handleDeleteAdminClick = async (adminId: string, adminEmail: string) => {
+    if (adminEmail === 'melaniagonzalez@gmail.com') {
+      toast.error('No puedes revocar los permisos al Súper Administrador primario');
+      return;
+    }
+    if (confirm(`¿Estás seguro de que deseas revocar el acceso de administrador para ${adminEmail}?`)) {
+      try {
+        await deleteDoc(doc(db, 'admins', adminId));
+        toast.success('Administrador removido correctamente');
+        if (editingAdminId === adminId) {
+          setEditingAdminId(null);
+          setAdminFormEmail('');
+          setAdminFormRole('admin');
+          setAdminFormMaxLeagues(3);
+        }
+      } catch (error) {
+        console.error("Error deleting admin:", error);
+        toast.error('No se pudo eliminar el administrador');
+      }
+    }
+  };
+
+  const getLeaguesCreatedCount = (email: string) => {
+    const matchedUser = allRegisteredUsers.find(
+      u => u.email?.toLowerCase() === email.toLowerCase()
+    );
+    if (!matchedUser) return 0;
+    return allLeagues.filter(l => l.creatorId === matchedUser.uid).length;
+  };
+
+  const handleGoBack = () => {
+    if (predictionsEditMode || isAddingParticipant || activeTab !== 'leaderboard') {
+      setPredictionsEditMode(false);
+      setIsAddingParticipant(false);
+      setActiveTab('leaderboard');
+      setPredictionsReadOnly(false);
+      return;
+    }
+    if (user) {
+      setSelectedLeagueId(null);
+    } else {
+      setGuestLeagueId(null);
+      setGuestLeague(null);
+      localStorage.removeItem('guest_league_id');
+    }
+  };
+
   const handleCreateLeague = async () => {
     if (!user) return;
     if (!newLeagueName.trim()) {
       toast.error('El nombre de la liga es obligatorio');
       return;
     }
+    if (newLeagueName.length > 10) {
+      toast.error('El nombre de la liga no puede tener más de 10 caracteres');
+      return;
+    }
+
+    if (newLeagueCompetition === 'CL') {
+      toast.error('La creación de quinielas para la Champions League está deshabilitada temporalmente porque la temporada ya terminó.');
+      return;
+    }
 
     const userLeagues = leagues.filter(l => l.creatorId === user.uid);
-    if (userLeagues.length >= 3) {
-      toast.error('Solo puedes crear hasta 3 ligas privadas');
+    if (userLeagues.length >= maxLeaguesAllowed) {
+      toast.error(`Solo tienes permiso para crear hasta ${maxLeaguesAllowed} quinielas`);
       return;
     }
 
     try {
-      const docRef = await addDoc(collection(db, 'leagues'), {
+      // Generate a unique 5-character alphanumeric ID (uppercase A-Z and 0-9)
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let uniqueId = '';
+      let isUnique = false;
+      let checkAttempts = 0;
+
+      while (!isUnique && checkAttempts < 10) {
+        let tempId = '';
+        for (let i = 0; i < 5; i++) {
+          tempId += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        
+        // Verify uniqueness
+        const checkDoc = await getDoc(doc(db, 'leagues', tempId));
+        if (!checkDoc.exists()) {
+          uniqueId = tempId;
+          isUnique = true;
+        }
+        checkAttempts++;
+      }
+
+      // Fallback in the extremely unlikely event of multiple collisions
+      if (!uniqueId) {
+        uniqueId = Math.random().toString(36).substring(2, 7).toUpperCase();
+      }
+
+      const leagueRef = doc(db, 'leagues', uniqueId);
+      await setDoc(leagueRef, {
         name: newLeagueName,
         creatorId: user.uid,
         creatorName: user.displayName || 'Usuario',
         memberUids: [user.uid],
         createdAt: new Date().toISOString(),
-        isPrivate: true
+        isPrivate: true,
+        competition: newLeagueCompetition
       });
+
       setNewLeagueName('');
+      setNewLeagueCompetition('WC');
       setIsCreatingLeague(false);
-      setSelectedLeagueId(docRef.id);
+      setSelectedLeagueId(uniqueId);
       toast.success('Quiniela creada correctamente');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'leagues');
@@ -243,6 +934,97 @@ export default function App() {
     }
   };
 
+  const [isCleaningDb, setIsCleaningDb] = useState(false);
+  const [cleanupProgress, setCleanupProgress] = useState(0);
+  const [cleanupStatus, setCleanupStatus] = useState('');
+  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
+
+  const handleCleanDatabase = async () => {
+    if (!user || user.email !== 'melaniagonzalez@gmail.com') {
+      toast.error('No tienes permisos de administrador para realizar esta acción');
+      return;
+    }
+
+    setIsCleaningDb(true);
+    setCleanupProgress(0);
+    setCleanupStatus('Iniciando limpieza y preparando conexión...');
+    const toastId = toast.loading('Iniciando limpieza de base de datos...');
+
+    try {
+      setCleanupStatus('Obteniendo información de quinielas y usuarios...');
+      const [leaguesSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, 'leagues')),
+        getDocs(collection(db, 'users'))
+      ]);
+
+      const totalLeagues = leaguesSnap.size;
+      const totalUsers = usersSnap.size;
+      const totalSteps = totalLeagues + totalUsers;
+
+      let processedSteps = 0;
+      let leaguesCount = 0;
+      let usersCount = 0;
+      let predictionsCount = 0;
+
+      if (totalSteps === 0) {
+        setCleanupProgress(100);
+        setCleanupStatus('La base de datos ya está vacía.');
+        toast.success('La base de datos ya está vacía', { id: toastId });
+        setIsCleaningDb(false);
+        return;
+      }
+
+      setCleanupProgress(5);
+
+      // 1. Delete all leagues
+      for (const lDoc of leaguesSnap.docs) {
+        setCleanupStatus(`Eliminando quiniela: "${lDoc.data()?.name || lDoc.id}" (${leaguesCount + 1}/${totalLeagues})...`);
+        await deleteDoc(doc(db, 'leagues', lDoc.id));
+        leaguesCount++;
+        processedSteps++;
+        setCleanupProgress(Math.min(95, Math.round((processedSteps / totalSteps) * 100)));
+      }
+
+      // 2. Delete all users and their predictions
+      toast.loading('Eliminando perfiles de usuarios y predicciones...', { id: toastId });
+      for (const uDoc of usersSnap.docs) {
+        const uId = uDoc.id;
+        const uData = uDoc.data();
+        const displayName = uData?.displayName || 'Usuario';
+        
+        setCleanupStatus(`Obteniendo predicciones del usuario: ${displayName}...`);
+
+        // Delete predictions
+        const predsSnap = await getDocs(collection(db, 'users', uId, 'predictions'));
+        for (const pDoc of predsSnap.docs) {
+          await deleteDoc(doc(db, 'users', uId, 'predictions', pDoc.id));
+          predictionsCount++;
+        }
+        
+        setCleanupStatus(`Eliminando perfil del usuario: ${displayName}...`);
+        await deleteDoc(doc(db, 'users', uId));
+        usersCount++;
+        processedSteps++;
+        setCleanupProgress(Math.min(95, Math.round((processedSteps / totalSteps) * 100)));
+      }
+
+      setCleanupProgress(100);
+      setCleanupStatus(`¡Completado con éxito! Se eliminaron: ${leaguesCount} quinielas, ${usersCount} usuarios y ${predictionsCount} predicciones.`);
+      toast.success(`Base de datos limpiada con éxito: Se eliminaron ${leaguesCount} quinielas, ${usersCount} perfiles de usuario y ${predictionsCount} predicciones.`, { id: toastId });
+      setSelectedLeagueId(null);
+      
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+    } catch (error) {
+      console.error('Error al limpiar la base de datos:', error);
+      toast.error('Error durante la limpieza de la base de datos', { id: toastId });
+      setCleanupStatus('Error al limpiar la base de datos.');
+    } finally {
+      setIsCleaningDb(false);
+    }
+  };
+
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [foundUsers, setFoundUsers] = useState<any[]>([]);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -280,6 +1062,10 @@ export default function App() {
 
   const updateLeagueName = async () => {
     if (!selectedLeagueId || !editLeagueName.trim()) return;
+    if (editLeagueName.length > 10) {
+      toast.error('El nombre de la liga no puede tener más de 10 caracteres');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'leagues', selectedLeagueId), {
         name: editLeagueName
@@ -312,15 +1098,13 @@ export default function App() {
     userPredictions.forEach(pred => {
       if (pred.homeScore === null || pred.awayScore === null) return;
 
-      const actualMatch = isSimulationMode 
-        ? MATCHES.find(m => m.id === pred.matchId) 
-        : apiMatches.find(m => m.id === pred.matchId);
+      const actualMatch = currentMatches.find(m => m.id === pred.matchId);
       
       if (!actualMatch) return;
 
       const isFinished = isSimulationMode 
         ? new Date(actualMatch.date) < new Date(simulatedDate)
-        : actualMatch.status === 'FINISHED';
+        : (['FINISHED', 'FT', 'AWARDED'].includes(actualMatch.status || '') || (apiMatches.length === 0 && new Date(actualMatch.date) < new Date()));
       
       if (!isFinished) return;
 
@@ -371,49 +1155,163 @@ export default function App() {
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
-        // Ensure user profile exists in Firestore
-        const userRef = doc(db, 'users', currentUser.uid);
+        const emailLower = currentUser.email?.toLowerCase();
+        
+        if (!emailLower) {
+          setUser(null);
+          await signOut(auth);
+          setIsAuthReady(true);
+          return;
+        }
+
+        // Special check: Is this the super admin?
+        if (emailLower === 'melaniagonzalez@gmail.com') {
+          setUser(currentUser);
+          // Ensure user profile exists in Firestore
+          const userRef = doc(db, 'users', currentUser.uid);
+          try {
+            const userDoc = await getDoc(userRef);
+            const userData: any = {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || 'Administrador',
+              email: currentUser.email || '',
+              searchName: (currentUser.displayName || 'Administrador').toLowerCase(),
+              searchEmail: (currentUser.email || '').toLowerCase(),
+              photoURL: currentUser.photoURL || '',
+              isAdmin: true
+            };
+            
+            if (!userDoc.exists()) {
+              userData.totalPoints = 0;
+              userData.correctResults = 0;
+              userData.correctWinners = 0;
+              await setDoc(userRef, userData);
+            } else {
+              await updateDoc(userRef, userData);
+            }
+          } catch (error) {
+            console.error("Error setting up user profile:", error);
+          }
+          setIsAuthReady(true);
+          return;
+        }
+
+        // Check if licensed in `admins`
+        const docId = emailLower.replace(/[^a-z0-9]/g, '_');
         try {
-          const userDoc = await getDoc(userRef);
-          const userData: any = {
-            uid: currentUser.uid,
-            displayName: currentUser.displayName || 'Usuario Anónimo',
-            email: currentUser.email || '',
-            searchName: (currentUser.displayName || 'Usuario Anónimo').toLowerCase(),
-            searchEmail: (currentUser.email || '').toLowerCase(),
-            photoURL: currentUser.photoURL || '',
-          };
-          
-          if (!userDoc.exists()) {
-            userData.totalPoints = 0;
-            userData.correctResults = 0;
-            userData.correctWinners = 0;
-            await setDoc(userRef, userData);
+          const adminDoc = await getDoc(doc(db, 'admins', docId));
+          if (adminDoc.exists()) {
+            // Verified registered admin!
+            // Check if there is an adminRequest we need to show congrats page for:
+            const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
+            if (reqDoc.exists()) {
+              const reqData = reqDoc.data();
+              if (reqData.status === 'approved' && !reqData.notified) {
+                setPendingApprovalUser(currentUser);
+                setAdminLoginState('approved_congrats');
+                setUser(null);
+                setIsAuthReady(true);
+                return;
+              }
+            }
+
+            setUser(currentUser);
+            // Ensure user profile exists in Firestore
+            const userRef = doc(db, 'users', currentUser.uid);
+            try {
+              const userDoc = await getDoc(userRef);
+              const userData: any = {
+                uid: currentUser.uid,
+                displayName: currentUser.displayName || 'Administrador',
+                email: currentUser.email || '',
+                searchName: (currentUser.displayName || 'Administrador').toLowerCase(),
+                searchEmail: (currentUser.email || '').toLowerCase(),
+                photoURL: currentUser.photoURL || '',
+                isAdmin: true
+              };
+              
+              if (!userDoc.exists()) {
+                userData.totalPoints = 0;
+                userData.correctResults = 0;
+                userData.correctWinners = 0;
+                await setDoc(userRef, userData);
+              } else {
+                await updateDoc(userRef, userData);
+              }
+            } catch (error) {
+              console.error("Error setting up user profile:", error);
+            }
           } else {
-            await updateDoc(userRef, userData);
+            // No admin document in admins collection.
+            // Check if there is an existing request
+            const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
+            if (reqDoc.exists()) {
+              const reqData = reqDoc.data();
+              if (reqData.status === 'approved') {
+                // Re-create raw admin document
+                try {
+                  await setDoc(doc(db, 'admins', docId), {
+                    email: emailLower,
+                    role: 'admin',
+                    maxLeaguesAllowed: 3
+                  }, { merge: true });
+                } catch (e) {
+                  console.error("Auto recovery error:", e);
+                }
+
+                if (!reqData.notified) {
+                  setPendingApprovalUser(currentUser);
+                  setAdminLoginState('approved_congrats');
+                  setUser(null);
+                } else {
+                  setUser(currentUser);
+                }
+              } else if (reqData.status === 'rejected') {
+                setUser(null);
+                setAdminLoginState('rejected_status');
+              } else {
+                setUser(null);
+                setAdminLoginState('pending_status');
+              }
+            } else {
+              // Sign out if not in explicit registration flow
+              if (adminLoginState !== 'ask' && adminLoginState !== 'authenticating' && adminLoginState !== 'not_registered') {
+                setUser(null);
+                await signOut(auth);
+              }
+            }
           }
         } catch (error) {
-          console.error("Error setting up user profile:", error);
-          handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
+          console.error("Error doing auth check:", error);
+          setUser(null);
         }
+      } else {
+        setUser(null);
       }
       setIsAuthReady(true);
     });
     return () => unsubscribe();
-  }, []);
+  }, [adminLoginState]);
 
-  // Sync Predictions from Firestore
+  // Sync Predictions from Firestore for active participant
   useEffect(() => {
-    if (!user || !isAuthReady) {
-      // If not logged in, use local storage as fallback/guest mode
-      const saved = localStorage.getItem('wc_predictions');
-      setPredictions(saved ? JSON.parse(saved) : MATCHES.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
+    if (!isAuthReady) return;
+
+    const targetLeagueId = user ? selectedLeagueId : guestLeagueId;
+    if (!targetLeagueId) {
+      // Not in any league, load blank predictions
+      setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
       return;
     }
 
-    const predictionsRef = collection(db, 'users', user.uid, 'predictions');
+    const targetId = activeParticipantId || (user ? user.uid : null);
+    if (!targetId) {
+      setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
+      return;
+    }
+
+    const predictionsRef = collection(db, 'users', targetId, 'predictions');
     const unsubscribe = onSnapshot(predictionsRef, (snapshot) => {
       const firestorePredictions = snapshot.docs.map(doc => doc.data() as Prediction);
       
@@ -425,54 +1323,181 @@ export default function App() {
       
       setPredictions(fullPredictions);
     }, (error) => {
-      toast.error('Error al sincronizar predicciones');
-      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/predictions`);
+      console.error('Error fetching predictions:', error);
     });
 
     return () => unsubscribe();
-  }, [user, isAuthReady]);
+  }, [user, isAuthReady, activeParticipantId, selectedLeagueId, guestLeagueId, currentMatches]);
 
-  // Sync Leaderboard
+  // Recalculate leaderboard dynamically whenever participants list, their predictions, or matches change
   useEffect(() => {
-    if (activeTab === 'leaderboard' && user) {
-      const usersRef = collection(db, 'users');
-      // If a quiniela is selected, we want to filter, but Firestore "in" is limited.
-      // We'll fetch the top 100 and filter client-side for simplicity in this demo.
-      // For a production app, we might need a different data structure or Cloud Functions.
-      const q = query(usersRef, limit(100));
+    const recalculated = participants.map(p => {
+      const userPreds = participantsPredictions[p.uid];
+      if (userPreds === undefined) {
+        // Fallback to what is stored in Firestore user document initially (still loading)
+        return {
+          ...p,
+          totalPoints: p.totalPoints || 0,
+          correctResults: p.correctResults || 0,
+          correctWinners: p.correctWinners || 0
+        };
+      }
       
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const data = snapshot.docs.map(doc => doc.data());
+      const { totalPoints, correctResults, correctWinners } = calculateUserPoints(userPreds);
+      return {
+        ...p,
+        totalPoints,
+        correctResults,
+        correctWinners
+      };
+    });
+    
+    // Sort descending by totalPoints
+    const sorted = recalculated.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+    setLeaderboard(sorted);
+  }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate]);
+
+  // Obtener estadísticas de predicciones llenas y listas de predicciones para cada participante de la quiniela
+  useEffect(() => {
+    if (participants.length === 0) {
+      setPredictionsStats({});
+      setParticipantsPredictions({});
+      return;
+    }
+
+    const unsubscribes = participants.map(p => {
+      const predictionsRef = collection(db, 'users', p.uid, 'predictions');
+      return onSnapshot(predictionsRef, (snapshot) => {
+        const docs = snapshot.docs;
+        const predsList = docs.map(doc => doc.data() as Prediction);
+        const filledCount = predsList.filter(pred => 
+          pred.homeScore !== null && pred.homeScore !== undefined && 
+          pred.awayScore !== null && pred.awayScore !== undefined
+        ).length;
         
-        let filteredData = data;
-        if (selectedLeagueId && selectedLeague) {
-          filteredData = data.filter((u: any) => selectedLeague.memberUids.includes(u.uid));
+        setPredictionsStats(prev => ({
+          ...prev,
+          [p.uid]: {
+            filled: filledCount,
+            total: currentMatches.length
+          }
+        }));
+
+        setParticipantsPredictions(prev => ({
+          ...prev,
+          [p.uid]: predsList
+        }));
+      }, (error) => {
+        console.error(`Error loading predictions for ${p.uid}:`, error);
+      });
+    });
+
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+    };
+  }, [participants, currentMatches.length]);
+
+  const handleGoogleLogin = async (intent: 'existing_admin' | 'request_admin') => {
+    try {
+      setAdminLoginState('authenticating');
+      const result = await signInWithPopup(auth, googleProvider);
+      const currentUser = result.user;
+      
+      if (!currentUser || !currentUser.email) {
+        throw new Error("No se pudo obtener el correo de Google");
+      }
+
+      const emailLower = currentUser.email.toLowerCase();
+      const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+      
+      // If Super Admin
+      if (emailLower === 'melaniagonzalez@gmail.com') {
+        setUser(currentUser);
+        setAdminLoginState(null);
+        toast.success(`¡Bienvenida Súper Admin, ${currentUser.displayName}!`);
+        return;
+      }
+
+      // Check if they are in the admins collection
+      const adminDoc = await getDoc(doc(db, 'admins', docId));
+      if (adminDoc.exists()) {
+        const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
+        if (reqDoc.exists() && reqDoc.data().status === 'approved' && !reqDoc.data().notified) {
+          setPendingApprovalUser(currentUser);
+          setAdminLoginState('approved_congrats');
+          return;
         }
 
-        const sortedData = filteredData.sort((a: any, b: any) => (b.totalPoints || 0) - (a.totalPoints || 0));
-        setLeaderboard(sortedData);
-      }, (error) => {
-        console.error("Leaderboard error:", error);
-        toast.error('Error al cargar el ranking');
-        handleFirestoreError(error, OperationType.LIST, 'users');
-      });
-      
-      return () => unsubscribe();
+        setUser(currentUser);
+        setAdminLoginState(null);
+        toast.success(`¡Bienvenido Administrador!`);
+        return;
+      }
+
+      // Check access requests
+      const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
+      if (reqDoc.exists()) {
+        const reqData = reqDoc.data();
+        if (reqData.status === 'approved') {
+          try {
+            await setDoc(doc(db, 'admins', docId), {
+              email: emailLower,
+              role: 'admin',
+              maxLeaguesAllowed: 3
+            }, { merge: true });
+          } catch (e) {
+            console.error(e);
+          }
+          
+          if (!reqData.notified) {
+            setPendingApprovalUser(currentUser);
+            setAdminLoginState('approved_congrats');
+          } else {
+            setUser(currentUser);
+            setAdminLoginState(null);
+            toast.success(`¡Bienvenido Administrador!`);
+          }
+        } else if (reqData.status === 'rejected') {
+          setAdminLoginState('rejected_status');
+        } else {
+          setAdminLoginState('pending_status');
+        }
+      } else {
+        if (intent === 'existing_admin') {
+          setPendingApprovalUser(currentUser);
+          setAdminLoginState('not_registered');
+        } else {
+          // Automatic request creation
+          await setDoc(doc(db, 'adminRequests', currentUser.uid), {
+            uid: currentUser.uid,
+            email: emailLower,
+            displayName: currentUser.displayName || 'Anónimo',
+            photoURL: currentUser.photoURL || '',
+            status: 'pending',
+            notified: false,
+            createdAt: new Date().toISOString()
+          });
+          setAdminLoginState('pending_status_new');
+        }
+      }
+    } catch (error) {
+      console.error("Authentication error during admin flow:", error);
+      toast.error('Error al iniciar sesión');
+      setUser(null);
+      await signOut(auth);
+      setAdminLoginState('ask');
     }
-  }, [activeTab, selectedLeagueId, leagues, user]);
+  };
 
   const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-      toast.success('¡Bienvenido a la Quiniela!');
-    } catch (error) {
-      console.error(error);
-      toast.error('Error al iniciar sesión');
-    }
+    setAdminLoginState('ask');
   };
 
   const handleLogout = async () => {
     try {
+      setUser(null);
+      setAdminLoginState(null);
+      setPendingApprovalUser(null);
       await signOut(auth);
       toast.success('Sesión cerrada');
     } catch (error) {
@@ -481,10 +1506,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (activeTab === 'quiniela' && !user) {
+    if ((activeTab === 'quiniela' || predictionsEditMode) && !user) {
       localStorage.setItem('wc_predictions', JSON.stringify(predictions));
     }
-  }, [predictions, user, activeTab]);
+  }, [predictions, user, activeTab, predictionsEditMode]);
 
   useEffect(() => {
     if (activeTab === 'noticias' && (!newsData || newsData.simulated !== isSimulationMode)) {
@@ -513,7 +1538,8 @@ export default function App() {
         }, 800);
         return;
       }
-      const response = await fetch('/api/world-cup-results');
+      const competition = activeLeague?.competition || 'WC';
+      const response = await fetch(`/api/results/${competition}`);
       if (response.ok) {
         const data = await response.json();
         setNewsData(data);
@@ -551,9 +1577,10 @@ export default function App() {
     setIsSyncing(true);
     try {
       if (user) {
+        const targetId = activeParticipantId || user.uid;
         const batch = writeBatch(db);
         predictions.forEach(p => {
-          const predictionRef = doc(db, 'users', user.uid, 'predictions', p.matchId);
+          const predictionRef = doc(db, 'users', targetId, 'predictions', p.matchId);
           batch.set(predictionRef, {
             ...p,
             updatedAt: new Date().toISOString()
@@ -561,7 +1588,7 @@ export default function App() {
         });
 
         const { totalPoints, correctResults, correctWinners } = calculateUserPoints(predictions);
-        const userRef = doc(db, 'users', user.uid);
+        const userRef = doc(db, 'users', targetId);
         batch.update(userRef, {
           totalPoints,
           correctResults,
@@ -580,6 +1607,91 @@ export default function App() {
       toast.error('Error al guardar las predicciones');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleAddParticipant = async () => {
+    if (!selectedLeagueId) return;
+    const name = newParticipantName.trim();
+    if (!name) {
+      toast.error('El nombre del participante es obligatorio');
+      return;
+    }
+    if (name.length > 10) {
+      toast.error('El nombre del participante no puede tener más de 10 caracteres');
+      return;
+    }
+
+    try {
+      const participantId = `p_${selectedLeagueId}_${Date.now()}`;
+      const userRef = doc(db, 'users', participantId);
+      
+      // Crear perfil del participante
+      await setDoc(userRef, {
+        uid: participantId,
+        displayName: name,
+        email: '',
+        searchName: name.toLowerCase(),
+        searchEmail: '',
+        photoURL: getAvatarForUser(name),
+        totalPoints: 0,
+        correctResults: 0,
+        correctWinners: 0,
+        leagueId: selectedLeagueId,
+        isParticipant: true
+      });
+
+      // Agregar a memberUids de la liga/quiniela
+      const leagueRef = doc(db, 'leagues', selectedLeagueId);
+      await updateDoc(leagueRef, {
+        memberUids: arrayUnion(participantId)
+      });
+
+      setNewParticipantName('');
+      setIsAddingParticipant(false);
+      setActiveParticipantId(participantId);
+      setPredictionsEditMode(true);
+      toast.success(`Participante "${name}" registrado con éxito`);
+    } catch (error) {
+      console.error("Error adding participant:", error);
+      handleFirestoreError(error, OperationType.CREATE, 'users');
+    }
+  };
+
+  const handleDeleteParticipant = async (participantId: string, participantName: string, skipConfirm: boolean = false) => {
+    if (!selectedLeagueId) return;
+    if (!skipConfirm && !confirm(`¿Estás seguro de que deseas eliminar al participante "${participantName}"? Se borrarán todos sus marcadores y datos.`)) {
+      return;
+    }
+
+    try {
+      // 1. Eliminar predicciones del participante
+      const predictionsRef = collection(db, 'users', participantId, 'predictions');
+      const predSnapshot = await getDocs(predictionsRef);
+      const batch = writeBatch(db);
+      
+      predSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      
+      // 2. Eliminar el documento de usuario/participante
+      batch.delete(doc(db, 'users', participantId));
+
+      // 3. Remover de la liga/quiniela
+      const leagueRef = doc(db, 'leagues', selectedLeagueId);
+      batch.update(leagueRef, {
+        memberUids: arrayRemove(participantId)
+      });
+
+      await batch.commit();
+      
+      if (activeParticipantId === participantId) {
+        setActiveParticipantId(null);
+      }
+      toast.success(`Participante "${participantName}" eliminado correctamente`);
+    } catch (error) {
+      console.error("Error deleting participant:", error);
+      handleFirestoreError(error, OperationType.DELETE, `users/${participantId}`);
     }
   };
 
@@ -617,9 +1729,53 @@ export default function App() {
     return days;
   }, [currentMatches]);
 
+  const getMatchdayLabel = (day: number) => {
+    const comp = activeLeague?.competition || 'WC';
+    if (comp === 'WC') {
+      if (day <= 3) return `Jornada ${day}`;
+      if (day === 4) return 'Dieciseisavos';
+      if (day === 5) return 'Octavos';
+      if (day === 6) return 'Cuartos';
+      if (day === 7) return 'Semis';
+      if (day === 8) return 'Final';
+      return `Fase ${day}`;
+    } else {
+      // Champions League
+      if (day <= 8) return `Jornada ${day}`;
+      if (day === 9) return 'Play-off (Ida)';
+      if (day === 10) return 'Play-off (Vuelta)';
+      if (day === 11) return 'Octavos (Ida)';
+      if (day === 12) return 'Octavos (Vuelta)';
+      if (day === 13) return 'Cuartos (Ida)';
+      if (day === 14) return 'Cuartos (Vuelta)';
+      if (day === 15) return 'Semis (Ida)';
+      if (day === 16) return 'Semis (Vuelta)';
+      if (day === 17) return 'Gran Final';
+      return `Ronda ${day}`;
+    }
+  };
+
+  const getGroupNameLabel = (groupName: string) => {
+    if (!groupName) return '';
+    if (groupName.length === 1) return `Grupo ${groupName}`;
+    if (groupName === 'LEAGUE_STAGE') return 'Fase de Liga';
+    const translations: Record<string, string> = {
+      'ROUND_OF_16': 'Octavos de Final',
+      'QUARTER_FINALS': 'Cuartos de Final',
+      'SEMI_FINALS': 'Semifinales',
+      'FINAL': 'Gran Final',
+      'LAST_32': 'Dieciseisavos de Final',
+      'LAST_16': 'Octavos de Final',
+      'KNOCKOUT_STAGE_PLAY_OFFS': 'Play-offs'
+    };
+    return translations[groupName] || groupName;
+  };
+
   const currentMatchday = useMemo(() => {
     const unfinished = currentMatches.find(m => {
-      const isFinished = isSimulationMode && new Date(m.date) < new Date(simulatedDate);
+      const isFinished = isSimulationMode
+        ? new Date(m.date) < new Date(simulatedDate)
+        : (new Date(m.date) < new Date() || ['FINISHED', 'FT', 'AWARDED'].includes(m.status || ''));
       return !isFinished;
     });
     return unfinished?.matchday || matchdays[0];
@@ -646,6 +1802,57 @@ export default function App() {
     });
   }, [predictions, currentTeams, currentMatches]);
 
+  const getTimeUntilPhase = (day: number) => {
+    const dayMatches = currentMatches.filter(m => m.matchday === day);
+    if (dayMatches.length === 0) return "No disponible";
+    
+    const dates = dayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
+    if (dates.length === 0) return "No disponible";
+    
+    const earliestTime = Math.min(...dates);
+    const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+    
+    const diffMs = earliestTime - nowTime;
+    if (diffMs <= 0) {
+      return "Fase Iniciada";
+    }
+    
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHours = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    const remainingHours = diffHours % 24;
+    const remainingMinutes = diffMin % 60;
+    
+    if (diffDays > 0) {
+      return `${diffDays}D ${remainingHours}H ${remainingMinutes}M`;
+    } else if (remainingHours > 0) {
+      return `${remainingHours}H ${remainingMinutes}M`;
+    } else {
+      return `${remainingMinutes}M`;
+    }
+  };
+
+  const formatDbLastUpdated = (isoString: string | null) => {
+    if (!isoString) return "BASE LOCAL (Cargando...)";
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return "BASE LOCAL (2026)";
+      
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const day = pad(d.getDate());
+      const month = pad(d.getMonth() + 1);
+      const year = d.getFullYear();
+      const hours = pad(d.getHours());
+      const minutes = pad(d.getMinutes());
+      
+      return `BASE LOCAL (${day}/${month}/${year} ${hours}:${minutes})`;
+    } catch (e) {
+      return "BASE LOCAL (2026)";
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
       {/* Header */}
@@ -658,23 +1865,43 @@ export default function App() {
         </div>
         
         <div className="flex items-center gap-3 sm:gap-6">
-          <button 
-            onClick={() => {
-              setClickCount(prev => prev + 1);
-              if (clickCount + 1 >= 5) {
-                setIsSimulationMode(!isSimulationMode);
-                setClickCount(0);
-                toast.info(isSimulationMode ? 'Modo 2026 Activado' : 'Modo Simulación 2022 Activado');
-              }
-            }}
-            className="hidden sm:block bg-lime text-black px-3 py-1 text-[9px] font-black uppercase tracking-widest hover:scale-105 transition-transform shrink-0"
-          >
-            {isSimulationMode ? 'Simulador 22' : 'United 2026'}
-          </button>
+          {user && isAdminEmail(user.email) && (
+            <button 
+              onClick={() => {
+                setClickCount(prev => prev + 1);
+                if (clickCount + 1 >= 5) {
+                  setIsSimulationMode(!isSimulationMode);
+                  setClickCount(0);
+                  toast.info(isSimulationMode ? 'Modo 2026 Activado' : 'Modo Simulación 2022 Activado');
+                }
+              }}
+              className="hidden sm:block bg-lime text-black px-3 py-1 text-[9px] font-black uppercase tracking-widest hover:scale-105 transition-transform shrink-0"
+            >
+              Simula
+            </button>
+          )}
           
           <div className="flex items-center gap-2 sm:gap-4">
             {user ? (
               <div className="flex items-center gap-2 sm:gap-4">
+                {user.email === 'melaniagonzalez@gmail.com' && (
+                  <Button 
+                    variant={showSuperAdminPanel ? "default" : "outline"} 
+                    size="sm" 
+                    onClick={() => {
+                      setShowSuperAdminPanel(!showSuperAdminPanel);
+                      setSelectedLeagueId(null);
+                    }}
+                    className={cn(
+                      "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-none",
+                      showSuperAdminPanel ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary hover:bg-primary/5"
+                    )}
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5" /> 
+                    <span className="hidden xs:inline">Panel Súper Admin</span>
+                    <span className="xs:hidden">Súper Admin</span>
+                  </Button>
+                )}
                 {selectedLeagueId && (
                   <Button 
                     variant="ghost" 
@@ -693,7 +1920,7 @@ export default function App() {
               </div>
             ) : (
               <Button size="sm" onClick={handleLogin} className="bg-white text-black hover:bg-white/90 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10">
-                Entrar
+                Soy Admin
               </Button>
             )}
           </div>
@@ -710,6 +1937,11 @@ export default function App() {
                 <FlaskConical className="h-4 w-4" />
                 Panel de Simulación
               </div>
+              {activeLeague?.competition === 'CL' && (
+                <div className="text-[10px] bg-sky-500/10 text-sky-500 px-3 py-1 font-black uppercase tracking-tight border border-sky-500/20">
+                  Modo Tiempo Real (CL) Sugerido
+                </div>
+              )}
               <Button size="sm" variant="outline" onClick={seedTestUsers} className="text-[9px] font-black uppercase tracking-widest h-8">
                 Generar Usuarios de Prueba
               </Button>
@@ -729,29 +1961,28 @@ export default function App() {
                 </div>
                 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Saltar a Jornada</label>
-                  <div className="flex flex-wrap gap-2">
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map(day => (
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Simular por Fase</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { day: 1, label: "Grupos J1", date: '2026-06-11T12:00:00Z' },
+                      { day: 2, label: "Grupos J2", date: '2026-06-18T12:00:00Z' },
+                      { day: 3, label: "Grupos J3", date: '2026-06-24T12:00:00Z' },
+                      { day: 4, label: "Dieciseisavos", date: '2026-06-28T12:00:00Z' },
+                      { day: 5, label: "Octavos", date: '2026-07-04T12:00:00Z' },
+                      { day: 6, label: "Cuartos", date: '2026-07-09T12:00:00Z' },
+                      { day: 7, label: "Semifinales", date: '2026-07-14T12:00:00Z' },
+                      { day: 8, label: "Gran Final", date: '2026-07-18T12:00:00Z' }
+                    ].map(phase => (
                       <Button
-                        key={day}
+                        key={phase.day}
                         size="sm"
-                        variant={currentMatchday === day ? "default" : "outline"}
+                        variant={currentMatchday === phase.day ? "default" : "outline"}
                         onClick={() => {
-                          const dates: Record<number, string> = {
-                            1: '2026-06-11T12:00:00Z', // Grupos J1
-                            2: '2026-06-23T12:00:00Z', // Grupos J2
-                            3: '2026-07-05T12:00:00Z', // Grupos J3
-                            4: '2026-07-15T12:00:00Z', // Round of 32
-                            5: '2026-07-21T12:00:00Z', // Round of 16
-                            6: '2026-07-25T12:00:00Z', // Quarter Final
-                            7: '2026-07-28T12:00:00Z', // Semi Final
-                            8: '2026-08-02T12:00:00Z'  // Final
-                          };
-                          setSimulatedDate(dates[day]);
+                          setSimulatedDate(phase.date);
                         }}
-                        className="text-[10px] font-black h-8 flex-1 min-w-[32px] px-1"
+                        className="text-[10px] font-bold h-8 uppercase tracking-wider rounded-none"
                       >
-                        J{day}
+                        {phase.label}
                       </Button>
                     ))}
                   </div>
@@ -766,56 +1997,323 @@ export default function App() {
           </div>
         )}
 
-        {!user ? (
-           <div className="py-20 text-center space-y-8">
-              <div className="inline-flex p-4 bg-primary/10 border border-primary/30 rounded-full mb-4">
+        {!user && !guestLeagueId ? (
+           <div className="py-20 text-center space-y-12 max-w-lg mx-auto">
+              <div className="inline-flex p-4 bg-primary/10 border border-primary/30 rounded-full mb-4 animate-bounce">
                 <Trophy className="w-12 h-12 text-primary" />
               </div>
-              <div className="max-w-md mx-auto space-y-4">
-                <h2 className="text-3xl font-black uppercase tracking-tight">Bienvenido a la Quiniela</h2>
+              <div className="space-y-4">
+                <h2 className="text-3xl font-black uppercase tracking-tight">Ingresa el Código de tu Quiniela</h2>
                 <p className="text-muted-foreground uppercase text-[11px] font-bold tracking-widest leading-relaxed">
-                  Crea tus grupos, invita a tus amigos y compite por ser el mejor pronosticador del Mundial United 2026.
+                  Coloca el código provisto por tu Administrador para ingresar a ver tu ranking, clasificaciones, resultados en vivo y predicciones.
                 </p>
-                <Button onClick={handleLogin} className="w-full h-14 text-sm font-black uppercase tracking-[0.2em] mt-8 shadow-[0_0_20px_rgba(237,28,36,0.3)]">
-                  Iniciar Sesión con Google
-                </Button>
+                
+                <div className="flex gap-2 mt-8">
+                  <Input
+                    type="text"
+                    placeholder="INGRESA CÓDIGO"
+                    value={guestInputCode}
+                    onChange={(e) => setGuestInputCode(e.target.value.trim())}
+                    className="h-12 text-center text-sm font-black tracking-widest uppercase rounded-none border-border"
+                  />
+                  <Button onClick={handleJoinAsGuest} className="h-12 text-xs font-black uppercase tracking-widest px-8">
+                    Ingresar
+                  </Button>
+                </div>
+                
+                <div className="pt-8 border-t border-border mt-12 flex flex-col items-center gap-4">
+                  <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
+                    ¿Eres el organizador o administrador de la liga?
+                  </p>
+                  <Button onClick={handleLogin} variant="outline" size="sm" className="text-[9px] font-black uppercase tracking-widest h-9 border-primary/30 text-primary hover:bg-primary/10">
+                    Iniciar Sesión como Administrador
+                  </Button>
+                </div>
               </div>
            </div>
-        ) : !selectedLeagueId ? (
-          <div className="space-y-12 max-w-5xl mx-auto py-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
-              <div className="space-y-2">
-                <h2 className="text-[24px] font-black uppercase tracking-tight text-primary">Mis Quinielas</h2>
-                <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest">Selecciona una quiniela para ver tus resultados y ranking</p>
-              </div>
-              <div className="flex gap-3">
+        ) : !activeLeagueId ? (
+          showSuperAdminPanel && user?.email === 'melaniagonzalez@gmail.com' ? (
+            <div className="space-y-12 max-w-5xl mx-auto py-8">
+              {/* Header de Panel Súper Admin */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
+                <div className="space-y-2">
+                  <h2 className="text-[24px] font-black uppercase tracking-tight text-primary flex items-center gap-3">
+                    <LayoutDashboard className="w-6 h-6 text-primary" /> Panel Súper Admin
+                  </h2>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest">
+                    Gestión de administradores autorizados, roles y límites de creación de quinielas
+                  </p>
+                </div>
                 <Button 
-                  onClick={() => {
-                    const id = prompt('Ingresa el ID de la quiniela:');
-                    if (id) joinLeagueById(id);
-                  }}
-                  className="h-12 text-[10px] font-black uppercase tracking-widest px-8 bg-sky-600 hover:bg-sky-700 text-white border-none transition-all"
+                  onClick={() => setShowSuperAdminPanel(false)}
+                  variant="outline"
+                  className="h-11 text-[10px] font-black uppercase tracking-widest px-6 rounded-none border-primary/40 text-primary hover:bg-primary/5"
                 >
-                  Unirse con ID
+                  <Home className="w-4 h-4 mr-2" /> Volver a Mis Quinielas
                 </Button>
-                <div className="relative group">
-                   <Button 
-                    onClick={() => setIsCreatingLeague(true)} 
-                    className="h-12 text-[10px] font-black uppercase tracking-widest px-8 shadow-lg shadow-primary/20"
-                    disabled={leagues.filter(l => l.creatorId === user?.uid).length >= 3}
-                  >
-                    <Plus className="w-4 h-4 mr-2" /> Crear Nueva
-                  </Button>
-                  {leagues.filter(l => l.creatorId === user?.uid).length >= 3 && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-purple text-white text-[9px] font-black uppercase px-2 py-1 whitespace-nowrap hidden group-hover:block z-10">
-                      Límite de 3 quinielas alcanzado
-                    </div>
-                  )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-10">
+                {/* Columna de Formulario o Solicitudes de Acceso */}
+                {editingAdminId ? (
+                  <Card className="bg-card border-2 border-border rounded-none h-fit">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground">
+                        Editar Administrador
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground">
+                        Modifica los límites de creación de este administrador
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                      <form onSubmit={handleSaveAdmin} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Correo Electrónico</label>
+                          <Input 
+                            type="email"
+                            placeholder="ejemplo@correo.com"
+                            value={adminFormEmail}
+                            onChange={(e) => setAdminFormEmail(e.target.value)}
+                            disabled={true}
+                            required
+                            className="bg-background border-border text-xs rounded-none h-10 uppercase font-bold opacity-65"
+                          />
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Rol de Acceso</label>
+                          <select 
+                            value={adminFormRole}
+                            onChange={(e) => setAdminFormRole(e.target.value as any)}
+                            disabled={isSavingAdmin || adminFormEmail.toLowerCase() === 'melaniagonzalez@gmail.com'}
+                            className="w-full bg-background border border-border h-10 px-3 text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none rounded-none uppercase font-bold"
+                          >
+                            <option value="admin">Administrador Regular (Admin)</option>
+                            <option value="superadmin">Súper Administrador (Super Admin)</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Permiso de Creación (Máx. Quinielas)</label>
+                          <Input 
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={adminFormMaxLeagues}
+                            onChange={(e) => setAdminFormMaxLeagues(Number(e.target.value))}
+                            disabled={isSavingAdmin}
+                            required
+                            className="bg-background border-border text-xs rounded-none h-10 font-bold"
+                          />
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
+                          <Button 
+                            type="submit" 
+                            disabled={isSavingAdmin}
+                            className="flex-1 uppercase text-[10px] font-black tracking-wider h-11 rounded-none shadow-md"
+                          >
+                            {isSavingAdmin ? 'Guardando...' : 'Actualizar'}
+                          </Button>
+                          <Button 
+                            type="button" 
+                            variant="outline"
+                            onClick={() => {
+                              setEditingAdminId(null);
+                              setAdminFormEmail('');
+                              setAdminFormRole('admin');
+                              setAdminFormMaxLeagues(3);
+                            }}
+                            className="uppercase text-[10px] font-black tracking-wider border-border h-11 rounded-none"
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      </form>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="bg-card border-2 border-border rounded-none h-fit">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                        <Users className="w-4 h-4 text-primary" /> Solicitudes de Acceso
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground">
+                        Nuevas peticiones para ser administrador de ligas
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-4">
+                      {adminRequests.filter(r => r.status === 'pending').length === 0 ? (
+                        <div className="text-center py-12 space-y-2">
+                          <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 border border-primary/20 text-primary">
+                            <Check className="w-5 h-5" />
+                          </div>
+                          <p className="text-[10px] uppercase font-black tracking-wider text-muted-foreground">No hay solicitudes pendientes</p>
+                          <p className="text-[9px] uppercase font-bold text-muted-foreground/60">Los usuarios de auto registro aparecerán aquí</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 divide-y divide-border">
+                          {adminRequests.filter(r => r.status === 'pending').map((req, idx) => (
+                            <div key={req.id || idx} className={`${idx > 0 ? 'pt-4' : ''} space-y-3`}>
+                              <div className="flex items-start gap-2.5">
+                                {req.photoURL ? (
+                                  <img 
+                                    src={req.photoURL} 
+                                    alt="Request Profile" 
+                                    className="w-8 h-8 rounded-full border border-border shrink-0 mt-0.5" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-[10px] font-black tracking-wider uppercase text-primary mt-0.5">
+                                    {req.displayName?.substring(0,2) || 'AN'}
+                                  </div>
+                                )}
+                                <div className="space-y-0.5 min-w-0 flex-1">
+                                  <p className="text-[11px] font-black uppercase tracking-tight text-foreground truncate">{req.displayName || 'Anónimo'}</p>
+                                  <p className="text-[9px] font-mono text-muted-foreground truncate">{req.email}</p>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleApproveRequest(req)}
+                                  className="flex-1 h-9 bg-primary text-primary-foreground hover:bg-primary/90 text-[9px] font-black uppercase tracking-wider rounded-none"
+                                >
+                                  <Check className="w-3.5 h-3.5 mr-1" /> Aprobar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleRejectRequest(req)}
+                                  className="flex-1 h-9 border-red-500/40 text-red-500 hover:bg-red-500/5 text-[9px] font-black uppercase tracking-wider rounded-none"
+                                >
+                                  <X className="w-3.5 h-3.5 mr-1" /> Rechazar
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Columna de Tabla */}
+                <div className="space-y-4">
+                  <div className="bg-card border-2 border-border overflow-hidden rounded-none">
+                    <Table>
+                      <TableHeader className="bg-primary/5 border-b border-border">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4">Correo Electrónico</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4">Permisos</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-center">Quinielas creadas</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-center">Límite Permitido</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {dbAdmins.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground py-16 text-xs uppercase font-black tracking-widest">
+                              Cargando administradores...
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          dbAdmins.map((adm) => {
+                            const leaguesCount = getLeaguesCreatedCount(adm.email);
+                            const percent = Math.min(100, Math.round((leaguesCount / (adm.maxLeaguesAllowed || 3)) * 100));
+                            const isSelf = adm.email.toLowerCase() === 'melaniagonzalez@gmail.com';
+                            
+                            return (
+                              <TableRow key={adm.id || adm.email} className="border-b border-border hover:bg-white/5 transition-colors">
+                                <TableCell className="py-4 font-black text-xs text-foreground max-w-[150px] sm:max-w-none truncate uppercase">
+                                  {adm.email} {isSelf && <span className="text-primary text-[8px] ml-1 bg-primary/10 border border-primary/20 px-1 py-0.5 rounded">TÚ</span>}
+                                </TableCell>
+                                <TableCell className="py-4">
+                                  {adm.role === 'superadmin' ? (
+                                    <span className="bg-primary/10 border border-primary/20 text-primary text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
+                                      Súper Admin
+                                    </span>
+                                  ) : (
+                                    <span className="bg-sky-500/10 border border-sky-500/20 text-sky-450 text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
+                                      Liga Admin
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="py-4 text-center">
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    <span className="text-xs font-black text-foreground">
+                                      {leaguesCount}
+                                    </span>
+                                    <span className="text-[9px] text-muted-foreground font-mono uppercase font-bold">
+                                      {percent}% ocupado
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-4 text-center font-black text-xs text-muted-foreground">
+                                  {adm.maxLeaguesAllowed} 
+                                </TableCell>
+                                <TableCell className="py-4 text-right">
+                                  <div className="flex justify-end gap-1.5">
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline" 
+                                      onClick={() => handleEditAdminClick(adm)}
+                                      className="h-8 w-8 p-0 border-border hover:bg-white/5 rounded-none"
+                                      title="Editar Administrador"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </Button>
+                                    {!isSelf && (
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleDeleteAdminClick(adm.id, adm.email)}
+                                        className="h-8 w-8 p-0 border-border text-red hover:bg-red/10 hover:text-red hover:border-red rounded-none"
+                                        title="Eliminar Administrador"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </div>
             </div>
+          ) : (
+            <div className="space-y-12 max-w-5xl mx-auto py-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
+                <div className="space-y-2">
+                  <h2 className="text-[24px] font-black uppercase tracking-tight text-primary">Mis Quinielas</h2>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest">Selecciona una quiniela para ver tus resultados y ranking</p>
+                </div>
+                <div className="flex gap-3">
+                  <div className="relative group">
+                     <Button 
+                      onClick={() => setIsCreatingLeague(true)} 
+                      className="h-12 text-[10px] font-black uppercase tracking-widest px-8 shadow-lg shadow-primary/20"
+                      disabled={leagues.filter(l => l.creatorId === user?.uid).length >= maxLeaguesAllowed}
+                    >
+                      <Plus className="w-4 h-4 mr-2" /> Crear Nueva
+                    </Button>
+                    {leagues.filter(l => l.creatorId === user?.uid).length >= maxLeaguesAllowed && (
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-purple text-white text-[9px] font-black uppercase px-2 py-1 whitespace-nowrap hidden group-hover:block z-10">
+                        Límite de {maxLeaguesAllowed} quinielas alcanzado
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-            {isCreatingLeague && (
+              {isCreatingLeague && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -824,14 +2322,58 @@ export default function App() {
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rotate-45 translate-x-16 -translate-y-16" />
                 <div className="space-y-3 relative">
                   <span className="text-[11px] font-black uppercase text-primary tracking-[0.3em]">Nueva Competición</span>
-                  <h3 className="text-2xl font-black uppercase tracking-tight">Personaliza tu Quiniela</h3>
+                  <div className="flex justify-between items-end">
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Personaliza tu Quiniela</h3>
+                    <span className="text-[10px] font-mono text-muted-foreground font-bold tracking-wider mb-1">
+                      {newLeagueName.length}/10 CARACTERES
+                    </span>
+                  </div>
                   <Input 
-                    placeholder="NOMBRE DE TU QUINIELA (EJ: MUNDIALISTAS 2026)" 
+                    placeholder="NOMBRE (EJ: MI LIGA)" 
                     value={newLeagueName}
-                    onChange={(e) => setNewLeagueName(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value.length <= 10) {
+                        setNewLeagueName(e.target.value);
+                      }
+                    }}
+                    maxLength={10}
                     className="h-16 text-[18px] font-black uppercase tracking-tight bg-background border-2 border-border focus:border-primary transition-all rounded-none"
                   />
                 </div>
+
+                <div className="space-y-4 relative">
+                  <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Selecciona el Torneo</span>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => setNewLeagueCompetition('WC')}
+                      className={cn(
+                        "p-6 border-2 transition-all flex flex-col items-center gap-3",
+                        newLeagueCompetition === 'WC' 
+                          ? "border-primary bg-primary/10 shadow-[0_0_20px_rgba(237,28,36,0.1)]" 
+                          : "border-border hover:border-primary/50 opacity-50 grayscale hover:grayscale-0"
+                      )}
+                    >
+                      <Trophy className={cn("w-8 h-8", newLeagueCompetition === 'WC' ? "text-primary" : "text-muted-foreground")} />
+                      <div className="flex flex-col items-center">
+                        <span className="text-[12px] font-black uppercase tracking-tight">Copa del Mundo</span>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase">Mundial 2026</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      className="p-6 border-2 border-dashed border-border flex flex-col items-center justify-center gap-3 opacity-40 cursor-not-allowed relative w-full"
+                    >
+                      <Trophy className="w-8 h-8 rotate-12 text-muted-foreground" />
+                      <div className="flex flex-col items-center">
+                        <span className="text-[12px] font-black uppercase tracking-tight text-muted-foreground">Champions League</span>
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase">Edición 24/25</span>
+                        <span className="mt-2 text-[8px] font-black text-amber-500 bg-amber-500/10 px-1.5 py-0.5 uppercase tracking-widest">FINALIZADA</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex gap-4 relative">
                   <Button 
                     onClick={handleCreateLeague} 
@@ -869,9 +2411,17 @@ export default function App() {
                         )}
                       </div>
                       <CardTitle className="text-[20px] font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors">{league.name}</CardTitle>
-                      <CardDescription className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-2 pt-2">
-                        {league.memberUids.length} Participantes
-                      </CardDescription>
+                      <div className="flex flex-wrap gap-2 pt-3">
+                        <Badge variant="outline" className={cn(
+                          "rounded-none text-[8px] font-black uppercase px-2 py-0.5",
+                          league.competition === 'CL' ? "border-sky-500/50 text-sky-500 bg-sky-500/5" : "border-primary/50 text-primary bg-primary/5"
+                        )}>
+                          {league.competition === 'CL' ? '🏆 Champions League 24/25' : '🌎 Mundial 2026'}
+                        </Badge>
+                        <Badge variant="secondary" className="rounded-none text-[8px] font-black uppercase px-2 py-0.5 bg-muted/50 text-muted-foreground border-none">
+                          {league.memberUids.filter((id: string) => id !== league.creatorId).length} Participantes
+                        </Badge>
+                      </div>
                     </CardHeader>
                     <CardContent className="p-8 pt-0 flex-1 flex flex-col">
                       <div className="flex-1" />
@@ -894,29 +2444,33 @@ export default function App() {
               )}
             </div>
           </div>
-        ) : (
+        )
+      ) : (
           <>
             <div className="flex items-center justify-between border-b border-border pt-[5px] pb-[5px]">
               <div className="flex items-center gap-4">
                  <Button 
-                  variant="ghost" 
+                  variant="outline" 
                   size="sm" 
-                  onClick={() => setSelectedLeagueId(null)}
-                  className="h-10 w-10 p-0 hover:bg-primary/5 text-muted-foreground hover:text-primary"
+                  onClick={handleGoBack}
+                  className="h-10 w-10 p-0 border-2 border-primary/50 text-primary bg-primary/10 hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all flex items-center justify-center shadow-md scale-105"
                 >
-                  <ChevronLeft className="w-6 h-6" />
+                  <ChevronLeft className="w-7 h-7" strokeWidth={3.5} />
                 </Button>
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => setActiveTab('quiniela')}
-                      disabled={activeTab === 'quiniela'}
+                      onClick={() => {
+                        setActiveTab('leaderboard');
+                        setPredictionsEditMode(false);
+                      }}
+                      disabled={activeTab === 'leaderboard' && !predictionsEditMode}
                       className={cn(
                         "text-[14px] sm:text-[18px] font-black uppercase tracking-tight transition-colors",
-                        activeTab !== 'quiniela' ? "text-muted-foreground hover:text-primary cursor-pointer" : "text-foreground"
+                        (activeTab !== 'leaderboard' || predictionsEditMode) ? "text-muted-foreground hover:text-primary cursor-pointer" : "text-foreground"
                       )}
                     >
-                      {selectedLeague?.name}
+                      {activeLeague?.name}
                     </button>
                     {activeTab === 'settings' && (
                       <>
@@ -924,39 +2478,37 @@ export default function App() {
                         <span className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight text-primary">Configuración</span>
                       </>
                     )}
+                    {predictionsEditMode && (
+                      <>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight text-primary">
+                          Perfil Usuario
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => {
-                    setActiveTab('settings');
-                    if (selectedLeague) setEditLeagueName(selectedLeague.name);
-                  }}
-                  className="h-9 text-[10px] font-black uppercase px-4 flex items-center gap-2 border-border hover:bg-white/5 transition-all"
-                >
-                  <Settings className="w-3.5 h-3.5" /> Configurar
-                </Button>
-              </div>
+              {user && !predictionsEditMode && (
+                <div className="flex items-center gap-4">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => {
+                      setActiveTab('settings');
+                      if (selectedLeague) setEditLeagueName(selectedLeague.name);
+                    }}
+                    className="h-9 text-[10px] font-black uppercase px-4 flex items-center gap-2 border-border hover:bg-white/5 transition-all"
+                  >
+                    <Settings className="w-3.5 h-3.5" /> Configurar
+                  </Button>
+                </div>
+              )}
             </div>
 
-            {activeTab !== 'settings' && (
-              <div className="grid grid-cols-4 sm:flex border-b border-border">
-                <button
-                  onClick={() => setActiveTab('quiniela')}
-                  className={cn(
-                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
-                    activeTab === 'quiniela' 
-                      ? "border-primary text-primary" 
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5" />
-                  <span className="text-[8px] sm:text-[12px] text-center"> Quiniela</span>
-                </button>
+            {!predictionsEditMode && activeTab !== 'settings' && (
+              <div className="grid grid-cols-3 sm:flex border-b border-border">
                 <button
                   onClick={() => setActiveTab('leaderboard')}
                   className={cn(
@@ -996,20 +2548,204 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'quiniela' ? (
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-16">
-            {/* Left Column: Matches */}
-            <div className="space-y-6">
-              {!user && (
-                <div className="bg-primary/10 border border-primary/30 p-4 mb-6">
-                  <p className="text-[11px] font-black uppercase tracking-widest text-primary text-center">
-                    Inicia sesión para guardar tus predicciones en la nube y participar en el ranking global.
-                  </p>
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-12">
-                {matchdays.filter(day => day === viewingMatchday).map(day => (
-                  <div key={day} className="space-y-6 mt-[5px] mb-[14px]">
+            {predictionsEditMode ? (
+              <div className={cn(
+                "grid gap-16 w-full",
+                user ? "grid-cols-1 max-w-5xl mx-auto" : "grid-cols-1 lg:grid-cols-[1fr_350px]"
+              )}>
+                {/* Left Column: Matches */}
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 pb-5 border-b border-border/20 -mb-[3px]">
+                    <div className="flex items-center gap-4 min-w-0">
+                      {user && activeParticipantId && !predictionsReadOnly ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsAvatarPickerOpen(!isAvatarPickerOpen)}
+                          className="p-1 hover:bg-muted/20 border border-transparent hover:border-border/30 transition-all rounded-full cursor-pointer group active:scale-95 relative shrink-0"
+                          title="Haz clic para seleccionar tu avatar"
+                        >
+                          <div className="relative">
+                            <img 
+                              src={participants.find(p => p.uid === activeParticipantId)?.photoURL || getAvatarForUser(participants.find(p => p.uid === activeParticipantId)?.displayName || 'Anónimo')} 
+                              className={cn(
+                                "w-11 h-11 rounded-full border-2 bg-zinc-800 transition-transform",
+                                isAvatarPickerOpen ? "border-primary scale-105" : "border-border hover:border-primary/50"
+                              )} 
+                              referrerPolicy="no-referrer" 
+                            />
+                            <span className="absolute bottom-0 right-0 bg-primary text-black text-[7px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center shadow-md">
+                              ▼
+                            </span>
+                          </div>
+                        </button>
+                      ) : (
+                        activeParticipantId && (
+                          <div className="relative p-1 shrink-0">
+                            <img 
+                              src={participants.find(p => p.uid === activeParticipantId)?.photoURL || getAvatarForUser(participants.find(p => p.uid === activeParticipantId)?.displayName || 'Anónimo')} 
+                              className="w-11 h-11 rounded-full border-2 border-border bg-zinc-800" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          </div>
+                        )
+                      )}
+
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        {user && isAdminEmail(user.email) ? (
+                          isEditingName ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={editingNameValue}
+                                onChange={(e) => setEditingNameValue(e.target.value.toUpperCase())}
+                                maxLength={10}
+                                className="bg-background border-border text-xs rounded-none h-8 w-32 uppercase font-bold px-2"
+                                placeholder="NOMBRE"
+                                autoFocus
+                              />
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  if (!activeParticipantId) return;
+                                  const val = editingNameValue.trim().toUpperCase();
+                                  if (!val) {
+                                    toast.error("El nombre no puede estar vacío");
+                                    return;
+                                  }
+                                  if (val.length > 10) {
+                                    toast.error("El nombre no puede superar los 10 caracteres");
+                                    return;
+                                  }
+                                  try {
+                                    await updateDoc(doc(db, 'users', activeParticipantId), {
+                                      displayName: val
+                                    });
+                                    toast.success("Nombre actualizado");
+                                    setIsEditingName(false);
+                                  } catch (error) {
+                                    console.error(error);
+                                    toast.error("Error al guardar el nombre");
+                                  }
+                                }}
+                                className="h-8 w-8 p-0 bg-primary hover:bg-primary/95 text-black rounded-none"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setIsEditingName(false)}
+                                className="h-8 w-8 p-0 border-border hover:bg-white/5 rounded-none"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground uppercase tracking-[0.2em] inline-flex flex-wrap items-center gap-x-1.5 min-w-0">
+                              <span className="text-foreground font-black flex items-center gap-1.5 truncate">
+                                {participants.find(p => p.uid === activeParticipantId)?.displayName || 'Cargando...'}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    const currentName = participants.find(p => p.uid === activeParticipantId)?.displayName || '';
+                                    setEditingNameValue(currentName);
+                                    setIsEditingName(true);
+                                  }}
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                  title="Editar nombre"
+                                >
+                                  <Edit className="w-3 h-3" />
+                                </Button>
+                              </span>
+                              {(() => {
+                                const targetId = activeParticipantId;
+                                if (!targetId) return null;
+                                const userPreds = participantsPredictions[targetId] || predictions || [];
+                                const { totalPoints, correctResults, correctWinners } = calculateUserPoints(userPreds);
+                                return (
+                                  <span className="text-lime font-black ml-2 text-[10px] sm:text-[11px] border-l border-white/20 pl-2">
+                                    ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} DE GANADOR)
+                                  </span>
+                                );
+                              })()}
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground uppercase tracking-[0.2em] inline-flex flex-wrap items-center gap-x-1.5 min-w-0">
+                            <span className="text-foreground font-black truncate">
+                              {participants.find(p => p.uid === activeParticipantId)?.displayName || 'Cargando...'}
+                            </span>
+                            {(() => {
+                              const targetId = activeParticipantId;
+                              if (!targetId) return null;
+                              const userPreds = participantsPredictions[targetId] || predictions || [];
+                              const { totalPoints, correctResults, correctWinners } = calculateUserPoints(userPreds);
+                              return (
+                                <span className="text-lime font-black ml-2 text-[10px] sm:text-[11px] border-l border-white/20 pl-2">
+                                  ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} DE GANADOR)
+                                </span>
+                              );
+                            })()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {user && isAdminEmail(user.email) && activeParticipantId && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const p = participants.find(p => p.uid === activeParticipantId);
+                          if (p) {
+                            setParticipantToDelete({ id: p.uid, name: p.displayName || 'Participante' });
+                            setIsDeleteConfirmOpen(true);
+                          }
+                        }}
+                        className="h-10 text-[10px] font-black uppercase tracking-widest px-4 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500 rounded-none shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar Participante
+                      </Button>
+                    )}
+                  </div>
+
+                  {user && activeParticipantId && isAvatarPickerOpen && (
+                    <div className="border border-border/30 bg-card/10 p-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 justify-items-center">
+                        {AVATARS_LIST.map((avatar) => {
+                          const avUrl = avatar.url;
+                          const isSelected = participants.find(p => p.uid === activeParticipantId)?.photoURL === avUrl;
+                          return (
+                            <button
+                              key={avatar.name}
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const pRef = doc(db, 'users', activeParticipantId);
+                                  await updateDoc(pRef, { photoURL: avUrl });
+                                  toast.success('¡Avatar actualizado!');
+                                } catch (error) {
+                                  console.error("Error al actualizar el avatar:", error);
+                                  toast.error('Error al guardar el avatar');
+                                }
+                              }}
+                              className={cn(
+                                "relative p-1 border-2 transition-all hover:scale-110 flex items-center justify-center rounded-full overflow-hidden bg-zinc-800 w-10 h-10 shadow-sm",
+                                isSelected 
+                                  ? "border-primary bg-primary/20 scale-105" 
+                                  : "border-border hover:border-primary/50"
+                              )}
+                            >
+                              <img src={avUrl} className="w-full h-full rounded-full object-cover" referrerPolicy="no-referrer" alt={avatar.name} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-12 mb-6">
+                     {[viewingMatchday].map(day => (
+                       <div key={day} className="space-y-6 mt-[5px] mb-[14px]">
                     <div className="flex items-center gap-4 pt-[5px]">
                       <div className="h-[1px] flex-1 bg-border" />
                       <div className="flex flex-col items-center gap-2">
@@ -1017,15 +2753,20 @@ export default function App() {
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            disabled={viewingMatchday <= 1}
-                            onClick={() => setViewingMatchday(prev => Math.max(1, prev - 1))}
+                            disabled={matchdays.indexOf(viewingMatchday) <= 0}
+                            onClick={() => {
+                              const currentIndex = matchdays.indexOf(viewingMatchday);
+                              if (currentIndex > 0) {
+                                setViewingMatchday(matchdays[currentIndex - 1]);
+                              }
+                            }}
                             className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20"
                           >
                             <ChevronLeft className="h-6 w-6" />
                           </Button>
                           
                           <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border border-primary/30 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden">
-                            Jornada {day}
+                            {getMatchdayLabel(day)}
                             {day === currentMatchday && (
                               <span className="absolute top-0 left-0 h-full flex items-center pl-4">
                                 <span className="text-[8px] font-black tracking-widest text-[#FFD700] animate-pulse">ACTUAL</span>
@@ -1036,8 +2777,13 @@ export default function App() {
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            disabled={viewingMatchday >= matchdays.length}
-                            onClick={() => setViewingMatchday(prev => Math.min(matchdays.length, prev + 1))}
+                            disabled={matchdays.indexOf(viewingMatchday) === -1 || matchdays.indexOf(viewingMatchday) >= matchdays.length - 1}
+                            onClick={() => {
+                              const currentIndex = matchdays.indexOf(viewingMatchday);
+                              if (currentIndex !== -1 && currentIndex < matchdays.length - 1) {
+                                setViewingMatchday(matchdays[currentIndex + 1]);
+                              }
+                            }}
                             className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20"
                           >
                             <ChevronRight className="h-6 w-6" />
@@ -1049,19 +2795,19 @@ export default function App() {
 
                     <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
                       <div className="flex items-center gap-2">
-                        {day === currentMatchday && (
-                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                            Cierre de predicciones: <span className="text-primary font-black text-[11px] ml-1">14H 22M</span>
-                          </span>
-                        )}
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                          Tiempo para iniciar fase: <span className="text-primary font-black text-[11px] ml-1">{getTimeUntilPhase(day)}</span>
+                        </span>
                       </div>
-                      <Button 
-                        onClick={handleSavePredictions}
-                        disabled={!hasUnsavedChanges || isSyncing}
-                        className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                      >
-                        {isSyncing ? 'Guardando...' : 'Guardar'}
-                      </Button>
+                      {!predictionsReadOnly && (
+                        <Button 
+                          onClick={handleSavePredictions}
+                          disabled={!hasUnsavedChanges || isSyncing}
+                          className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >
+                          {isSyncing ? 'Guardando...' : 'Guardar'}
+                        </Button>
+                      )}
                     </div>
                     
                     <div className="space-y-12">
@@ -1075,7 +2821,7 @@ export default function App() {
                           <div className="flex items-center gap-3">
                             <div className="h-4 w-1 bg-primary" />
                             <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                              {groupName && groupName.length === 1 ? `Grupo ${groupName}` : groupName}
+                              {getGroupNameLabel(groupName)}
                             </h4>
                           </div>
                           <div className="grid grid-cols-1 gap-4">
@@ -1084,25 +2830,33 @@ export default function App() {
                                 const homeTeam = currentTeams.find(t => t.id === match.homeTeamId);
                                 const awayTeam = currentTeams.find(t => t.id === match.awayTeamId);
                                 
-                                if (!homeTeam || !awayTeam) return null;
+                                if (match.matchday < 4 && (!homeTeam || !awayTeam)) return null;
 
                                 // Logic to hide teams in knockout stages until they are "known"
                                 const isTBD = match.matchday >= 4 && (
-                                  !isSimulationMode || 
-                                  (match.matchday === 4 && new Date(simulatedDate) < new Date('2026-07-12T00:00:00Z')) ||
-                                  (match.matchday === 5 && new Date(simulatedDate) < new Date('2026-07-15T00:00:00Z')) ||
-                                  (match.matchday === 6 && new Date(simulatedDate) < new Date('2026-07-19T00:00:00Z')) ||
-                                  (match.matchday === 7 && new Date(simulatedDate) < new Date('2026-07-22T00:00:00Z')) ||
-                                  (match.matchday === 8 && new Date(simulatedDate) < new Date('2026-07-24T00:00:00Z'))
+                                  !isSimulationMode 
+                                    ? ((!homeTeam && !(match as any).homeTeamName) || (!awayTeam && !(match as any).awayTeamName))
+                                    : (
+                                        (match.matchday === 4 && new Date(simulatedDate) < new Date('2026-06-28T00:00:00Z')) ||
+                                        (match.matchday === 5 && new Date(simulatedDate) < new Date('2026-07-04T00:00:00Z')) ||
+                                        (match.matchday === 6 && new Date(simulatedDate) < new Date('2026-07-09T00:00:00Z')) ||
+                                        (match.matchday === 7 && new Date(simulatedDate) < new Date('2026-07-14T00:00:00Z')) ||
+                                        (match.matchday === 8 && new Date(simulatedDate) < new Date('2026-07-18T00:00:00Z'))
+                                      )
                                 );
 
-                                const displayHome = isTBD ? { name: 'Por definir', flag: '🏳️' } : homeTeam;
-                                const displayAway = isTBD ? { name: 'Por definir', flag: '🏳️' } : awayTeam;
+                                const displayHome = (isTBD || !homeTeam) ? { name: 'Por definir', flag: '🏳️' } : homeTeam;
+                                const displayAway = (isTBD || !awayTeam) ? { name: 'Por definir', flag: '🏳️' } : awayTeam;
 
                                 const prediction = predictions.find(p => p.matchId === match.id) || { matchId: match.id, homeScore: null, awayScore: null };
 
-                                const isFinished = isSimulationMode && new Date(match.date) < new Date(simulatedDate);
-                                const actualMatch = isSimulationMode ? (MATCHES.find(m => m.id === match.id)) : null;
+                                const isLocked = isSimulationMode 
+                                  ? new Date(match.date) < new Date(simulatedDate)
+                                  : new Date(match.date) < new Date() || (match.status && !['SCHEDULED', 'TIMED'].includes(match.status));
+
+                                const shouldShowResult = isSimulationMode
+                                  ? isLocked
+                                  : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'AWARDED'].includes(match.status || '') || (apiMatches.length === 0 && new Date(match.date) < new Date()));
 
                                 return (
                                   <motion.div
@@ -1116,18 +2870,34 @@ export default function App() {
                                       
                                       <div className="absolute top-[6px] right-2 flex gap-2">
                                         <div className="bg-white/5 text-muted-foreground text-[8px] font-black px-2 py-0.5 uppercase tracking-widest border border-border">
-                                          {new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                          {new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                         </div>
-                                        {isFinished && (
-                                          <div className="bg-primary/20 text-primary text-[8px] font-black px-2 py-0.5 uppercase tracking-widest">
-                                            Finalizado
-                                          </div>
+                                        {isSimulationMode ? (
+                                          isLocked && (
+                                            <div className="bg-primary/20 text-primary text-[8px] font-black px-2 py-0.5 uppercase tracking-widest">
+                                              Finalizado
+                                            </div>
+                                          )
+                                        ) : (
+                                          ['IN_PLAY', 'LIVE'].includes(match.status || '') ? (
+                                            <div className="bg-red-600 text-white text-[8px] font-black px-2 py-0.5 uppercase tracking-widest animate-pulse">
+                                              En Vivo
+                                            </div>
+                                          ) : ['FINISHED', 'FT'].includes(match.status || '') ? (
+                                            <div className="bg-primary/20 text-primary text-[8px] font-black px-2 py-0.5 uppercase tracking-widest">
+                                              Finalizado
+                                            </div>
+                                          ) : isLocked ? (
+                                            <div className="bg-muted text-muted-foreground text-[8px] font-black px-2 py-0.5 uppercase tracking-widest">
+                                              Cerrado
+                                            </div>
+                                          ) : null
                                         )}
                                       </div>
 
                                       {/* Home Team */}
                                       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                                        {displayHome.flag.startsWith('http') ? (
+                                        {displayHome.flag?.startsWith('http') ? (
                                           <img src={displayHome.flag} alt="" className="w-5 h-5 sm:w-8 sm:h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
                                         ) : (
                                           <span className={cn("text-xl sm:text-3xl transition-all shrink-0", isTBD && "opacity-20")}>{displayHome.flag}</span>
@@ -1135,41 +2905,81 @@ export default function App() {
                                         <span className={cn("text-[11px] sm:text-lg font-black uppercase tracking-tight truncate", isTBD && "text-muted-foreground/50")}>{displayHome.name}</span>
                                       </div>
 
-                                      {/* Score Inputs / Result */}
-                                      <div className="flex items-center gap-1 sm:gap-3 shrink-0">
-                                        {isFinished ? (
-                                          <div className="flex items-center gap-2 sm:gap-4">
-                                            <span className="text-xl sm:text-2xl font-black">{actualMatch?.actualHomeScore}</span>
-                                            <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
-                                            <span className="text-xl sm:text-2xl font-black">{actualMatch?.actualAwayScore}</span>
+                                      {/* Score Inputs & Display of Prediction + Real Result */}
+                                      <div className="flex flex-col items-center gap-2 shrink-0 min-w-[80px] sm:min-w-[120px]">
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                          <Input
+                                            type="number"
+                                            disabled={isTBD || isLocked || !user || predictionsReadOnly}
+                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
+                                            value={prediction.homeScore ?? ''}
+                                            onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
+                                            placeholder="-"
+                                          />
+                                          <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
+                                          <Input
+                                            type="number"
+                                            disabled={isTBD || isLocked || !user || predictionsReadOnly}
+                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
+                                            value={prediction.awayScore ?? ''}
+                                            onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
+                                            placeholder="-"
+                                          />
+                                        </div>
+
+                                        {shouldShowResult && (
+                                          <div className="flex flex-col items-center gap-1">
+                                            {/* Actual/Simulated Match Score */}
+                                            <div className="bg-primary/10 border border-primary/25 rounded px-2 py-0.5 flex items-center gap-1 text-[10px] font-bold text-primary">
+                                              <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80 mr-1">R:</span>
+                                              <span className="font-black text-foreground">
+                                                {match.actualHomeScore ?? 0}
+                                              </span>
+                                              <span className="text-muted-foreground font-normal">-</span>
+                                              <span className="font-black text-foreground">
+                                                {match.actualAwayScore ?? 0}
+                                              </span>
+                                            </div>
+
+                                            {/* Points Gained on this specific Match */}
+                                            {prediction.homeScore !== null && prediction.homeScore !== undefined && prediction.awayScore !== null && prediction.awayScore !== undefined && (
+                                              (() => {
+                                                const actHome = match.actualHomeScore ?? 0;
+                                                const actAway = match.actualAwayScore ?? 0;
+                                                const predHome = prediction.homeScore;
+                                                const predAway = prediction.awayScore;
+                                                const isExact = (predHome === actHome) && (predAway === actAway);
+                                                const isWinner = (Math.sign(predHome - predAway) === Math.sign(actHome - actAway));
+
+                                                let ptsLabel = "";
+                                                let ptsClass = "";
+
+                                                if (isExact) {
+                                                  ptsLabel = "+3 PTS (EXACTO)";
+                                                  ptsClass = "bg-lime/10 border-lime/25 text-lime";
+                                                } else if (isWinner) {
+                                                  ptsLabel = "+1 PT (GANADOR)";
+                                                  ptsClass = "bg-sky-400/10 border-sky-400/25 text-sky-400";
+                                                } else {
+                                                  ptsLabel = "0 PTS";
+                                                  ptsClass = "bg-red-500/5 border-red-500/15 text-red-400/80";
+                                                }
+
+                                                return (
+                                                  <span className={cn("text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider whitespace-nowrap", ptsClass)}>
+                                                    {ptsLabel}
+                                                  </span>
+                                                );
+                                              })()
+                                            )}
                                           </div>
-                                        ) : (
-                                          <>
-                                            <Input
-                                              type="number"
-                                              disabled={isTBD}
-                                              className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-20"
-                                              value={prediction.homeScore ?? ''}
-                                              onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
-                                              placeholder="-"
-                                            />
-                                            <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
-                                            <Input
-                                              type="number"
-                                              disabled={isTBD}
-                                              className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-20"
-                                              value={prediction.awayScore ?? ''}
-                                              onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
-                                              placeholder="-"
-                                            />
-                                          </>
                                         )}
                                       </div>
 
                                       {/* Away Team */}
                                       <div className="flex items-center justify-end gap-2 sm:gap-4 text-right min-w-0">
                                         <span className={cn("text-[11px] sm:text-lg font-black uppercase tracking-tight truncate", isTBD && "text-muted-foreground/50")}>{displayAway.name}</span>
-                                        {displayAway.flag.startsWith('http') ? (
+                                        {displayAway.flag?.startsWith('http') ? (
                                           <img src={displayAway.flag} alt="" className="w-5 h-5 sm:w-8 sm:h-8 object-contain shrink-0" referrerPolicy="no-referrer" />
                                         ) : (
                                           <span className={cn("text-xl sm:text-3xl transition-all shrink-0", isTBD && "opacity-20")}>{displayAway.flag}</span>
@@ -1188,28 +2998,33 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="pt-6 flex justify-end">
-                <Button 
-                  onClick={handleSavePredictions}
-                  disabled={!hasUnsavedChanges || isSyncing}
-                  className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  {isSyncing ? 'Guardando...' : 'Guardar'}
-                </Button>
-              </div>
+              {user && !predictionsReadOnly && (
+                <div className="pt-6 flex justify-end">
+                  <Button 
+                    onClick={handleSavePredictions}
+                    disabled={!hasUnsavedChanges || isSyncing}
+                    className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    {isSyncing ? 'Guardando...' : 'Guardar'}
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Right Column: Standings */}
-            <div className="space-y-8 bg-sky-950/20 border border-sky-500/10 p-6 rounded-xl">
+            {!user && (
+              <div className="space-y-8 bg-sky-950/20 border border-sky-500/10 p-6 rounded-xl">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
                   <h2 className="text-[12px] font-bold text-sky-400 uppercase tracking-[0.3em]">
-                    Tu Tabla Proyectada
+                    {user ? 'Tu Tabla Proyectada' : 'Tabla Proyectada'}
                   </h2>
                 </div>
                 <p className="text-[9px] text-muted-foreground uppercase leading-tight font-bold">
-                  * Esta tabla se calcula automáticamente según tus marcadores.
+                  {user 
+                    ? '* Esta tabla se calcula automáticamente según tus marcadores.' 
+                    : '* Esta tabla se calcula automáticamente según los marcadores de este competidor.'}
                 </p>
               </div>
 
@@ -1217,7 +3032,7 @@ export default function App() {
                 {allGroupStandings.map(({ group, standings }) => (
                   <div key={group} className="space-y-4">
                     <span className="text-[10px] font-black text-sky-400/70 uppercase tracking-widest border-l-2 border-sky-500/50 pl-3 block">
-                      Posiciones Grupo {group}
+                      Posiciones {getGroupNameLabel(group)}
                     </span>
                     <div className="border-t border-sky-500/10">
                       <Table>
@@ -1269,33 +3084,70 @@ export default function App() {
                 ))}
               </div>
             </div>
-          </div>
-        ) : activeTab === 'leaderboard' ? (
+          )}
+        </div>
+      ) : activeTab === 'leaderboard' ? (
           <div className="space-y-12">
             <div className="max-w-4xl mx-auto bg-card border border-border">
-              <div className="p-8 border-b border-border bg-primary/5 flex flex-col md:flex-row justify-between items-center gap-6">
-                <div className="space-y-1 text-center md:text-left">
-                  <h2 className="text-[14px] font-black uppercase tracking-widest text-primary">Ranking de Mi Quiniela</h2>
-                  <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-tight">Participantes de {selectedLeague?.name}</p>
-                </div>
-                <div className="flex items-center gap-8">
+              <div className="p-4 sm:p-8 border-b border-border bg-primary/5 flex flex-row justify-between items-center gap-4">
+                {user && isAdminEmail(user.email) && (
+                  <div className="flex items-center gap-2">
+                    {!isAddingParticipant ? (
+                      <Button 
+                        size="sm" 
+                        onClick={() => setIsAddingParticipant(true)} 
+                        className="text-[9px] font-black uppercase tracking-widest h-8"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" /> Registrar Participante
+                      </Button>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                        <div className="flex flex-col gap-1 w-full sm:w-auto">
+                          <Input
+                            placeholder="NUEVO PARTICIPANTE"
+                            value={newParticipantName}
+                            onChange={(e) => {
+                              if (e.target.value.length <= 10) {
+                                setNewParticipantName(e.target.value.toUpperCase());
+                              }
+                            }}
+                            maxLength={10}
+                            className="h-8 w-44 sm:w-60 text-[10px] font-black tracking-wider uppercase rounded-none border-border bg-background"
+                          />
+                          <span className="text-[7px] font-mono text-muted-foreground font-bold text-right sm:text-left pr-1">
+                            {newParticipantName.length}/10 CARACTERES
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5 mt-1 sm:mt-0">
+                          <Button onClick={handleAddParticipant} size="sm" className="h-8 text-[9px] font-black uppercase px-4 rounded-none">
+                            Agregar
+                          </Button>
+                          <Button variant="outline" onClick={() => setIsAddingParticipant(false)} size="sm" className="h-8 text-[9px] font-black uppercase px-3 rounded-none">
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(!user || !isAdminEmail(user.email)) && <div />}
+                <div className="flex items-center gap-8 ml-auto">
                   <div className="text-center">
                     <p className="text-[18px] font-black text-lime">{leaderboard.length}</p>
-                    <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Usuarios</p>
-                  </div>
-                  <div className="w-[1px] h-8 bg-border" />
-                  <div className="text-center">
-                    <p className="text-[18px] font-black text-lime">{leaderboard.find(u => u.uid === user?.uid)?.totalPoints || 0}</p>
-                    <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Mis Puntos</p>
+                    <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Participantes</p>
                   </div>
                 </div>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-b border-border">
-                    <TableHead className="w-[60px] text-center text-[10px] font-black uppercase py-6">Pos</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase py-6">Usuario</TableHead>
-                    <TableHead className="text-right text-[10px] font-black uppercase py-6">Puntos</TableHead>
+                    <TableHead className="w-[45px] sm:w-[60px] text-center text-[10px] font-black uppercase py-4 sm:py-6 px-1 sm:px-4">POS</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Participante</TableHead>
+                    <TableHead className="hidden sm:table-cell text-center text-[10px] font-black uppercase py-6">Progreso</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">Exactos (3 PTS)</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">Ganador (1 PT)</TableHead>
+                    <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Puntos</TableHead>
+                    <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 pr-3 sm:pr-8 pl-1.5 sm:pl-4">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1306,12 +3158,9 @@ export default function App() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
                         key={entry.uid}
-                        className={cn(
-                          "group hover:bg-white/5 border-b border-white/5 transition-colors",
-                          entry.uid === user?.uid && "bg-primary/5"
-                        )}
+                        className="group hover:bg-white/5 border-b border-white/5 transition-colors"
                       >
-                        <TableCell className="py-6 text-center">
+                        <TableCell className="py-4 sm:py-6 text-center px-1 sm:px-4">
                           <span className={cn(
                             "text-[12px] font-black",
                             index === 0 ? "text-lime" : index === 1 ? "text-gray-300" : index === 2 ? "text-amber-600" : ""
@@ -1319,35 +3168,174 @@ export default function App() {
                             {(index + 1).toString().padStart(2, '0')}
                           </span>
                         </TableCell>
-                        <TableCell className="py-6">
-                          <div className="flex items-center gap-3">
-                            <img src={entry.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.uid}`} className="w-8 h-8 rounded-full border border-border" referrerPolicy="no-referrer" />
-                            <div className="flex flex-col">
-                              <span className="text-[12px] font-black uppercase truncate max-w-[200px]">
-                                {entry.displayName || 'Anonimo'}
+                        <TableCell 
+                          className="py-4 sm:py-6 px-1.5 sm:px-4 cursor-pointer hover:text-primary transition-colors group/cell"
+                          title={`Ver predicciones de ${entry.displayName || 'Anónimo'}`}
+                          onClick={() => {
+                            setActiveParticipantId(entry.uid);
+                            setPredictionsEditMode(true);
+                            setPredictionsReadOnly(true);
+                          }}
+                        >
+                          <div className="flex items-center gap-1.5 sm:gap-3">
+                            <img 
+                              src={entry.photoURL || getAvatarForUser(entry.displayName || 'Anónimo')} 
+                              className="w-6 h-6 sm:w-8 sm:h-8 rounded-full border border-border bg-zinc-800 transition-all group-hover/cell:border-primary group-hover/cell:scale-105" 
+                              referrerPolicy="no-referrer" 
+                            />
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[12px] font-black uppercase truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px] transition-all group-hover/cell:text-primary">
+                                {entry.displayName || 'Anónimo'}
                               </span>
-                              {entry.uid === user?.uid && <span className="text-[8px] font-black text-primary uppercase tracking-widest">Tú</span>}
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="py-6 text-right">
-                          <span className="text-[16px] font-black text-lime">
-                            {entry.totalPoints || 0} <span className="text-[10px] text-muted-foreground ml-1">PTS</span>
+                        <TableCell className="hidden sm:table-cell py-6 text-center">
+                          {(() => {
+                            const stat = predictionsStats[entry.uid];
+                            if (!stat) {
+                              return (
+                                <span className="text-[10px] font-black uppercase text-muted-foreground animate-pulse">
+                                  Cargando...
+                                </span>
+                              );
+                            }
+                            const { filled, total } = stat;
+                            const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
+                            const isCompleted = filled === total && total > 0;
+                            return (
+                              <div className="flex flex-col items-center gap-1.5 min-w-[85px] mx-auto">
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className={cn(
+                                    "text-[11px] font-black tracking-tight",
+                                    isCompleted ? "text-lime" : filled > 0 ? "text-[#FFD700]" : "text-muted-foreground"
+                                  )}>
+                                    {percentage}%
+                                  </span>
+                                  <span className="text-[9px] text-muted-foreground font-bold">
+                                    ({filled}/{total})
+                                  </span>
+                                </div>
+                                <div className="w-16 h-1 bg-white/5 border border-white/10 rounded-none overflow-hidden">
+                                  <div 
+                                    className={cn(
+                                      "h-full transition-all duration-500",
+                                      isCompleted ? "bg-lime" : "bg-primary"
+                                    )}
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
+                          <span className="text-[12px] font-black text-white/95">
+                            {entry.correctResults || 0} <span className="text-[9px] text-muted-foreground font-medium ml-1">({(entry.correctResults || 0) * 3} PTS)</span>
                           </span>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
+                          <span className="text-[12px] font-black text-white/95">
+                            {entry.correctWinners || 0} <span className="text-[9px] text-muted-foreground font-medium ml-1">({(entry.correctWinners || 0) * 1} PTS)</span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-4 sm:py-6 text-right px-1.5 sm:px-4">
+                          <span className="text-[13px] sm:text-[16px] font-black text-lime">
+                            {entry.totalPoints || 0} <span className="text-[8px] sm:text-[10px] text-muted-foreground ml-0.5 sm:ml-1">PTS</span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-4 sm:py-6 text-right pr-3 sm:pr-8 pl-1.5 sm:pl-4">
+                          <div className="flex items-center justify-end gap-1.5 sm:gap-2">
+                            {user && isAdminEmail(user.email) ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setActiveParticipantId(entry.uid);
+                                  setPredictionsEditMode(true);
+                                  setPredictionsReadOnly(false);
+                                  setEditingNameValue(entry.displayName || '');
+                                  setIsEditingName(false);
+                                }}
+                                className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-primary/40 hover:bg-primary/10 text-primary hover:text-primary-foreground"
+                                title="Editar Predicciones y Datos"
+                              >
+                                <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setActiveParticipantId(entry.uid);
+                                  setPredictionsEditMode(true);
+                                  setPredictionsReadOnly(!user);
+                                }}
+                                className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-border hover:bg-white/5 text-muted-foreground hover:text-foreground"
+                                title={user ? 'Editar Predicciones' : 'Ver Predicciones'}
+                              >
+                                <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </motion.tr>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={3} className="py-20 text-center">
+                      <TableCell colSpan={5} className="py-20 text-center">
                         <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">
-                          Aún no hay usuarios en esta quiniela.
+                          Aún no hay participantes en esta quiniela.
                         </p>
                       </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
+            </div>
+
+            {/* Reglas de puntuación */}
+            <div className="max-w-4xl mx-auto bg-card border border-border p-6 sm:p-8">
+              <div className="flex items-center gap-2.5 mb-6 border-b border-border pb-4">
+                <div className="w-2 h-4 bg-lime" />
+                <h3 className="text-[12px] font-black uppercase tracking-wider text-white">
+                  Reglas de Puntuación
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="border border-border/40 p-4 bg-white/[0.01]">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-lime">
+                      Resultado Exacto
+                    </span>
+                    <span className="text-[12px] font-black uppercase tracking-wide text-lime bg-lime/10 px-2 py-0.5 border border-lime/20">
+                      3 Puntos
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                    Se otorgan si tu predicción coincide exactamente con el marcador final del partido. Ej. Predicción: 2-1 | Resultado: 2-1.
+                  </p>
+                </div>
+                
+                <div className="border border-border/40 p-4 bg-white/[0.01]">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-sky-400">
+                      Ganador o Empate
+                    </span>
+                    <span className="text-[12px] font-black uppercase tracking-wide text-sky-450 bg-sky-500/10 px-2 py-0.5 border border-sky-500/20 text-sky-400">
+                      1 Punto
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                    Se otorgan si aciertas quién gana (o empate), pero no el marcador exacto de goles. Ej. Predicción: 3-1 | Resultado: 2-0.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex items-center gap-2 border-t border-border/30 pt-4 text-muted-foreground">
+                <span className="text-[9px] font-mono font-bold tracking-wider uppercase">
+                  * El cálculo se realiza automáticamente en tiempo real a medida que se ingresan los resultados oficiales.
+                </span>
+              </div>
             </div>
           </div>
         ) : activeTab === 'noticias' ? (
@@ -1356,16 +3344,29 @@ export default function App() {
           {/* Content from the original 'resultados' sub-tab: Matches and Scorers */}
           <div className="space-y-8">
             <div className="space-y-8">
-              <div className="flex items-center justify-between border-b border-border pt-[5px] pb-4">
+              <div className="flex items-center justify-between border-b border-border pt-[13px] pl-0 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">{isSimulationMode ? `Resultados Simulados` : 'Últimos Resultados Sincronizados'}</span>
+                  <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">{isSimulationMode ? `Resultados Simulados` : 'Últimos Resultados'}</span>
+                  {isSimulationMode ? (
+                    <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[8px] font-black tracking-widest uppercase rounded-none">
+                      Simulado
+                    </span>
+                  ) : apiMatches.length > 0 ? (
+                    <span className="px-2 py-0.5 bg-lime/10 border border-lime/30 text-lime text-[8px] font-black tracking-widest uppercase rounded-none">
+                      API Real-Time
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-sky-550/10 border border-sky-500/30 text-sky-400 text-[8px] font-black tracking-widest uppercase rounded-none">
+                      {formatDbLastUpdated(dbLastUpdated)}
+                    </span>
+                  )}
                 </div>
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={syncWorldCupData} 
-                  disabled={isSyncing}
+                  onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition)} 
+                  disabled={isSyncing || !activeLeague?.competition}
                   className="text-[9px] font-black uppercase tracking-widest border-border h-8 px-4"
                 >
                   {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
@@ -1376,34 +3377,45 @@ export default function App() {
                 {(() => {
                   const displayResults = isSimulationMode 
                     ? MATCHES.filter(m => new Date(m.date) < new Date(simulatedDate))
-                    : apiMatches.filter(m => m.status === 'FINISHED' || m.status === 'LIVE' || m.status === 'IN_PLAY');
+                    : (apiMatches.length > 0 
+                        ? apiMatches.filter(m => m.status === 'FINISHED' || m.status === 'LIVE' || m.status === 'IN_PLAY')
+                        : MATCHES.filter(m => new Date(m.date) < new Date())
+                      );
                   
                   if (displayResults.length > 0) {
                     return displayResults
                       .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                       .slice(0, 8)
                       .map(match => {
-                        const homeTeam = TEAMS.find(t => t.id === match.homeTeamId);
-                        const awayTeam = TEAMS.find(t => t.id === match.awayTeamId);
+                        const homeTeam = currentTeams.find(t => t.id === match.homeTeamId);
+                        const awayTeam = currentTeams.find(t => t.id === match.awayTeamId);
                         return (
                           <div key={match.id} className="bg-card border border-border p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
                             <div className="flex justify-between items-center text-[9px] font-black text-muted-foreground uppercase tracking-widest">
                               <span>{new Date(match.date).toLocaleDateString()}</span>
                               <span className={(!isSimulationMode && (match.status === 'LIVE' || match.status === 'IN_PLAY')) ? "text-lime animate-pulse" : "text-muted-foreground"}>
-                                {isSimulationMode ? "FINALIZADO (SIM)" : match.status}
+                                {isSimulationMode ? "FINALIZADO (SIM)" : (match.status || 'FINALIZADO')}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                                {isSimulationMode ? <span className="text-xl">{homeTeam?.flag}</span> : ((match as any).homeTeamLogo ? <img src={(match as any).homeTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
-                                <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? homeTeam?.name : (match as any).homeTeamName}</span>
+                                {homeTeam?.flag?.startsWith('http') ? (
+                                  <img src={homeTeam.flag} className="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span className="text-xl shrink-0">{homeTeam?.flag || "🏳️"}</span>
+                                )}
+                                <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? (homeTeam?.name || "TBD") : ((match as any).homeTeamName || homeTeam?.name || "TBD")}</span>
                               </div>
                               <div className="bg-white/5 px-3 py-1 border border-border min-w-[60px] text-center">
                                 <span className="text-[14px] font-black tracking-tight">{match.actualHomeScore ?? '-'} : {match.actualAwayScore ?? '-'}</span>
                               </div>
                               <div className="flex items-center gap-3 flex-1 justify-end text-right overflow-hidden">
-                                <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? awayTeam?.name : (match as any).awayTeamName}</span>
-                                {isSimulationMode ? <span className="text-xl">{awayTeam?.flag}</span> : ((match as any).awayTeamLogo ? <img src={(match as any).awayTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
+                                <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? (awayTeam?.name || "TBD") : ((match as any).awayTeamName || awayTeam?.name || "TBD")}</span>
+                                {awayTeam?.flag?.startsWith('http') ? (
+                                  <img src={awayTeam.flag} className="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span className="text-xl shrink-0">{awayTeam?.flag || "🏳️"}</span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1422,39 +3434,67 @@ export default function App() {
                 <div className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">Próximos Encuentros</span>
+                  {isSimulationMode ? (
+                    <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[8px] font-black tracking-widest uppercase rounded-none">
+                      Simulado
+                    </span>
+                  ) : apiMatches.length > 0 ? (
+                    <span className="px-2 py-0.5 bg-lime/10 border border-lime/30 text-lime text-[8px] font-black tracking-widest uppercase rounded-none">
+                      API Real-Time
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-sky-550/10 border border-sky-500/30 text-sky-400 text-[8px] font-black tracking-widest uppercase rounded-none">
+                      {formatDbLastUpdated(dbLastUpdated)}
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {(() => {
                     const displayUpcoming = isSimulationMode
                       ? MATCHES.filter(m => new Date(m.date) >= new Date(simulatedDate))
-                      : apiMatches.filter(m => m.status === 'SCHEDULED' || m.status === 'TIMED');
+                      : (apiMatches.length > 0
+                          ? apiMatches.filter(m => m.status === 'SCHEDULED' || m.status === 'TIMED')
+                          : MATCHES.filter(m => new Date(m.date) >= new Date())
+                        );
                     
                     if (displayUpcoming.length > 0) {
                       return displayUpcoming
                         .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                         .slice(0, 6)
                         .map(match => {
-                          const homeTeam = TEAMS.find(t => t.id === match.homeTeamId);
-                          const awayTeam = TEAMS.find(t => t.id === match.awayTeamId);
+                          const homeTeam = currentTeams.find(t => t.id === match.homeTeamId);
+                          const awayTeam = currentTeams.find(t => t.id === match.awayTeamId);
                           return (
                             <div key={match.id} className="bg-card border border-border p-5 flex items-center justify-between gap-4">
                               <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                                {isSimulationMode ? <span className="text-lg">{homeTeam?.flag}</span> : ((match as any).homeTeamLogo ? <img src={(match as any).homeTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
-                                <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? homeTeam?.name : (match as any).homeTeamName}</span>
+                                {homeTeam?.flag?.startsWith('http') ? (
+                                  <img src={homeTeam.flag} className="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span className="text-xl shrink-0">{homeTeam?.flag || "🏳️"}</span>
+                                )}
+                                <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? (homeTeam?.name || "TBD") : ((match as any).homeTeamName || homeTeam?.name || "TBD")}</span>
                               </div>
                               <div className="flex flex-col items-center">
                                 <span className="text-[9px] font-black text-primary uppercase">VS</span>
                                 <span className="text-[8px] text-muted-foreground whitespace-nowrap">{new Date(match.date).toLocaleDateString()}</span>
                               </div>
                               <div className="flex items-center gap-3 flex-1 justify-end text-right overflow-hidden">
-                                <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? awayTeam?.name : (match as any).awayTeamName}</span>
-                                {isSimulationMode ? <span className="text-lg">{awayTeam?.flag}</span> : ((match as any).awayTeamLogo ? <img src={(match as any).awayTeamLogo} className="w-6 h-6 object-contain" referrerPolicy="no-referrer" /> : <span className="w-6 text-center">🏳️</span>)}
+                                <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? (awayTeam?.name || "TBD") : ((match as any).awayTeamName || awayTeam?.name || "TBD")}</span>
+                                {awayTeam?.flag?.startsWith('http') ? (
+                                  <img src={awayTeam.flag} className="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span className="text-xl shrink-0">{awayTeam?.flag || "🏳️"}</span>
+                                )}
                               </div>
                             </div>
                           );
                         });
                     }
-                    return null;
+                    return (
+                      <div className="col-span-full py-8 text-center bg-white/5 border border-dashed border-border/60">
+                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest italic">No hay próximos encuentros programados</p>
+                      </div>
+                    );
                   })()}
                 </div>
               </div>
@@ -1505,10 +3545,20 @@ export default function App() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-[1fr_200px] gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Nombre de la Quiniela</label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Nombre de la Quiniela</label>
+                      <span className="text-[9px] font-mono text-muted-foreground font-bold tracking-wider">
+                        {editLeagueName.length}/10 CARACTERES
+                      </span>
+                    </div>
                     <Input 
                       value={editLeagueName}
-                      onChange={(e) => setEditLeagueName(e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value.length <= 10) {
+                          setEditLeagueName(e.target.value);
+                        }
+                      }}
+                      maxLength={10}
                       className="h-12 text-[14px] font-black uppercase tracking-tight"
                     />
                   </div>
@@ -1524,82 +3574,109 @@ export default function App() {
               </div>
             )}
 
-            {/* Invitations section (Only for Creator) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-              {selectedLeague?.creatorId === user?.uid && (
-                <div className="bg-card border border-border p-8 space-y-6">
-                  <div className="flex items-center gap-3 border-b border-border pb-4">
-                    <UserPlus className="w-5 h-5 text-sky-400" />
-                    <h3 className="text-[12px] font-black uppercase tracking-widest text-primary">Invitar Usuarios</h3>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input 
-                        placeholder="BUSCAR POR NOMBRE..." 
-                        className="pl-10 h-11 text-[11px] font-black uppercase tracking-widest"
-                        value={userSearchTerm}
-                        onChange={(e) => searchUsers(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                      {foundUsers.length > 0 ? (
-                        foundUsers.map(u => (
-                          <div key={u.uid} className="flex items-center justify-between p-3 bg-primary/5 border border-primary/10 hover:bg-primary/10 transition-colors">
-                            <div className="flex items-center gap-3">
-                              <img src={u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.uid}`} className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
-                              <span className="text-[11px] font-black uppercase truncate max-w-[120px]">{u.displayName}</span>
-                            </div>
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={() => inviteUser(u.uid)}
-                              className="h-8 w-8 p-0 text-sky-400 hover:bg-sky-400 hover:text-white"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ))
-                      ) : userSearchTerm.length >= 3 ? (
-                        <p className="text-[10px] text-muted-foreground uppercase text-center py-4">No se encontraron usuarios</p>
-                      ) : (
-                        <p className="text-[10px] text-muted-foreground uppercase text-center py-10 opacity-50 italic">Busca amigos para invitarlos a tu quiniela</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className={cn("bg-card border border-border p-8 space-y-6", selectedLeague?.creatorId !== user?.uid && "col-span-full")}>
-                <div className="flex items-center gap-3 border-b border-border pb-4">
-                  <Info className="w-5 h-5 text-amber-500" />
-                  <h3 className="text-[12px] font-black uppercase tracking-widest text-primary">Información de Acceso</h3>
-                </div>
-                <div className="space-y-4">
-                   <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-bold">
-                    ID único de la quiniela. Compártelo con las personas que desees invitar.
-                  </p>
-                  <div className="p-6 bg-black/20 border-2 border-dashed border-primary/30 text-center space-y-3">
-                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">ID de esta Quiniela</span>
-                    <p className="text-[16px] font-mono font-black text-primary select-all break-all">{selectedLeagueId}</p>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectedLeagueId || '');
-                        toast.success('ID copiado');
-                      }}
-                      className="text-[10px] font-black uppercase h-9 border-primary/30 shadow-inner group transition-all"
-                    >
-                      <Share2 className="w-3 h-3 mr-2 group-hover:scale-110 transition-transform" />
-                      Copiar ID
-                    </Button>
-                  </div>
+            {/* Access Information section */}
+            <div className="bg-card border border-border p-8 space-y-6">
+              <div className="flex items-center gap-3 border-b border-border pb-4">
+                <Info className="w-5 h-5 text-amber-500" />
+                <h3 className="text-[12px] font-black uppercase tracking-widest text-primary">Información de Acceso</h3>
+              </div>
+              <div className="space-y-4">
+                 <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-bold">
+                  ID único de la quiniela. Compártelo con las personas que desees invitar.
+                </p>
+                <div className="p-6 bg-black/20 border-2 border-dashed border-primary/30 text-center space-y-3">
+                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">ID de esta Quiniela</span>
+                  <p className="text-[16px] font-mono font-black text-primary select-all break-all">{selectedLeagueId}</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedLeagueId || '');
+                      toast.success('ID copiado');
+                    }}
+                    className="text-[10px] font-black uppercase h-9 border-primary/30 shadow-inner group transition-all"
+                  >
+                    <Share2 className="w-3 h-3 mr-2 group-hover:scale-110 transition-transform" />
+                    Copiar ID
+                  </Button>
                 </div>
               </div>
             </div>
+
+            {user?.email === 'melaniagonzalez@gmail.com' && (
+              <div className="bg-amber-500/10 border border-amber-500/30 p-8 space-y-6">
+                {!showCleanupConfirm && !isCleaningDb && (
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="space-y-1 text-center md:text-left">
+                      <h3 className="text-[14px] font-black uppercase tracking-tight text-amber-500">Mantenimiento de Administrador</h3>
+                      <p className="text-[10px] text-muted-foreground font-bold uppercase">
+                        Limpia la base de datos de todos los usuarios y las quinielas para iniciar con datos limpios de forma definitiva. No afecta los resultados generales de los partidos.
+                      </p>
+                    </div>
+                    <Button 
+                      variant="outline"
+                      onClick={() => setShowCleanupConfirm(true)}
+                      className="h-12 px-10 text-[10px] font-black uppercase tracking-widest border-amber-500/50 hover:bg-amber-500/20 text-amber-500 hover:text-amber-400 transition-all font-black"
+                    >
+                      Limpiar Base de Datos
+                    </Button>
+                  </div>
+                )}
+
+                {showCleanupConfirm && !isCleaningDb && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    <div className="border-l-4 border-red-500 pl-4 py-2 space-y-2">
+                      <h4 className="text-[12px] font-black uppercase text-red-500 tracking-wider">¡ATENCIÓN: OPERACIÓN CRÍTICA IRREVERSIBLE!</h4>
+                      <p className="text-[11px] text-muted-foreground uppercase leading-relaxed font-bold">
+                        ¿Estás absolutamente seguro de que deseas limpiar la base de datos? Esta acción borrará de manera definitiva:
+                      </p>
+                      <ul className="text-[10px] text-muted-foreground uppercase list-disc list-inside space-y-1 font-bold pl-2">
+                        <li>Todas las quinielas y ligas creadas en la plataforma.</li>
+                        <li>Todos los perfiles de los usuarios participantes.</li>
+                        <li>Todas las predicciones y puntajes enviados.</li>
+                      </ul>
+                      <p className="text-[10px] text-emerald-400 font-bold uppercase">
+                        Nota: Los resultados oficiales de los partidos, equipos y configuraciones generales NO sufrirán ningún cambio.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-4 pt-2">
+                      <Button
+                        variant="destructive"
+                        className="h-11 px-8 text-[10px] font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white shadow-lg"
+                        onClick={async () => {
+                          setShowCleanupConfirm(false);
+                          await handleCleanDatabase();
+                        }}
+                      >
+                        SÍ, ELIMINAR Y LIMPIAR DATOS
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-11 px-8 text-[10px] font-black uppercase tracking-widest border-border text-muted-foreground hover:bg-muted/15"
+                        onClick={() => setShowCleanupConfirm(false)}
+                      >
+                        CANCELAR
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {(isCleaningDb || (cleanupProgress > 0 && cleanupProgress <= 100)) && (
+                  <div className="space-y-3 pt-4 border-t border-amber-500/20">
+                    <div className="flex justify-between items-center text-[10px] font-mono text-amber-500 font-bold uppercase">
+                      <span className="truncate max-w-[80%]">{cleanupStatus}</span>
+                      <span>{cleanupProgress}%</span>
+                    </div>
+                    <div className="w-full bg-black/40 h-3 rounded-full overflow-hidden border border-amber-500/20">
+                      <div 
+                        className="bg-amber-500 h-full rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${cleanupProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="bg-destructive/10 border border-destructive/30 p-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -1636,7 +3713,7 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === 'resultados' ? (
-      <div className="space-y-12">
+      <div className="space-y-12 pt-10">
         <div className="space-y-20">
             <div className="space-y-8">
               <div className="flex items-center gap-3">
@@ -1646,42 +3723,57 @@ export default function App() {
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {(isSimulationMode ? simulatedStandings : apiStandings.filter(s => s.type === 'TOTAL')).map((standing: any) => (
-                  <div key={standing.group} className="bg-card border border-border overflow-hidden">
-                    <div className="bg-primary/10 px-4 py-2 border-b border-border">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-primary">Grupo {standing.group.replace('GROUP_', '')}</span>
-                    </div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="hover:bg-transparent border-b border-border">
-                          <TableHead className="text-[9px] font-black uppercase py-4">Equipo</TableHead>
-                          <TableHead className="text-center text-[9px] font-black uppercase py-4">PJ</TableHead>
-                          <TableHead className="text-right text-[9px] font-black uppercase py-4">PTS</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {standing.table.map((row: any) => (
-                          <TableRow key={isSimulationMode ? row.id : row.team.id} className="hover:bg-white/5 border-b border-white/5">
-                            <TableCell className="py-2">
-                              <div className="flex items-center gap-2">
-                                {isSimulationMode ? (
-                                  <span className="text-lg">{row.crest}</span>
-                                ) : (
-                                  <img src={row.team.crest} className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
-                                )}
-                                <span className="text-[10px] font-bold uppercase truncate">
-                                  {isSimulationMode ? row.name : (row.team.shortName || row.team.name)}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center font-mono text-[10px]">{row.playedGames}</TableCell>
-                            <TableCell className="text-right font-black text-lime text-[11px]">{row.points}</TableCell>
+                {(() => {
+                  const displayStandings = isSimulationMode 
+                    ? computedStandings 
+                    : (apiStandings.filter(s => s.type === 'TOTAL').length > 0 
+                        ? apiStandings.filter(s => s.type === 'TOTAL') 
+                        : computedStandings
+                      );
+                  return displayStandings.map((standing: any) => (
+                    <div key={standing.group} className="bg-card border border-border overflow-hidden">
+                      <div className="bg-primary/10 px-4 py-2 border-b border-border">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary">Grupo {standing.group.replace('GROUP_', '')}</span>
+                      </div>
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent border-b border-border">
+                            <TableHead className="text-[9px] font-black uppercase py-4">Equipo</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase py-4">PJ</TableHead>
+                            <TableHead className="text-right text-[9px] font-black uppercase py-4">PTS</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ))}
+                        </TableHeader>
+                        <TableBody>
+                          {standing.table.map((row: any) => {
+                            const isStaticRow = isSimulationMode || !row.team;
+                            return (
+                              <TableRow key={isStaticRow ? row.id : row.team.id} className="hover:bg-white/5 border-b border-white/5">
+                                <TableCell className="py-2">
+                                  <div className="flex items-center gap-2">
+                                    {isStaticRow ? (
+                                      row.crest?.startsWith('http') ? (
+                                        <img src={row.crest} className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <span className="text-lg">{row.crest}</span>
+                                      )
+                                    ) : (
+                                      <img src={row.team.crest} className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
+                                    )}
+                                    <span className="text-[10px] font-bold uppercase truncate">
+                                      {isStaticRow ? row.name : (row.team.shortName || row.team.name)}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center font-mono text-[10px]">{row.playedGames}</TableCell>
+                                <TableCell className="text-right font-black text-lime text-[11px]">{row.points}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
 
@@ -1699,26 +3791,34 @@ export default function App() {
                     <div className="space-y-3">
                       {(() => {
                         const knockoutMatches = isSimulationMode 
-                          ? MATCHES.filter(m => m.matchday === 4)
+                          ? currentMatches.filter(m => m.matchday === 4)
                           : apiMatches.filter(m => m.stage === 'LAST_32');
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 16).map(m => {
-                            const home = TEAMS.find(t => t.id === m.homeTeamId);
-                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const home = currentTeams.find(t => t.id === m.homeTeamId);
+                            const away = currentTeams.find(t => t.id === m.awayTeamId);
                             const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
                             return (
                               <div key={m.id} className="bg-card border border-border p-2 text-[9px] font-black uppercase tracking-tighter hover:border-primary/50 transition-all">
                                 <div className="flex justify-between border-b border-white/5 pb-1 mb-1">
                                   <div className="flex items-center gap-1.5 overflow-hidden">
-                                    <span className="text-[10px] grayscale-0">{home?.flag}</span>
+                                    {home?.flag?.startsWith('http') ? (
+                                      <img src={home.flag} className="w-3.5 h-3.5 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-[10px] grayscale-0">{home?.flag || '🏳️'}</span>
+                                    )}
                                     <span className="truncate">{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
                                   </div>
                                   <span>{isFinished ? m.actualHomeScore : '-'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <div className="flex items-center gap-1.5 overflow-hidden">
-                                    <span className="text-[10px] grayscale-0">{away?.flag}</span>
+                                    {away?.flag?.startsWith('http') ? (
+                                      <img src={away.flag} className="w-3.5 h-3.5 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-[10px] grayscale-0">{away?.flag || '🏳️'}</span>
+                                    )}
                                     <span className="truncate">{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
                                   </div>
                                   <span>{isFinished ? m.actualAwayScore : '-'}</span>
@@ -1738,26 +3838,34 @@ export default function App() {
                     <div className="space-y-8 mt-4">
                       {(() => {
                         const knockoutMatches = isSimulationMode 
-                          ? MATCHES.filter(m => m.matchday === 5)
+                          ? currentMatches.filter(m => m.matchday === 5)
                           : apiMatches.filter(m => m.stage === 'LAST_16');
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 8).map(m => {
-                            const home = TEAMS.find(t => t.id === m.homeTeamId);
-                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const home = currentTeams.find(t => t.id === m.homeTeamId);
+                            const away = currentTeams.find(t => t.id === m.awayTeamId);
                             const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
                             return (
                               <div key={m.id} className="bg-card border border-primary/20 p-3 text-[10px] font-black uppercase tracking-tighter shadow-[0_0_15px_rgba(237,28,36,0.05)]">
                                 <div className="flex justify-between border-b border-white/5 pb-1 mb-1">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs">{home?.flag}</span>
+                                    {home?.flag?.startsWith('http') ? (
+                                      <img src={home.flag} className="w-4 h-4 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-xs">{home?.flag || '🏳️'}</span>
+                                    )}
                                     <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
                                   </div>
                                   <span className="text-primary">{isFinished ? m.actualHomeScore : '-'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs">{away?.flag}</span>
+                                    {away?.flag?.startsWith('http') ? (
+                                      <img src={away.flag} className="w-4 h-4 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-xs">{away?.flag || '🏳️'}</span>
+                                    )}
                                     <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
                                   </div>
                                   <span className="text-primary">{isFinished ? m.actualAwayScore : '-'}</span>
@@ -1777,26 +3885,34 @@ export default function App() {
                     <div className="space-y-20 mt-12">
                       {(() => {
                         const knockoutMatches = isSimulationMode 
-                          ? MATCHES.filter(m => m.matchday === 6)
+                          ? currentMatches.filter(m => m.matchday === 6)
                           : apiMatches.filter(m => m.stage === 'QUARTER_FINALS');
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 4).map(m => {
-                            const home = TEAMS.find(t => t.id === m.homeTeamId);
-                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const home = currentTeams.find(t => t.id === m.homeTeamId);
+                            const away = currentTeams.find(t => t.id === m.awayTeamId);
                             const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
                             return (
                               <div key={m.id} className="bg-primary/5 border border-primary/30 p-4 text-[11px] font-black uppercase tracking-tighter">
                                 <div className="flex justify-between border-b border-primary/10 pb-2 mb-2">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-base">{home?.flag}</span>
+                                    {home?.flag?.startsWith('http') ? (
+                                      <img src={home.flag} className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-base">{home?.flag || '🏳️'}</span>
+                                    )}
                                     <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
                                   </div>
                                   <span>{isFinished ? m.actualHomeScore : '-'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-base">{away?.flag}</span>
+                                    {away?.flag?.startsWith('http') ? (
+                                      <img src={away.flag} className="w-5 h-5 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-base">{away?.flag || '🏳️'}</span>
+                                    )}
                                     <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
                                   </div>
                                   <span>{isFinished ? m.actualAwayScore : '-'}</span>
@@ -1816,26 +3932,34 @@ export default function App() {
                     <div className="space-y-40 mt-24">
                       {(() => {
                         const knockoutMatches = isSimulationMode 
-                          ? MATCHES.filter(m => m.matchday === 7)
+                          ? currentMatches.filter(m => m.matchday === 7)
                           : apiMatches.filter(m => m.stage === 'SEMI_FINALS');
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 2).map(m => {
-                            const home = TEAMS.find(t => t.id === m.homeTeamId);
-                            const away = TEAMS.find(t => t.id === m.awayTeamId);
+                            const home = currentTeams.find(t => t.id === m.homeTeamId);
+                            const away = currentTeams.find(t => t.id === m.awayTeamId);
                             const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
                             return (
                               <div key={m.id} className="bg-primary/10 border-2 border-primary/40 p-5 text-[12px] font-black uppercase tracking-tighter">
                                 <div className="flex justify-between border-b border-primary/20 pb-2 mb-2">
                                   <div className="flex items-center gap-3">
-                                    <span className="text-xl">{home?.flag}</span>
+                                    {home?.flag?.startsWith('http') ? (
+                                      <img src={home.flag} className="w-6 h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-xl">{home?.flag || '🏳️'}</span>
+                                    )}
                                     <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
                                   </div>
                                   <span className="text-lime">{isFinished ? m.actualHomeScore : '-'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <div className="flex items-center gap-3">
-                                    <span className="text-xl">{away?.flag}</span>
+                                    {away?.flag?.startsWith('http') ? (
+                                      <img src={away.flag} className="w-6 h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <span className="text-xl">{away?.flag || '🏳️'}</span>
+                                    )}
                                     <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
                                   </div>
                                   <span className="text-lime">{isFinished ? m.actualAwayScore : '-'}</span>
@@ -1856,24 +3980,32 @@ export default function App() {
                       <Trophy className="w-12 h-12 text-primary animate-bounce mb-4" />
                       {(() => {
                         const finalMatches = isSimulationMode 
-                          ? MATCHES.filter(m => m.matchday === 8)
+                          ? currentMatches.filter(m => m.matchday === 8)
                           : apiMatches.filter(m => m.stage === 'FINAL');
                         
                         return finalMatches.map(m => {
-                          const home = TEAMS.find(t => t.id === m.homeTeamId);
-                          const away = TEAMS.find(t => t.id === m.awayTeamId);
+                          const home = currentTeams.find(t => t.id === m.homeTeamId);
+                          const away = currentTeams.find(t => t.id === m.awayTeamId);
                           const isFinished = isSimulationMode ? new Date(m.date) < new Date(simulatedDate) : m.status === 'FINISHED';
                           return (
                             <div key={m.id} className="w-full bg-gradient-to-br from-primary/20 to-purple/20 border-2 border-primary p-6 rounded-none text-[14px] font-black uppercase text-center">
                               <div className="flex flex-col items-center gap-2 mb-2">
-                                <span className="text-4xl mb-1">{home?.flag}</span>
+                                {home?.flag?.startsWith('http') ? (
+                                  <img src={home.flag} className="w-12 h-12 object-contain" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span className="text-4xl mb-1">{home?.flag || '🏳️'}</span>
+                                )}
                                 <span>{isSimulationMode ? home?.name : (m as any).homeTeamName}</span>
                               </div>
                               <div className="text-4xl text-primary my-4">
                                 {isFinished ? (m.actualHomeScore ?? '-') : '-'} : {isFinished ? (m.actualAwayScore ?? '-') : '-'}
                               </div>
                               <div className="flex flex-col items-center gap-2">
-                                <span className="text-4xl mb-1">{away?.flag}</span>
+                                {away?.flag?.startsWith('http') ? (
+                                  <img src={away.flag} className="w-12 h-12 object-contain" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <span className="text-4xl mb-1">{away?.flag || '🏳️'}</span>
+                                )}
                                 <span>{isSimulationMode ? away?.name : (m as any).awayTeamName}</span>
                               </div>
                             </div>
@@ -1892,6 +4024,322 @@ export default function App() {
     )}
     </main>
 
+    {/* Custom Delete Confirmation Modal */}
+    <AnimatePresence>
+      {isDeleteConfirmOpen && participantToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-red-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-red-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-red-500">¿Eliminar Participante?</h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                Estás a punto de eliminar a <span className="text-foreground font-black">"{participantToDelete.name}"</span>. Esta acción borrará todas sus predicciones y datos definitivamente.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={async () => {
+                  const { id, name } = participantToDelete;
+                  setIsDeleteConfirmOpen(false);
+                  setParticipantToDelete(null);
+                  await handleDeleteParticipant(id, name, true);
+                }}
+                className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+              >
+                Sí, Eliminar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsDeleteConfirmOpen(false);
+                  setParticipantToDelete(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Admin Login Wizard Overlay */}
+    <AnimatePresence>
+      {adminLoginState !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-primary/30 p-6 sm:p-8 max-w-xl w-full rounded-none space-y-6 shadow-2xl shadow-red-950/5 relative z-55"
+          >
+            <button
+              onClick={async () => {
+                setAdminLoginState(null);
+                setPendingApprovalUser(null);
+                if (auth.currentUser && !user) {
+                  await signOut(auth);
+                }
+              }}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground hover:scale-110 transition-transform"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {adminLoginState === 'ask' && (
+              <div className="space-y-6">
+                <div className="space-y-2 text-center">
+                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-primary">¿Eres Admin o Deseas ser Admin?</h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  {/* Option A: Ya soy Admin */}
+                  <div className="border border-border p-5 flex flex-col justify-between space-y-4 hover:border-primary/40 transition-colors bg-white/5">
+                    <div className="space-y-2">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                        <Check className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-sm font-black uppercase tracking-wide text-foreground">Ya soy Admin</h4>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        Si ya posees acceso autorizado, inicia sesión directo para gestionar quinielas.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleGoogleLogin('existing_admin')}
+                      className="w-full h-11 bg-white hover:bg-white/90 text-black text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+                    >
+                      Iniciar Sesión
+                    </Button>
+                  </div>
+
+                  {/* Option B: Deseo ser Admin */}
+                  <div className="border border-border p-5 flex flex-col justify-between space-y-4 hover:border-primary/40 transition-colors bg-white/5">
+                    <div className="space-y-2">
+                      <div className="w-8 h-8 rounded-full bg-purple/10 border border-purple/20 flex items-center justify-center text-purple">
+                        <UserPlus className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-sm font-black uppercase tracking-wide text-foreground">Deseo ser Admin</h4>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        Si no tienes acceso, conéctate con tu Google email para registrar tu solicitud.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleGoogleLogin('request_admin')}
+                      className="w-full h-11 bg-purple hover:bg-purple/90 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+                    >
+                      Solicitar Acceso
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="pt-2 text-center">
+                  <button
+                    onClick={() => setAdminLoginState(null)}
+                    className="text-[10px] uppercase font-black tracking-widest text-muted-foreground hover:text-foreground underline underline-offset-4"
+                  >
+                    Volver al Ranking Principal
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {adminLoginState === 'authenticating' && (
+              <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+                <p className="text-[11px] uppercase font-black tracking-widest text-muted-foreground">Autenticando con Google...</p>
+                <p className="text-[9px] uppercase font-bold text-muted-foreground/60 text-center max-w-xs">Espera un momento mientras validamos tus credenciales en el sistema.</p>
+              </div>
+            )}
+
+            {adminLoginState === 'not_registered' && (
+              <div className="space-y-5 text-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
+                  <Search className="w-6 h-6" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-black uppercase tracking-tight text-red-500">Acceso No Registrado</h3>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed max-w-md mx-auto">
+                    No encontramos una cuenta de administrador registrada bajo el correo: <span className="text-foreground text-xs font-mono font-normal tracking-normal lowercase">{pendingApprovalUser?.email}</span>
+                  </p>
+                </div>
+                <div className="border border-border p-4 bg-white/5 space-y-3">
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground leading-normal">
+                    ¿Deseas enviar una solicitud de acceso al Súper Administrador con esta cuenta?
+                  </p>
+                  <Button
+                    onClick={async () => {
+                      if (pendingApprovalUser && pendingApprovalUser.email) {
+                        try {
+                          setAdminLoginState('authenticating');
+                          await setDoc(doc(db, 'adminRequests', pendingApprovalUser.uid), {
+                            uid: pendingApprovalUser.uid,
+                            email: pendingApprovalUser.email.toLowerCase(),
+                            displayName: pendingApprovalUser.displayName || 'Anónimo',
+                            photoURL: pendingApprovalUser.photoURL || '',
+                            status: 'pending',
+                            notified: false,
+                            createdAt: new Date().toISOString()
+                          });
+                          setAdminLoginState('pending_status_new');
+                        } catch (e) {
+                          console.error(e);
+                          toast.error("Error al enviar la solicitud");
+                        }
+                      }
+                    }}
+                    className="w-full h-11 bg-purple hover:bg-purple/90 text-white text-[10px] font-black uppercase tracking-widest rounded-none"
+                  >
+                    Sí, Enviar Solicitud de Acceso
+                  </Button>
+                </div>
+                <div className="flex justify-center gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      setAdminLoginState('ask');
+                      setPendingApprovalUser(null);
+                      await signOut(auth);
+                    }}
+                    className="h-10 text-[9px] font-black uppercase tracking-widest rounded-none border-border px-6"
+                  >
+                    Intentar con otra cuenta
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {adminLoginState === 'pending_status' && (
+              <div className="space-y-6 text-center py-4">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 animate-pulse">
+                  <FlaskConical className="w-6 h-6 animate-spin" style={{ animationDuration: '3s' }} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-black uppercase tracking-tight text-yellow-500">Solicitud en Proceso</h3>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed max-w-sm mx-auto">
+                    Tu solicitud de acceso para el correo electrónico <span className="text-foreground text-xs font-mono font-normal tracking-normal lowercase">{auth.currentUser?.email}</span> está actualmente en revisión por el Súper Administrador.
+                  </p>
+                </div>
+                <div className="bg-white/5 border border-border p-4 text-[10px] uppercase font-bold text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                  Recibirás acceso automáticamente en el sistema una vez que sea aprobada. ¡Vuelve a intentarlo pronto!
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    setAdminLoginState(null);
+                    setPendingApprovalUser(null);
+                    await signOut(auth);
+                  }}
+                  className="h-11 text-[10px] font-black uppercase tracking-widest rounded-none border-border px-8"
+                >
+                  Cerrar y Volver
+                </Button>
+              </div>
+            )}
+
+            {adminLoginState === 'pending_status_new' && (
+              <div className="space-y-6 text-center py-4">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 border border-primary/20 text-primary">
+                  <Check className="w-6 h-6" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-black uppercase tracking-tight text-primary">¡Solicitud Enviada con éxito!</h3>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed max-w-sm mx-auto">
+                    Se ha enviado una solicitud de acceso al Súper Administrador para el correo electrónico <span className="text-foreground text-xs font-mono font-normal tracking-normal lowercase font-bold">{auth.currentUser?.email || pendingApprovalUser?.email}</span>.
+                  </p>
+                </div>
+                <div className="bg-white/5 border border-border p-4 text-[10px] uppercase font-bold text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                  El Súper Administrador revisará tus antecedentes para aprobar tus permisos de Administrador de Ligas.
+                </div>
+                <Button
+                  onClick={async () => {
+                    setAdminLoginState(null);
+                    setPendingApprovalUser(null);
+                    await signOut(auth);
+                  }}
+                  className="h-11 text-[10px] font-black uppercase tracking-widest rounded-none bg-primary text-primary-foreground hover:bg-primary/90 px-8"
+                >
+                  Entendido
+                </Button>
+              </div>
+            )}
+
+            {adminLoginState === 'rejected_status' && (
+              <div className="space-y-6 text-center py-4">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
+                  <UserMinus className="w-6 h-6" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-black uppercase tracking-tight text-red-500">Solicitud Denegada / Revocada</h3>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed max-w-sm mx-auto">
+                    Lamentablemente, la solicitud de acceso para <span className="text-foreground text-xs font-mono font-normal tracking-normal lowercase">{auth.currentUser?.email}</span> fue rechazada o revocada por el Súper Administrador.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    setAdminLoginState(null);
+                    setPendingApprovalUser(null);
+                    await signOut(auth);
+                  }}
+                  className="h-11 text-[10px] font-black uppercase tracking-widest rounded-none border-border px-8"
+                >
+                  Volver al Ranking
+                </Button>
+              </div>
+            )}
+
+            {adminLoginState === 'approved_congrats' && (
+              <div className="space-y-6 text-center py-4">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-500/10 border-2 border-emerald-500 text-emerald-500 animate-bounce">
+                  <Trophy className="w-7 h-7" />
+                </div>
+                <div className="space-y-2">
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-3 py-1 font-black uppercase tracking-widest border border-emerald-500/20">Solicitud Aprobada</span>
+                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white pt-2">¡Felicidades por tu Aprobación!</h3>
+                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed max-w-sm mx-auto">
+                    Tu solicitud de acceso para ser Administrador ha sido formalmente aprobada por el Súper Administrador.
+                  </p>
+                </div>
+                <div className="bg-emerald-950/20 border border-emerald-500/25 p-5 text-[11px] uppercase font-black tracking-wider text-emerald-400 max-w-sm mx-auto leading-relaxed">
+                  ¡Bienvenido! Ahora tienes permitido ingresar, crear tus propias ligas de quiniela, agregar participantes y actualizar marcadores.
+                </div>
+                <Button
+                  onClick={async () => {
+                    const targetUser = pendingApprovalUser || auth.currentUser;
+                    if (targetUser) {
+                      try {
+                        await updateDoc(doc(db, 'adminRequests', targetUser.uid), {
+                          notified: true
+                        });
+                        
+                        setUser(targetUser);
+                        setAdminLoginState(null);
+                        setPendingApprovalUser(null);
+                        toast.success('¡Sesión iniciada correctamente como Admin!');
+                      } catch (e) {
+                        console.error(e);
+                        setUser(targetUser);
+                        setAdminLoginState(null);
+                        setPendingApprovalUser(null);
+                      }
+                    }
+                  }}
+                  className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black uppercase tracking-widest rounded-none shadow-lg shadow-emerald-950/20"
+                >
+                  Ingresar al Panel de Administrador
+                </Button>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
 
       {/* Footer */}
       <footer className="px-6 lg:px-16 py-12 border-t border-border flex flex-col sm:flex-row justify-center items-center gap-6">

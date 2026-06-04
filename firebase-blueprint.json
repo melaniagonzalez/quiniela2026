@@ -53,12 +53,47 @@
         "creatorName": { "type": "string" },
         "memberUids": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string", "format": "date-time" },
-        "isPrivate": { "type": "boolean" }
+        "isPrivate": { "type": "boolean" },
+        "competition": { "type": "string", "enum": ["WC", "CL"], "description": "El torneo que usa esta quiniela (WC o CL)" }
       },
-      "required": ["id", "name", "creatorId", "memberUids"]
+      "required": ["id", "name", "creatorId", "memberUids", "competition"]
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Configuración de permisos y límites para administradores de ligas",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Correo electrónico del administrador" },
+        "role": { "type": "string", "enum": ["admin", "superadmin"], "description": "Rol de administración" },
+        "maxLeaguesAllowed": { "type": "number", "description": "Número de quinielas que tiene permiso de crear" }
+      },
+      "required": ["email", "role", "maxLeaguesAllowed"]
+    },
+    "AdminRequest": {
+      "title": "AdminRequest",
+      "description": "Solicitud de acceso para convertirse en administrador de la plataforma",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "ID del usuario solicitante" },
+        "email": { "type": "string", "description": "Email del usuario" },
+        "displayName": { "type": "string", "description": "Nombre del usuario" },
+        "photoURL": { "type": "string", "description": "Foto de perfil" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Estado de la solicitud" },
+        "notified": { "type": "boolean", "description": "Si el usuario ya fue notificado de la aprobación" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "status"]
     }
   },
   "firestore": {
+    "/adminRequests/{requestId}": {
+      "schema": "AdminRequest",
+      "description": "Solicitudes de acceso de nuevos administradores"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminConfig",
+      "description": "Lista de administradores autorizados y sus límites"
+    },
     "/results/{matchId}": {
       "schema": "ActualMatch",
       "description": "Resultados oficiales sincronizados"

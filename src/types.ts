@@ -32,6 +32,7 @@ export interface League {
   memberUids: string[];
   createdAt: string;
   isPrivate: boolean;
+  competition: 'WC' | 'CL';
 }
 
 export interface LeagueMember {
