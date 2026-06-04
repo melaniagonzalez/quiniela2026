@@ -350,7 +350,7 @@ export default function App() {
   const [dbAdmins, setDbAdmins] = useState<any[]>([]);
   const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
-  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests'>('admins');
+  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues'>('admins');
   const [requestStatusFilter, setRequestStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [adminFormEmail, setAdminFormEmail] = useState('');
   const [adminFormRole, setAdminFormRole] = useState<'admin' | 'superadmin'>('admin');
@@ -379,6 +379,8 @@ export default function App() {
   const [isDenyRequestConfirmOpen, setIsDenyRequestConfirmOpen] = useState(false);
   const [requestToSuspend, setRequestToSuspend] = useState<any | null>(null);
   const [isSuspendConfirmOpen, setIsSuspendConfirmOpen] = useState(false);
+  const [isDeleteLeagueConfirmOpen, setIsDeleteLeagueConfirmOpen] = useState(false);
+  const [leagueToDeleteAdmin, setLeagueToDeleteAdmin] = useState<{ id: string; name: string } | null>(null);
 
   const isSuperAdmin = user ? (
     user.email?.toLowerCase() === 'melaniagonzalez@gmail.com' ||
@@ -933,6 +935,20 @@ export default function App() {
     } finally {
       setIsDeleteAdminConfirmOpen(false);
       setAdminToDelete(null);
+    }
+  };
+
+  const handleConfirmDeleteLeagueAdmin = async () => {
+    if (!leagueToDeleteAdmin) return;
+    try {
+      await deleteDoc(doc(db, 'leagues', leagueToDeleteAdmin.id));
+      toast.success(`La quiniela "${leagueToDeleteAdmin.name}" fue eliminada correctamente`);
+    } catch (error) {
+      console.error("Error deleting league:", error);
+      toast.error('No se pudo eliminar la quiniela');
+    } finally {
+      setIsDeleteLeagueConfirmOpen(false);
+      setLeagueToDeleteAdmin(null);
     }
   };
 
@@ -2311,6 +2327,21 @@ export default function App() {
                     </span>
                   )}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuperAdminTab('leagues');
+                    setEditingAdminId(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none",
+                    superAdminTab === 'leagues' 
+                      ? "border-primary text-primary bg-primary/5 font-black" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Trophy className="w-4 h-4 text-primary" /> Todas las Quinielas ({allLeagues.length})
+                </button>
               </div>
 
               {superAdminTab === 'admins' ? (
@@ -2483,7 +2514,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : superAdminTab === 'requests' ? (
                 <div className="space-y-6">
                   {/* Filtro sub-navegación por estatus */}
                   <div className="flex flex-wrap gap-2">
@@ -2636,6 +2667,138 @@ export default function App() {
                               </div>
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <Card className="bg-card border-2 border-border rounded-none shadow-xl">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground">
+                        Todas las Quinielas Registradas ({allLeagues.length})
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground">
+                        Supervisa todas las quinielas que existen en el sistema, sus participantes y sus creadores
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      {allLeagues.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground uppercase font-black tracking-wider text-xs">
+                          No hay ninguna quiniela creada en la base de datos
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader className="border-b-2 border-border">
+                              <TableRow className="border-none hover:bg-transparent">
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Quiniela ID</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Nombre</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Competencia</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Creador (Dueño)</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3 text-center">Miembros</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Fecha Creación</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3 text-right">Acciones</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-border">
+                              {allLeagues.map((league) => {
+                                const creator = allRegisteredUsers.find(u => u.uid === league.creatorId);
+                                const isCL = league.competition === 'CL';
+                                return (
+                                  <TableRow key={league.id} className="border-none hover:bg-white/5 transition-colors">
+                                    <TableCell className="py-4 font-mono text-xs font-bold text-primary">
+                                      <div className="flex items-center gap-2">
+                                        <span className="bg-primary/10 px-2 py-1 select-all hover:bg-primary/20 transition-colors uppercase border border-primary/20">
+                                          {league.id}
+                                        </span>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-primary rounded-none"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(league.id);
+                                            toast.success('Código copiado al portapapeles');
+                                          }}
+                                          title="Copiar Código"
+                                        >
+                                          <FileText className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-4 font-bold text-xs text-foreground uppercase">
+                                      {league.name}
+                                    </TableCell>
+                                    <TableCell className="py-4">
+                                      <span className={cn(
+                                        "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-none border",
+                                        isCL 
+                                          ? "bg-blue-500/10 border-blue-500/20 text-blue-400" 
+                                          : "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                      )}>
+                                        {isCL ? 'Champions League' : 'Mundial 2026'}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="py-4 text-xs font-bold text-foreground">
+                                      {creator ? (
+                                        <div className="flex flex-col">
+                                          <span className="uppercase text-foreground">{creator.displayName}</span>
+                                          <span className="text-[9px] text-muted-foreground font-mono font-bold lowercase">{creator.email}</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col">
+                                          <span className="uppercase text-foreground">{league.creatorName || 'Usuario Desconocido'}</span>
+                                          <span className="text-[9px] text-muted-foreground font-mono font-bold font-black uppercase">UID: {league.creatorId?.substring(0, 8)}...</span>
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="py-4 text-center text-xs font-mono font-bold text-foreground">
+                                      {league.memberUids?.length || 0}
+                                    </TableCell>
+                                    <TableCell className="py-4 text-xs font-mono font-bold text-muted-foreground">
+                                      {league.createdAt ? new Date(league.createdAt).toLocaleDateString('es-ES', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      }) : 'N/A'}
+                                    </TableCell>
+                                    <TableCell className="py-4 text-right">
+                                      <div className="flex justify-end gap-1.5">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-8 border-border text-foreground hover:bg-white/5 rounded-none text-[9px] font-black uppercase tracking-wider"
+                                          onClick={() => {
+                                            setSelectedLeagueId(league.id);
+                                            setShowSuperAdminPanel(false);
+                                            toast.success(`Explorando quiniela "${league.name}"`);
+                                          }}
+                                        >
+                                          <Eye className="w-3.5 h-3.5 mr-1" />
+                                          Ver
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline" 
+                                          onClick={() => {
+                                            setLeagueToDeleteAdmin({ id: league.id, name: league.name });
+                                            setIsDeleteLeagueConfirmOpen(true);
+                                          }}
+                                          className="h-8 w-8 p-0 border-border text-red hover:bg-red/10 hover:text-red hover:border-red rounded-none"
+                                          title="Eliminar Quiniela"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
                         </div>
                       )}
                     </CardContent>
@@ -4456,6 +4619,49 @@ export default function App() {
                 onClick={() => {
                   setIsDeleteAdminConfirmOpen(false);
                   setAdminToDelete(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Custom Delete League Confirmation Modal */}
+    <AnimatePresence>
+      {isDeleteLeagueConfirmOpen && leagueToDeleteAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-red-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-red-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-red-500">¿Eliminar Quiniela?</h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                Estás a punto de eliminar la quiniela <span className="text-foreground font-black">"{leagueToDeleteAdmin.name}"</span> (con código <span className="text-primary font-mono font-bold">{leagueToDeleteAdmin.id}</span>).
+              </p>
+              <p className="text-[10px] text-red-400 uppercase font-black tracking-widest leading-relaxed">
+                Esta acción es irreversible y borrará la quiniela junto con sus clasificaciones por completo del sistema.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={handleConfirmDeleteLeagueAdmin}
+                className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+              >
+                Sí, Eliminar de raíz
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsDeleteLeagueConfirmOpen(false);
+                  setLeagueToDeleteAdmin(null);
                 }}
                 className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
               >
