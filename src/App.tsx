@@ -380,7 +380,20 @@ export default function App() {
   const [requestToSuspend, setRequestToSuspend] = useState<any | null>(null);
   const [isSuspendConfirmOpen, setIsSuspendConfirmOpen] = useState(false);
 
-  const maxLeaguesAllowed = currentUserAdminConfig?.maxLeaguesAllowed ?? 1;
+  const isSuperAdmin = user ? (
+    user.email?.toLowerCase() === 'melaniagonzalez@gmail.com' ||
+    currentUserAdminConfig?.role === 'superadmin'
+  ) : false;
+  
+  const isApprovedAdmin = isSuperAdmin || (currentUserAdminConfig !== null);
+  
+  // Decide if there is a restricted session active
+  const isRestrictedSession = user ? (
+    !isApprovedAdmin || 
+    (currentUserRequest && currentUserRequest.status === 'approved' && !currentUserRequest.notified)
+  ) : false;
+
+  const maxLeaguesAllowed = isSuperAdmin ? 100 : (currentUserAdminConfig?.maxLeaguesAllowed ?? 1);
 
   // Clear news data when switching modes or when API data arrives
   useEffect(() => {
@@ -480,7 +493,7 @@ export default function App() {
 
   // Load ALL leagues for the Super Admin
   useEffect(() => {
-    if (user && user.email === 'melaniagonzalez@gmail.com' && showSuperAdminPanel) {
+    if (user && isSuperAdmin && showSuperAdminPanel) {
       const unsubscribe = onSnapshot(collection(db, 'leagues'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllLeagues(list);
@@ -489,11 +502,11 @@ export default function App() {
       });
       return () => unsubscribe();
     }
-  }, [user, showSuperAdminPanel]);
+  }, [user, isSuperAdmin, showSuperAdminPanel]);
 
   // Load ALL user profiles for the Super Admin
   useEffect(() => {
-    if (user && user.email === 'melaniagonzalez@gmail.com' && showSuperAdminPanel) {
+    if (user && isSuperAdmin && showSuperAdminPanel) {
       const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllRegisteredUsers(list);
@@ -502,11 +515,11 @@ export default function App() {
       });
       return () => unsubscribe();
     }
-  }, [user, showSuperAdminPanel]);
+  }, [user, isSuperAdmin, showSuperAdminPanel]);
 
   // Load ALL admin requests for the Super Admin
   useEffect(() => {
-    if (user && user.email === 'melaniagonzalez@gmail.com') {
+    if (user && isSuperAdmin) {
       const unsubscribe = onSnapshot(collection(db, 'adminRequests'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAdminRequests(list);
@@ -515,12 +528,12 @@ export default function App() {
       });
       return () => unsubscribe();
     }
-  }, [user]);
+  }, [user, isSuperAdmin]);
 
   // Fetch and manage all authorized admins
   useEffect(() => {
     if (user) {
-      if (user.email === 'melaniagonzalez@gmail.com') {
+      if (isSuperAdmin) {
         const unsubscribe = onSnapshot(collection(db, 'admins'), async (snapshot) => {
           const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
           
@@ -1074,7 +1087,7 @@ export default function App() {
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
 
   const handleCleanDatabase = async () => {
-    if (!user || user.email !== 'melaniagonzalez@gmail.com') {
+    if (!user || !isSuperAdmin) {
       toast.error('No tienes permisos de administrador para realizar esta acción');
       return;
     }
@@ -1917,14 +1930,7 @@ export default function App() {
     }
   };
 
-  const isSuperAdmin = user && user.email?.toLowerCase() === 'melaniagonzalez@gmail.com';
-  const isApprovedAdmin = isSuperAdmin || (currentUserAdminConfig !== null);
-  
-  // Decide if there is a restricted session active
-  const isRestrictedSession = user && (
-    !isApprovedAdmin || 
-    (currentUserRequest && currentUserRequest.status === 'approved' && !currentUserRequest.notified)
-  );
+
 
   if (!isAuthReady || (user && isAdminConfigLoading)) {
     return (
@@ -2071,7 +2077,7 @@ export default function App() {
           {user ? (
             <div className="flex items-center gap-2 sm:gap-3">
               {/* 1. Mis Quinielas (Home icon only, matching height and design) */}
-              {(selectedLeagueId || (showSuperAdminPanel && user?.email === 'melaniagonzalez@gmail.com')) && (
+              {(selectedLeagueId || (showSuperAdminPanel && isSuperAdmin)) && (
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -2087,7 +2093,7 @@ export default function App() {
               )}
 
               {/* 2. Súper Admin Panel */}
-              {user.email === 'melaniagonzalez@gmail.com' && (
+              {isSuperAdmin && (
                 <Button 
                   variant={showSuperAdminPanel ? "default" : "outline"} 
                   size="sm" 
@@ -2113,7 +2119,7 @@ export default function App() {
               )}
 
               {/* 3. Simula */}
-              {user.email === 'melaniagonzalez@gmail.com' && (
+              {isSuperAdmin && (
                 <Button
                   variant={isSimulationMode ? "default" : "outline"}
                   size="sm"
@@ -2257,7 +2263,7 @@ export default function App() {
               </div>
            </div>
         ) : !activeLeagueId ? (
-          showSuperAdminPanel && user?.email === 'melaniagonzalez@gmail.com' ? (
+          showSuperAdminPanel && isSuperAdmin ? (
             <div className="space-y-12 max-w-5xl mx-auto py-8">
               {/* Header de Panel Súper Admin */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
@@ -2413,7 +2419,7 @@ export default function App() {
                             dbAdmins.map((adm) => {
                               const leaguesCount = getLeaguesCreatedCount(adm.email);
                               const percent = Math.min(100, Math.round((leaguesCount / (adm.maxLeaguesAllowed || 1)) * 100));
-                              const isSelf = adm.email.toLowerCase() === 'melaniagonzalez@gmail.com';
+                              const isSelf = user && adm.email.toLowerCase() === user.email?.toLowerCase();
                               
                               return (
                                 <TableRow key={adm.id || adm.email} className="border-b border-border hover:bg-white/5 transition-colors">
@@ -3952,7 +3958,7 @@ export default function App() {
               </div>
             </div>
 
-            {user?.email === 'melaniagonzalez@gmail.com' && (
+            {isSuperAdmin && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-8 space-y-6">
                 {!showCleanupConfirm && !isCleaningDb && (
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
