@@ -552,7 +552,7 @@ export default function App() {
             ];
             const batch = writeBatch(db);
             initialAdmins.forEach(adm => {
-              const docId = adm.email.replace(/[^a-z0-9]/g, '_');
+              const docId = adm.email.toLowerCase().trim();
               batch.set(doc(db, 'admins', docId), adm);
             });
             try {
@@ -582,7 +582,7 @@ export default function App() {
   useEffect(() => {
     if (user && user.email) {
       setIsAdminConfigLoading(true);
-      const sanitizedId = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const sanitizedId = user.email.toLowerCase().trim();
       const unsubscribeAdmin = onSnapshot(doc(db, 'admins', sanitizedId), (docSnap) => {
         if (docSnap.exists()) {
           const val = docSnap.data();
@@ -724,7 +724,7 @@ export default function App() {
     const emailLower = adminFormEmail.trim().toLowerCase();
     
     setIsSavingAdmin(true);
-    const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+    const docId = emailLower;
     
     try {
       await setDoc(doc(db, 'admins', docId), {
@@ -776,7 +776,7 @@ export default function App() {
 
     try {
       const emailLower = request.email.trim().toLowerCase();
-      const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+      const docId = emailLower;
 
       // Update adminRequests status
       await updateDoc(doc(db, 'adminRequests', requestUid), {
@@ -1305,7 +1305,7 @@ export default function App() {
         const userRef = doc(db, 'users', currentUser.uid);
         try {
           const emailLower = currentUser.email?.toLowerCase() || '';
-          const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+          const docId = emailLower;
           
           let isReallyAdmin = isAdminEmail(currentUser.email);
           let adminRole = isReallyAdmin ? (emailLower === 'melaniagonzalez@gmail.com' ? 'superadmin' : 'admin') : 'none';
@@ -1485,7 +1485,7 @@ export default function App() {
       }
 
       const emailLower = currentUser.email.toLowerCase();
-      const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+      const docId = emailLower;
       
       // If Super Admin
       if (emailLower === 'melaniagonzalez@gmail.com') {
