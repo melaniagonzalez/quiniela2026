@@ -47,7 +47,8 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if isSignedIn() && (
         request.auth.token.email == "melaniagonzalez@gmail.com" ||
-        (resource != null && resource.data.email.lower() == request.auth.token.email.lower())
+        resource == null ||
+        resource.data.email.lower() == request.auth.token.email.lower()
       );
       allow write: if isSignedIn() && request.auth.token.email == "melaniagonzalez@gmail.com";
     }
@@ -61,7 +62,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && (
         requestId == request.auth.uid &&
         request.resource.data.uid == request.auth.uid &&
-        request.resource.data.email == request.auth.token.email
+        request.resource.data.email.lower() == request.auth.token.email.lower()
       );
       allow update: if isSignedIn() && (
         request.auth.token.email == "melaniagonzalez@gmail.com" ||
