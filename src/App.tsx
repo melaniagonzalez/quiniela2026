@@ -350,9 +350,11 @@ export default function App() {
   const [dbAdmins, setDbAdmins] = useState<any[]>([]);
   const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
+  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests'>('admins');
+  const [requestStatusFilter, setRequestStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [adminFormEmail, setAdminFormEmail] = useState('');
   const [adminFormRole, setAdminFormRole] = useState<'admin' | 'superadmin'>('admin');
-  const [adminFormMaxLeagues, setAdminFormMaxLeagues] = useState<number>(3);
+  const [adminFormMaxLeagues, setAdminFormMaxLeagues] = useState<number>(1);
   const [editingAdminId, setEditingAdminId] = useState<string | null>(null);
   const [isSavingAdmin, setIsSavingAdmin] = useState(false);
   const [allRegisteredUsers, setAllRegisteredUsers] = useState<any[]>([]);
@@ -371,8 +373,14 @@ export default function App() {
   const [editingNameValue, setEditingNameValue] = useState('');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [participantToDelete, setParticipantToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleteAdminConfirmOpen, setIsDeleteAdminConfirmOpen] = useState(false);
+  const [adminToDelete, setAdminToDelete] = useState<{ id: string; email: string } | null>(null);
+  const [requestToDeny, setRequestToDeny] = useState<any | null>(null);
+  const [isDenyRequestConfirmOpen, setIsDenyRequestConfirmOpen] = useState(false);
+  const [requestToSuspend, setRequestToSuspend] = useState<any | null>(null);
+  const [isSuspendConfirmOpen, setIsSuspendConfirmOpen] = useState(false);
 
-  const maxLeaguesAllowed = currentUserAdminConfig?.maxLeaguesAllowed ?? 3;
+  const maxLeaguesAllowed = currentUserAdminConfig?.maxLeaguesAllowed ?? 1;
 
   // Clear news data when switching modes or when API data arrives
   useEffect(() => {
@@ -498,7 +506,7 @@ export default function App() {
 
   // Load ALL admin requests for the Super Admin
   useEffect(() => {
-    if (user && user.email === 'melaniagonzalez@gmail.com' && showSuperAdminPanel) {
+    if (user && user.email === 'melaniagonzalez@gmail.com') {
       const unsubscribe = onSnapshot(collection(db, 'adminRequests'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAdminRequests(list);
@@ -507,7 +515,7 @@ export default function App() {
       });
       return () => unsubscribe();
     }
-  }, [user, showSuperAdminPanel]);
+  }, [user]);
 
   // Fetch and manage all authorized admins
   useEffect(() => {
@@ -577,13 +585,18 @@ export default function App() {
       const sanitizedId = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
       const unsubscribeAdmin = onSnapshot(doc(db, 'admins', sanitizedId), (docSnap) => {
         if (docSnap.exists()) {
-          setCurrentUserAdminConfig(docSnap.data());
+          const val = docSnap.data();
+          setCurrentUserAdminConfig(val);
+          const lowerEmail = user.email.toLowerCase();
+          if (!DYNAMIC_ADMIN_EMAILS.includes(lowerEmail)) {
+            DYNAMIC_ADMIN_EMAILS.push(lowerEmail);
+          }
         } else {
           if (isAdminEmail(user.email)) {
             setCurrentUserAdminConfig({
               email: user.email,
               role: user.email === 'melaniagonzalez@gmail.com' ? 'superadmin' : 'admin',
-              maxLeaguesAllowed: user.email === 'melaniagonzalez@gmail.com' ? 10 : 3
+              maxLeaguesAllowed: user.email === 'melaniagonzalez@gmail.com' ? 10 : 1
             });
           } else {
             setCurrentUserAdminConfig(null);
@@ -596,7 +609,7 @@ export default function App() {
           setCurrentUserAdminConfig({
             email: user.email,
             role: user.email === 'melaniagonzalez@gmail.com' ? 'superadmin' : 'admin',
-            maxLeaguesAllowed: user.email === 'melaniagonzalez@gmail.com' ? 10 : 3
+            maxLeaguesAllowed: user.email === 'melaniagonzalez@gmail.com' ? 10 : 1
           });
         } else {
           setCurrentUserAdminConfig(null);
@@ -717,13 +730,13 @@ export default function App() {
       await setDoc(doc(db, 'admins', docId), {
         email: emailLower,
         role: adminFormRole,
-        maxLeaguesAllowed: Number(adminFormMaxLeagues) || 3
+        maxLeaguesAllowed: Number(adminFormMaxLeagues) || 1
       }, { merge: true });
       
       toast.success(editingAdminId ? 'Administrador actualizado' : 'Administrador autorizado');
       setAdminFormEmail('');
       setAdminFormRole('admin');
-      setAdminFormMaxLeagues(3);
+      setAdminFormMaxLeagues(1);
       setEditingAdminId(null);
     } catch (error) {
       console.error("Error saving admin:", error);
@@ -737,111 +750,176 @@ export default function App() {
     setEditingAdminId(admin.id);
     setAdminFormEmail(admin.email);
     setAdminFormRole(admin.role);
-    setAdminFormMaxLeagues(admin.maxLeaguesAllowed || 3);
+    setAdminFormMaxLeagues(admin.maxLeaguesAllowed || 1);
   };
 
-  // Approval Handlers for Admin Requests
-  const handleApproveRequest = async (request: any) => {
+  // Approval and Status Management Handlers for Admin Requests
+  const handleUpdateUserRequestStatus = async (request: any, newStatus: 'approved' | 'rejected' | 'pending', skipConfirm = false) => {
+    const requestUid = request.id || request.uid;
+    if (!requestUid) {
+      toast.error("No se pudo identificar el identificador único del usuario");
+      return;
+    }
+
+    // Safety check confirmations
+    if (!skipConfirm) {
+      if (newStatus === 'rejected') {
+        setRequestToDeny(request);
+        setIsDenyRequestConfirmOpen(true);
+        return;
+      } else if (newStatus === 'pending' && request.status === 'approved') {
+        setRequestToSuspend(request);
+        setIsSuspendConfirmOpen(true);
+        return;
+      }
+    }
+
     try {
       const emailLower = request.email.trim().toLowerCase();
       const docId = emailLower.replace(/[^a-z0-9]/g, '_');
-      
-      // Update request status
-      await updateDoc(doc(db, 'adminRequests', request.uid), {
-        status: 'approved',
-        notified: false
+
+      // Update adminRequests status
+      await updateDoc(doc(db, 'adminRequests', requestUid), {
+        status: newStatus,
+        notified: newStatus === 'rejected' ? true : false
       });
-      
-      // Add user to authorized admins list
-      await setDoc(doc(db, 'admins', docId), {
-        email: emailLower,
-        role: 'admin',
-        maxLeaguesAllowed: 3
-      }, { merge: true });
 
-      // Update user profile flags as approved admin
-      try {
-        await updateDoc(doc(db, 'users', request.uid), {
-          isAdmin: true,
-          adminRequestStatus: 'approved',
-          adminRole: 'admin'
-        });
-      } catch (err) {
-        await setDoc(doc(db, 'users', request.uid), {
-          uid: request.uid,
-          displayName: request.displayName || 'Administrador',
+      // Maintain admins collection sync
+      if (newStatus === 'approved') {
+        await setDoc(doc(db, 'admins', docId), {
           email: emailLower,
-          searchName: (request.displayName || 'Administrador').toLowerCase(),
-          searchEmail: emailLower,
-          photoURL: request.photoURL || '',
-          isAdmin: true,
-          adminRequestStatus: 'approved',
-          adminRole: 'admin'
+          role: 'admin',
+          maxLeaguesAllowed: 1
         }, { merge: true });
-      }
-      
-      toast.success(`Solicitud de ${request.email} aprobada correctamente`);
-    } catch (error) {
-      console.error("Error approving admin request:", error);
-      toast.error("No se pudo aprobar la solicitud");
-    }
-  };
-
-  const handleRejectRequest = async (request: any) => {
-    if (confirm(`¿Estás seguro de que deseas rechazar la solicitud de ${request.email}?`)) {
-      try {
-        await updateDoc(doc(db, 'adminRequests', request.uid), {
-          status: 'rejected',
-          notified: true
-        });
-        
-        // Ensure not in admins collection just in case
-        const emailLower = request.email.trim().toLowerCase();
-        const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+      } else {
         try {
           await deleteDoc(doc(db, 'admins', docId));
         } catch (e) {
           // ignore if doesn't exist
         }
-
-        // Update user profile flags as rejected
-        try {
-          await updateDoc(doc(db, 'users', request.uid), {
-            isAdmin: false,
-            adminRequestStatus: 'rejected',
-            adminRole: 'none'
-          });
-        } catch (err) {
-          // ignore if doesn't exist
-        }
-        
-        toast.info(`Solicitud de ${request.email} rechazada`);
-      } catch (error) {
-        console.error("Error rejecting admin request:", error);
-        toast.error("No se pudo rechazar la solicitud");
       }
+
+      // Maintain users collection sync
+      const isUserAdmin = newStatus === 'approved';
+      const userAdminRole = newStatus === 'approved' ? 'admin' : 'none';
+
+      try {
+        await updateDoc(doc(db, 'users', requestUid), {
+          isAdmin: isUserAdmin,
+          adminRequestStatus: newStatus,
+          adminRole: userAdminRole
+        });
+      } catch (err) {
+        await setDoc(doc(db, 'users', requestUid), {
+          uid: requestUid,
+          displayName: request.displayName || 'Administrador',
+          email: emailLower,
+          searchName: (request.displayName || 'Administrador').toLowerCase(),
+          searchEmail: emailLower,
+          photoURL: request.photoURL || '',
+          isAdmin: isUserAdmin,
+          adminRequestStatus: newStatus,
+          adminRole: userAdminRole
+        }, { merge: true });
+      }
+
+      toast.success(`Solicitud de ${request.email} cambiada a ${
+        newStatus === 'approved' ? 'APROBADA' : newStatus === 'rejected' ? 'RECHAZADA' : 'PENDIENTE'
+      } con éxito.`);
+    } catch (error) {
+      console.error("Error updating user request status:", error);
+      toast.error("No se pudo actualizar el estado de la solicitud");
     }
   };
 
-  const handleDeleteAdminClick = async (adminId: string, adminEmail: string) => {
+  const handleApproveRequest = async (request: any) => {
+    await handleUpdateUserRequestStatus(request, 'approved');
+  };
+
+  const handleRejectRequest = async (request: any) => {
+    await handleUpdateUserRequestStatus(request, 'rejected');
+  };
+
+  const handleDeleteAdminClick = (adminId: string, adminEmail: string) => {
     if (adminEmail === 'melaniagonzalez@gmail.com') {
       toast.error('No puedes revocar los permisos al Súper Administrador primario');
       return;
     }
-    if (confirm(`¿Estás seguro de que deseas revocar el acceso de administrador para ${adminEmail}?`)) {
-      try {
-        await deleteDoc(doc(db, 'admins', adminId));
-        toast.success('Administrador removido correctamente');
-        if (editingAdminId === adminId) {
-          setEditingAdminId(null);
-          setAdminFormEmail('');
-          setAdminFormRole('admin');
-          setAdminFormMaxLeagues(3);
+    setAdminToDelete({ id: adminId, email: adminEmail });
+    setIsDeleteAdminConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteAdmin = async () => {
+    if (!adminToDelete) return;
+    const { id: adminId, email: adminEmail } = adminToDelete;
+    
+    try {
+      // 1. Delete admin doc
+      await deleteDoc(doc(db, 'admins', adminId));
+      
+      // 2. Find request by email in adminRequests and set status to 'rejected'
+      const matchedRequest = adminRequests.find(
+        r => r.email?.trim().toLowerCase() === adminEmail.trim().toLowerCase()
+      );
+      
+      if (matchedRequest) {
+        await updateDoc(doc(db, 'adminRequests', matchedRequest.id), {
+          status: 'rejected',
+          notified: true
+        });
+
+        // Also update corresponding user profile so metadata matches
+        try {
+          await updateDoc(doc(db, 'users', matchedRequest.id), {
+            isAdmin: false,
+            adminRequestStatus: 'rejected',
+            adminRole: 'none'
+          });
+        } catch (e) {
+          // ignore if user profile doesn't exist
         }
-      } catch (error) {
-        console.error("Error deleting admin:", error);
-        toast.error('No se pudo eliminar el administrador');
+      } else {
+        // If they did not have a request document (e.g. they were added directly by super admin input)
+        // Let's see if we can find them in allRegisteredUsers
+        const matchedUser = allRegisteredUsers.find(
+          u => u.email?.trim().toLowerCase() === adminEmail.trim().toLowerCase()
+        );
+        if (matchedUser) {
+          try {
+            await setDoc(doc(db, 'adminRequests', matchedUser.uid), {
+              uid: matchedUser.uid,
+              displayName: matchedUser.displayName || 'Administrador',
+              email: adminEmail.trim().toLowerCase(),
+              status: 'rejected',
+              notified: true,
+              createdAt: Date.now()
+            }, { merge: true });
+
+            await updateDoc(doc(db, 'users', matchedUser.uid), {
+              isAdmin: false,
+              adminRequestStatus: 'rejected',
+              adminRole: 'none'
+            });
+          } catch (e) {
+            // ignore if errors occur
+          }
+        }
       }
+
+      toast.success(`Administrador ${adminEmail} removido. Su solicitud de acceso es ahora 'Rechazada/Denegada'`);
+      
+      if (editingAdminId === adminId) {
+        setEditingAdminId(null);
+        setAdminFormEmail('');
+        setAdminFormRole('admin');
+        setAdminFormMaxLeagues(1);
+      }
+    } catch (error) {
+      console.error("Error deleting admin:", error);
+      toast.error('No se pudo eliminar el administrador');
+    } finally {
+      setIsDeleteAdminConfirmOpen(false);
+      setAdminToDelete(null);
     }
   };
 
@@ -1249,6 +1327,12 @@ export default function App() {
             if (requestStatus === 'approved') {
               isReallyAdmin = true;
               adminRole = 'admin';
+            }
+          }
+
+          if (isReallyAdmin && emailLower) {
+            if (!DYNAMIC_ADMIN_EMAILS.includes(emailLower)) {
+              DYNAMIC_ADMIN_EMAILS.push(emailLower);
             }
           }
 
@@ -1983,66 +2067,88 @@ export default function App() {
           </h1>
         </div>
         
-        <div className="flex items-center gap-3 sm:gap-6">
-          {user && isAdminEmail(user.email) && (
-            <button 
-              onClick={() => {
-                setClickCount(prev => prev + 1);
-                if (clickCount + 1 >= 5) {
-                  setIsSimulationMode(!isSimulationMode);
-                  setClickCount(0);
-                  toast.info(isSimulationMode ? 'Modo 2026 Activado' : 'Modo Simulación 2022 Activado');
-                }
-              }}
-              className="hidden sm:block bg-lime text-black px-3 py-1 text-[9px] font-black uppercase tracking-widest hover:scale-105 transition-transform shrink-0"
-            >
-              Simula
-            </button>
-          )}
-          
-          <div className="flex items-center gap-2 sm:gap-4">
-            {user ? (
-              <div className="flex items-center gap-2 sm:gap-4">
-                {user.email === 'melaniagonzalez@gmail.com' && (
-                  <Button 
-                    variant={showSuperAdminPanel ? "default" : "outline"} 
-                    size="sm" 
-                    onClick={() => {
-                      setShowSuperAdminPanel(!showSuperAdminPanel);
-                      setSelectedLeagueId(null);
-                    }}
-                    className={cn(
-                      "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-none",
-                      showSuperAdminPanel ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary hover:bg-primary/5"
-                    )}
-                  >
-                    <LayoutDashboard className="w-3.5 h-3.5" /> 
-                    <span className="hidden xs:inline">Panel Súper Admin</span>
-                    <span className="xs:hidden">Súper Admin</span>
-                  </Button>
-                )}
-                {selectedLeagueId && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setSelectedLeagueId(null)}
-                    className="hidden md:flex text-[9px] font-black uppercase tracking-widest gap-2 opacity-60 hover:opacity-100"
-                  >
-                    <Home className="w-3 h-3" /> Mis Quinielas
-                  </Button>
-                )}
-                <div className="flex flex-col items-end">
-                  <span className="text-[11px] sm:text-[12px] font-black uppercase tracking-widest max-w-[140px] sm:max-w-none truncate">{user.displayName}</span>
-                  <button onClick={handleLogout} className="text-[12px] text-muted-foreground hover:text-primary uppercase font-bold tracking-widest">Salir</button>
-                </div>
-                {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-primary/30" referrerPolicy="no-referrer" />}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {user ? (
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* 1. Mis Quinielas (Home icon only, matching height and design) */}
+              {(selectedLeagueId || (showSuperAdminPanel && user?.email === 'melaniagonzalez@gmail.com')) && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setSelectedLeagueId(null);
+                    setShowSuperAdminPanel(false);
+                  }}
+                  className="h-8 sm:h-9 w-8 sm:w-9 p-0 rounded-none border-primary/40 text-primary hover:bg-primary/5 flex items-center justify-center shrink-0 transition-all"
+                  title="Mis Quinielas"
+                >
+                  <Home className="w-4 h-4" />
+                </Button>
+              )}
+
+              {/* 2. Súper Admin Panel */}
+              {user.email === 'melaniagonzalez@gmail.com' && (
+                <Button 
+                  variant={showSuperAdminPanel ? "default" : "outline"} 
+                  size="sm" 
+                  onClick={() => {
+                    setShowSuperAdminPanel(!showSuperAdminPanel);
+                    setSelectedLeagueId(null);
+                  }}
+                  className={cn(
+                    "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-none relative overflow-visible shrink-0 transition-all",
+                    showSuperAdminPanel ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary hover:bg-primary/5"
+                  )}
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" /> 
+                  <span className="hidden xs:inline">Panel Súper Admin</span>
+                  <span className="xs:hidden">Súper Admin</span>
+                  {adminRequests.filter(r => r.status === 'pending').length > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-450 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                    </span>
+                  )}
+                </Button>
+              )}
+
+              {/* 3. Simula */}
+              {user.email === 'melaniagonzalez@gmail.com' && (
+                <Button
+                  variant={isSimulationMode ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setClickCount(prev => prev + 1);
+                    if (clickCount + 1 >= 5) {
+                      setIsSimulationMode(!isSimulationMode);
+                      setClickCount(0);
+                      toast.info(isSimulationMode ? 'Modo 2026 Activado' : 'Modo Simulación 2022 Activado');
+                    }
+                  }}
+                  className={cn(
+                    "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-none shrink-0 transition-all",
+                    isSimulationMode 
+                      ? "bg-lime text-black border-lime hover:bg-lime/90 font-black" 
+                      : "border-lime/40 text-lime hover:bg-lime/5 font-black"
+                  )}
+                >
+                  <FlaskConical className="w-3.5 h-3.5" />
+                  <span>Simula</span>
+                </Button>
+              )}
+
+              {/* User Profiling Area */}
+              <div className="flex flex-col items-end shrink-0 ml-1">
+                <span className="text-[11px] sm:text-[12px] font-black uppercase tracking-widest max-w-[140px] sm:max-w-none truncate">{user.displayName}</span>
+                <button type="button" onClick={handleLogout} className="text-[10px] text-muted-foreground hover:text-primary uppercase font-bold tracking-widest transition-colors">Salir</button>
               </div>
-            ) : (
-              <Button size="sm" onClick={handleLogin} className="bg-white text-black hover:bg-white/90 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10">
-                Soy Admin
-              </Button>
-            )}
-          </div>
+              {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-primary/30 shrink-0" referrerPolicy="no-referrer" />}
+            </div>
+          ) : (
+            <Button size="sm" onClick={handleLogin} className="bg-white text-black hover:bg-white/90 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10 rounded-none">
+              Soy Admin
+            </Button>
+          )}
         </div>
       </header>
 
@@ -2163,152 +2269,364 @@ export default function App() {
                     Gestión de administradores autorizados, roles y límites de creación de quinielas
                   </p>
                 </div>
-                <Button 
-                  onClick={() => setShowSuperAdminPanel(false)}
-                  variant="outline"
-                  className="h-11 text-[10px] font-black uppercase tracking-widest px-6 rounded-none border-primary/40 text-primary hover:bg-primary/5"
-                >
-                  <Home className="w-4 h-4 mr-2" /> Volver a Mis Quinielas
-                </Button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-10">
-                {/* Columna de Formulario o Solicitudes de Acceso */}
-                {editingAdminId ? (
-                  <Card className="bg-card border-2 border-border rounded-none h-fit">
+              {/* Sub-navegación del Panel Súper Admin */}
+              <div className="flex border-b border-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuperAdminTab('admins');
+                    setEditingAdminId(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none",
+                    superAdminTab === 'admins' 
+                      ? "border-primary text-primary bg-primary/5 font-black" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Users className="w-4 h-4 text-primary" /> Administradores Autorizados
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSuperAdminTab('requests')}
+                  className={cn(
+                    "flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none relative",
+                    superAdminTab === 'requests' 
+                      ? "border-primary text-primary bg-primary/5 font-black" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <UserPlus className="w-4 h-4 text-primary" /> Solicitudes de Acceso
+                  {adminRequests.filter(r => r.status === 'pending').length > 0 && (
+                    <span className="ml-1.5 bg-red-500 text-white font-mono text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                      {adminRequests.filter(r => r.status === 'pending').length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {superAdminTab === 'admins' ? (
+                <div className={cn("grid grid-cols-1 gap-10", editingAdminId ? "lg:grid-cols-[350px_1fr]" : "lg:grid-cols-1")}>
+                  {/* Coumna de Formulario si se está editando */}
+                  {editingAdminId && (
+                    <Card className="bg-card border-2 border-border rounded-none h-fit">
+                      <CardHeader className="border-b border-border bg-primary/5">
+                        <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground">
+                          Editar Administrador
+                        </CardTitle>
+                        <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground">
+                          Modifica los límites de creación de este administrador
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="p-6 space-y-6">
+                        <form onSubmit={handleSaveAdmin} className="space-y-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Correo Electrónico</label>
+                            <Input 
+                              type="email"
+                              placeholder="ejemplo@correo.com"
+                              value={adminFormEmail}
+                              onChange={(e) => setAdminFormEmail(e.target.value)}
+                              disabled={true}
+                              required
+                              className="bg-background border-border text-xs rounded-none h-10 uppercase font-bold opacity-65"
+                            />
+                          </div>
+                          
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Rol de Acceso</label>
+                            <select 
+                              value={adminFormRole}
+                              onChange={(e) => setAdminFormRole(e.target.value as any)}
+                              disabled={isSavingAdmin || adminFormEmail.toLowerCase() === 'melaniagonzalez@gmail.com'}
+                              className="w-full bg-background border border-border h-10 px-3 text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none rounded-none uppercase font-bold"
+                            >
+                              <option value="admin">Administrador Regular (Admin)</option>
+                              <option value="superadmin">Súper Administrador (Super Admin)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Permiso de Creación (Máx. Quinielas)</label>
+                            <Input 
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={adminFormMaxLeagues}
+                              onChange={(e) => setAdminFormMaxLeagues(Number(e.target.value))}
+                              disabled={isSavingAdmin}
+                              required
+                              className="bg-background border-border text-xs rounded-none h-10 font-bold"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 pt-2">
+                            <Button 
+                              type="submit" 
+                              disabled={isSavingAdmin}
+                              className="flex-1 uppercase text-[10px] font-black tracking-wider h-11 rounded-none shadow-md"
+                            >
+                              {isSavingAdmin ? 'Guardando...' : 'Actualizar'}
+                            </Button>
+                            <Button 
+                              type="button" 
+                              variant="outline"
+                              onClick={() => {
+                                setEditingAdminId(null);
+                                setAdminFormEmail('');
+                                setAdminFormRole('admin');
+                                setAdminFormMaxLeagues(1);
+                              }}
+                              className="uppercase text-[10px] font-black tracking-wider border-border h-11 rounded-none"
+                            >
+                              Cancelar
+                            </Button>
+                          </div>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Columna de Tabla */}
+                  <div className="space-y-4">
+                    <div className="bg-card border-2 border-border overflow-hidden rounded-none">
+                      <Table>
+                        <TableHeader className="bg-primary/5 border-b border-border">
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4">Correo Electrónico</TableHead>
+                            <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4">Permisos</TableHead>
+                            <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-center">Quinielas creadas</TableHead>
+                            <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-center">Límite Permitido</TableHead>
+                            <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-right">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {dbAdmins.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-16 text-xs uppercase font-black tracking-widest">
+                                Cargando administradores...
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            dbAdmins.map((adm) => {
+                              const leaguesCount = getLeaguesCreatedCount(adm.email);
+                              const percent = Math.min(100, Math.round((leaguesCount / (adm.maxLeaguesAllowed || 1)) * 100));
+                              const isSelf = adm.email.toLowerCase() === 'melaniagonzalez@gmail.com';
+                              
+                              return (
+                                <TableRow key={adm.id || adm.email} className="border-b border-border hover:bg-white/5 transition-colors">
+                                  <TableCell className="py-4 font-black text-xs text-foreground max-w-[150px] sm:max-w-none truncate uppercase">
+                                    {adm.email} {isSelf && <span className="text-primary text-[8px] ml-1 bg-primary/10 border border-primary/20 px-1 py-0.5 rounded">TÚ</span>}
+                                  </TableCell>
+                                  <TableCell className="py-4">
+                                    {adm.role === 'superadmin' ? (
+                                      <span className="bg-primary/10 border border-primary/20 text-primary text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
+                                        Súper Admin
+                                      </span>
+                                    ) : (
+                                      <span className="bg-sky-500/10 border border-sky-500/20 text-sky-450 text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
+                                        Liga Admin
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="py-4 text-center">
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <span className="text-xs font-black text-foreground">
+                                        {leaguesCount}
+                                      </span>
+                                      <span className="text-[9px] text-muted-foreground font-mono uppercase font-bold">
+                                        {percent}% ocupado
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="py-4 text-center font-black text-xs text-muted-foreground">
+                                    {adm.maxLeaguesAllowed} 
+                                  </TableCell>
+                                  <TableCell className="py-4 text-right">
+                                    <div className="flex justify-end gap-1.5">
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleEditAdminClick(adm)}
+                                        className="h-8 w-8 p-0 border-border hover:bg-white/5 rounded-none"
+                                        title="Editar Administrador"
+                                      >
+                                        <Edit className="w-3.5 h-3.5" />
+                                      </Button>
+                                      {!isSelf && (
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline" 
+                                          onClick={() => handleDeleteAdminClick(adm.id, adm.email)}
+                                          className="h-8 w-8 p-0 border-border text-red hover:bg-red/10 hover:text-red hover:border-red rounded-none"
+                                          title="Eliminar Administrador"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Filtro sub-navegación por estatus */}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant={requestStatusFilter === 'pending' ? 'default' : 'outline'}
+                      onClick={() => setRequestStatusFilter('pending')}
+                      className="text-[10px] uppercase font-black tracking-wider rounded-none h-10 border-border"
+                    >
+                      Pendientes
+                      <span className={cn(
+                        "ml-2 px-1.5 py-0.5 text-[9px] font-mono font-black rounded-full",
+                        requestStatusFilter === 'pending' ? "bg-primary-foreground text-primary" : "bg-primary/10 text-primary"
+                      )}>
+                        {adminRequests.filter(r => (r.status || 'pending') === 'pending').length}
+                      </span>
+                    </Button>
+                    <Button
+                      variant={requestStatusFilter === 'approved' ? 'default' : 'outline'}
+                      onClick={() => setRequestStatusFilter('approved')}
+                      className="text-[10px] uppercase font-black tracking-wider rounded-none h-10 border-border"
+                    >
+                      Aceptadas / Aprobadas
+                      <span className={cn(
+                        "ml-2 px-1.5 py-0.5 text-[9px] font-mono font-black rounded-full",
+                        requestStatusFilter === 'approved' ? "bg-primary-foreground text-primary" : "bg-primary/10 text-primary"
+                      )}>
+                        {adminRequests.filter(r => r.status === 'approved').length}
+                      </span>
+                    </Button>
+                    <Button
+                      variant={requestStatusFilter === 'rejected' ? 'default' : 'outline'}
+                      onClick={() => setRequestStatusFilter('rejected')}
+                      className="text-[10px] uppercase font-black tracking-wider rounded-none h-10 border-border"
+                    >
+                      Denegadas / Rechazadas
+                      <span className={cn(
+                        "ml-2 px-1.5 py-0.5 text-[9px] font-mono font-black rounded-full",
+                        requestStatusFilter === 'rejected' ? "bg-primary-foreground text-primary" : "bg-primary/10 text-primary"
+                      )}>
+                        {adminRequests.filter(r => r.status === 'rejected').length}
+                      </span>
+                    </Button>
+                  </div>
+
+                  {/* Listado de Solicitudes según Estatus */}
+                  <Card className="bg-card border-2 border-border rounded-none shadow-sm">
                     <CardHeader className="border-b border-border bg-primary/5">
                       <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground">
-                        Editar Administrador
+                        {requestStatusFilter === 'pending' && "Peticiones de Acceso Pendientes"}
+                        {requestStatusFilter === 'approved' && "Solicitudes de Acceso Aprobadas"}
+                        {requestStatusFilter === 'rejected' && "Accesos Cancelados o Denegados"}
                       </CardTitle>
                       <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground">
-                        Modifica los límites de creación de este administrador
+                        {requestStatusFilter === 'pending' && "Usuarios que solicitaron permisos de administrador para crear quinielas"}
+                        {requestStatusFilter === 'approved' && "Usuarios aprobados que tienen rol activo de administración"}
+                        {requestStatusFilter === 'rejected' && "Usuarios cuyas solicitudes fueron rechazadas o desactivadas"}
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="p-6 space-y-6">
-                      <form onSubmit={handleSaveAdmin} className="space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Correo Electrónico</label>
-                          <Input 
-                            type="email"
-                            placeholder="ejemplo@correo.com"
-                            value={adminFormEmail}
-                            onChange={(e) => setAdminFormEmail(e.target.value)}
-                            disabled={true}
-                            required
-                            className="bg-background border-border text-xs rounded-none h-10 uppercase font-bold opacity-65"
-                          />
-                        </div>
-                        
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Rol de Acceso</label>
-                          <select 
-                            value={adminFormRole}
-                            onChange={(e) => setAdminFormRole(e.target.value as any)}
-                            disabled={isSavingAdmin || adminFormEmail.toLowerCase() === 'melaniagonzalez@gmail.com'}
-                            className="w-full bg-background border border-border h-10 px-3 text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none rounded-none uppercase font-bold"
-                          >
-                            <option value="admin">Administrador Regular (Admin)</option>
-                            <option value="superadmin">Súper Administrador (Super Admin)</option>
-                          </select>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Permiso de Creación (Máx. Quinielas)</label>
-                          <Input 
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={adminFormMaxLeagues}
-                            onChange={(e) => setAdminFormMaxLeagues(Number(e.target.value))}
-                            disabled={isSavingAdmin}
-                            required
-                            className="bg-background border-border text-xs rounded-none h-10 font-bold"
-                          />
-                        </div>
-
-                        <div className="flex gap-2 pt-2">
-                          <Button 
-                            type="submit" 
-                            disabled={isSavingAdmin}
-                            className="flex-1 uppercase text-[10px] font-black tracking-wider h-11 rounded-none shadow-md"
-                          >
-                            {isSavingAdmin ? 'Guardando...' : 'Actualizar'}
-                          </Button>
-                          <Button 
-                            type="button" 
-                            variant="outline"
-                            onClick={() => {
-                              setEditingAdminId(null);
-                              setAdminFormEmail('');
-                              setAdminFormRole('admin');
-                              setAdminFormMaxLeagues(3);
-                            }}
-                            className="uppercase text-[10px] font-black tracking-wider border-border h-11 rounded-none"
-                          >
-                            Cancelar
-                          </Button>
-                        </div>
-                      </form>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card className="bg-card border-2 border-border rounded-none h-fit">
-                    <CardHeader className="border-b border-border bg-primary/5">
-                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
-                        <Users className="w-4 h-4 text-primary" /> Solicitudes de Acceso
-                      </CardTitle>
-                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground">
-                        Nuevas peticiones para ser administrador de ligas
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-6 space-y-4">
-                      {adminRequests.filter(r => r.status === 'pending').length === 0 ? (
-                        <div className="text-center py-12 space-y-2">
-                          <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 border border-primary/20 text-primary">
-                            <Check className="w-5 h-5" />
+                    <CardContent className="p-6">
+                      {adminRequests.filter(r => (r.status || 'pending') === requestStatusFilter).length === 0 ? (
+                        <div className="text-center py-16 space-y-3">
+                          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 border border-primary/20 text-primary">
+                            <Info className="w-5 h-5 animate-pulse" />
                           </div>
-                          <p className="text-[10px] uppercase font-black tracking-wider text-muted-foreground">No hay solicitudes pendientes</p>
-                          <p className="text-[9px] uppercase font-bold text-muted-foreground/60">Los usuarios de auto registro aparecerán aquí</p>
+                          <p className="text-[10px] uppercase font-black tracking-wider text-muted-foreground">
+                            No hay solicitudes {requestStatusFilter === 'pending' ? 'pendientes' : requestStatusFilter === 'approved' ? 'aprobadas' : 'denegadas'}
+                          </p>
                         </div>
                       ) : (
                         <div className="space-y-4 divide-y divide-border">
-                          {adminRequests.filter(r => r.status === 'pending').map((req, idx) => (
-                            <div key={req.id || idx} className={`${idx > 0 ? 'pt-4' : ''} space-y-3`}>
-                              <div className="flex items-start gap-2.5">
+                          {adminRequests.filter(r => (r.status || 'pending') === requestStatusFilter).map((req, idx) => (
+                            <div key={req.id || idx} className={`${idx > 0 ? 'pt-4' : ''} flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+                              <div className="flex items-start gap-3">
                                 {req.photoURL ? (
                                   <img 
                                     src={req.photoURL} 
                                     alt="Request Profile" 
-                                    className="w-8 h-8 rounded-full border border-border shrink-0 mt-0.5" 
+                                    className="w-10 h-10 rounded-full border border-border shrink-0 mt-0.5" 
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
-                                  <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-[10px] font-black tracking-wider uppercase text-primary mt-0.5">
+                                  <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-xs font-black tracking-wider uppercase text-primary mt-0.5">
                                     {req.displayName?.substring(0,2) || 'AN'}
                                   </div>
                                 )}
-                                <div className="space-y-0.5 min-w-0 flex-1">
-                                  <p className="text-[11px] font-black uppercase tracking-tight text-foreground truncate">{req.displayName || 'Anónimo'}</p>
-                                  <p className="text-[9px] font-mono text-muted-foreground truncate">{req.email}</p>
+                                <div className="space-y-1 min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-[12px] font-black uppercase tracking-tight text-foreground truncate">{req.displayName || 'Anónimo'}</p>
+                                    {req.createdAt && (
+                                      <span className="text-[9px] text-muted-foreground font-mono">
+                                        ({new Date(req.createdAt).toLocaleDateString()})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] font-mono text-muted-foreground truncate">{req.email}</p>
+                                  
+                                  <div className="flex items-center gap-1.5 pt-0.5">
+                                    <span className="text-[9px] uppercase font-bold text-muted-foreground/80">Estatus:</span>
+                                    {req.status === 'approved' ? (
+                                      <span className="text-[8px] font-black uppercase px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-450 rounded-sm">Aceptada</span>
+                                    ) : req.status === 'rejected' ? (
+                                      <span className="text-[8px] font-black uppercase px-2 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-sm">Denegada</span>
+                                    ) : (
+                                      <span className="text-[8px] font-black uppercase px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-sm">Pendiente</span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleApproveRequest(req)}
-                                  className="flex-1 h-9 bg-primary text-primary-foreground hover:bg-primary/90 text-[9px] font-black uppercase tracking-wider rounded-none"
-                                >
-                                  <Check className="w-3.5 h-3.5 mr-1" /> Aprobar
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleRejectRequest(req)}
-                                  className="flex-1 h-9 border-red-500/40 text-red-500 hover:bg-red-500/5 text-[9px] font-black uppercase tracking-wider rounded-none"
-                                >
-                                  <X className="w-3.5 h-3.5 mr-1" /> Rechazar
-                                </Button>
+                              {/* Cambiar Estado */}
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground/80 hidden lg:inline">Cambiar estado a:</span>
+                                <div className="grid grid-cols-3 sm:flex gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleUpdateUserRequestStatus(req, 'pending')}
+                                    disabled={req.status === 'pending' || (req.status || 'pending') === 'pending'}
+                                    variant="outline"
+                                    className={cn(
+                                      "h-8 text-[9px] font-black uppercase tracking-wider rounded-none border-border",
+                                      (req.status === 'pending' || (req.status || 'pending') === 'pending') ? "opacity-35" : "hover:bg-amber-500/5 hover:text-amber-500 hover:border-amber-500/30"
+                                    )}
+                                  >
+                                    Pendiente
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleUpdateUserRequestStatus(req, 'approved')}
+                                    disabled={req.status === 'approved'}
+                                    className={cn(
+                                      "h-8 text-[9px] font-black uppercase tracking-wider rounded-none",
+                                      req.status === 'approved' ? "opacity-35" : "bg-emerald-600 text-white hover:bg-emerald-700"
+                                    )}
+                                  >
+                                    Aprobar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleUpdateUserRequestStatus(req, 'rejected')}
+                                    disabled={req.status === 'rejected'}
+                                    variant="outline"
+                                    className={cn(
+                                      "h-8 text-[9px] font-black uppercase tracking-wider rounded-none border-border",
+                                      req.status === 'rejected' ? "opacity-35" : "text-red-500 hover:bg-red-500/5 hover:border-red-500/30"
+                                    )}
+                                  >
+                                    Denegar
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -2316,96 +2634,8 @@ export default function App() {
                       )}
                     </CardContent>
                   </Card>
-                )}
-
-                {/* Columna de Tabla */}
-                <div className="space-y-4">
-                  <div className="bg-card border-2 border-border overflow-hidden rounded-none">
-                    <Table>
-                      <TableHeader className="bg-primary/5 border-b border-border">
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4">Correo Electrónico</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4">Permisos</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-center">Quinielas creadas</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-center">Límite Permitido</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-wider py-4 text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {dbAdmins.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} className="text-center text-muted-foreground py-16 text-xs uppercase font-black tracking-widest">
-                              Cargando administradores...
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          dbAdmins.map((adm) => {
-                            const leaguesCount = getLeaguesCreatedCount(adm.email);
-                            const percent = Math.min(100, Math.round((leaguesCount / (adm.maxLeaguesAllowed || 3)) * 100));
-                            const isSelf = adm.email.toLowerCase() === 'melaniagonzalez@gmail.com';
-                            
-                            return (
-                              <TableRow key={adm.id || adm.email} className="border-b border-border hover:bg-white/5 transition-colors">
-                                <TableCell className="py-4 font-black text-xs text-foreground max-w-[150px] sm:max-w-none truncate uppercase">
-                                  {adm.email} {isSelf && <span className="text-primary text-[8px] ml-1 bg-primary/10 border border-primary/20 px-1 py-0.5 rounded">TÚ</span>}
-                                </TableCell>
-                                <TableCell className="py-4">
-                                  {adm.role === 'superadmin' ? (
-                                    <span className="bg-primary/10 border border-primary/20 text-primary text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
-                                      Súper Admin
-                                    </span>
-                                  ) : (
-                                    <span className="bg-sky-500/10 border border-sky-500/20 text-sky-450 text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
-                                      Liga Admin
-                                    </span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="py-4 text-center">
-                                  <div className="flex flex-col items-center justify-center gap-1">
-                                    <span className="text-xs font-black text-foreground">
-                                      {leaguesCount}
-                                    </span>
-                                    <span className="text-[9px] text-muted-foreground font-mono uppercase font-bold">
-                                      {percent}% ocupado
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="py-4 text-center font-black text-xs text-muted-foreground">
-                                  {adm.maxLeaguesAllowed} 
-                                </TableCell>
-                                <TableCell className="py-4 text-right">
-                                  <div className="flex justify-end gap-1.5">
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline" 
-                                      onClick={() => handleEditAdminClick(adm)}
-                                      className="h-8 w-8 p-0 border-border hover:bg-white/5 rounded-none"
-                                      title="Editar Administrador"
-                                    >
-                                      <Edit className="w-3.5 h-3.5" />
-                                    </Button>
-                                    {!isSelf && (
-                                      <Button 
-                                        size="sm" 
-                                        variant="outline" 
-                                        onClick={() => handleDeleteAdminClick(adm.id, adm.email)}
-                                        className="h-8 w-8 p-0 border-border text-red hover:bg-red/10 hover:text-red hover:border-red rounded-none"
-                                        title="Eliminar Administrador"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <div className="space-y-12 max-w-5xl mx-auto py-8">
@@ -4177,6 +4407,145 @@ export default function App() {
                 onClick={() => {
                   setIsDeleteConfirmOpen(false);
                   setParticipantToDelete(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Custom Delete Admin Confirmation Modal */}
+    <AnimatePresence>
+      {isDeleteAdminConfirmOpen && adminToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-red-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-red-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-red-500">¿Revocar permisos de Administrador?</h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                Estás a punto de revocar el acceso de administrador para <span className="text-foreground font-black">"{adminToDelete.email}"</span>.
+              </p>
+              <p className="text-[10px] text-red-400 uppercase font-black tracking-widest leading-relaxed">
+                La solicitud de este usuario pasará automáticamente a estado DENEGADO y perderá todos sus accesos para gestionar quinielas.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={handleConfirmDeleteAdmin}
+                className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+              >
+                Sí, Revocar Acceso
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsDeleteAdminConfirmOpen(false);
+                  setAdminToDelete(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Custom Deny/Reject Request Confirmation Modal */}
+    <AnimatePresence>
+      {isDenyRequestConfirmOpen && requestToDeny && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-red-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-red-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-red-500">¿Denegar Solicitud de Acceso?</h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                Estás a punto de denegar la solicitud de administrador para <span className="text-foreground font-black">"{requestToDeny.email}"</span>.
+              </p>
+              <p className="text-[10px] text-red-400 uppercase font-black tracking-widest leading-relaxed">
+                El usuario pasará a estado RECHAZADA/DENEGADA y perderá o no tendrá privilegio activo de administrador para crear quinielas.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={async () => {
+                  setIsDenyRequestConfirmOpen(false);
+                  const req = requestToDeny;
+                  setRequestToDeny(null);
+                  await handleUpdateUserRequestStatus(req, 'rejected', true);
+                }}
+                className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+              >
+                Sí, Denegar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsDenyRequestConfirmOpen(false);
+                  setRequestToDeny(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Custom Suspend Request Confirmation Modal */}
+    <AnimatePresence>
+      {isSuspendConfirmOpen && requestToSuspend && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-amber-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-amber-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-amber-500">¿Suspender Permisos de Administrador?</h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                Estás a punto de suspender y dejar en estado PENDIENTE la solicitud de administrador para <span className="text-foreground font-black">"{requestToSuspend.email}"</span>.
+              </p>
+              <p className="text-[10px] text-amber-400 uppercase font-black tracking-widest leading-relaxed">
+                El usuario perderá sus privilegios activos de administrador hasta que vuelva a ser aprobado de nuevo.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={async () => {
+                  setIsSuspendConfirmOpen(false);
+                  const req = requestToSuspend;
+                  setRequestToSuspend(null);
+                  await handleUpdateUserRequestStatus(req, 'pending', true);
+                }}
+                className="flex-1 h-11 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+              >
+                Sí, Suspender
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsSuspendConfirmOpen(false);
+                  setRequestToSuspend(null);
                 }}
                 className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
               >
