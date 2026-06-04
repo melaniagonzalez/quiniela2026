@@ -362,6 +362,9 @@ export default function App() {
   const [adminRequests, setAdminRequests] = useState<any[]>([]);
   const [adminLoginState, setAdminLoginState] = useState<string | null>(null);
   const [pendingApprovalUser, setPendingApprovalUser] = useState<any | null>(null);
+  const [currentUserRequest, setCurrentUserRequest] = useState<any | null>(null);
+  const [justRequestedInSession, setJustRequestedInSession] = useState<boolean>(false);
+  const [isAdminConfigLoading, setIsAdminConfigLoading] = useState(true);
 
   // State variables for editing participant and delete confirmation dialog
   const [isEditingName, setIsEditingName] = useState(false);
@@ -567,11 +570,12 @@ export default function App() {
     }
   }, [user]);
 
-  // Fetch the current user admin permissions config
+  // Fetch the current user admin permissions config and real-time request status
   useEffect(() => {
     if (user && user.email) {
+      setIsAdminConfigLoading(true);
       const sanitizedId = user.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      const unsubscribe = onSnapshot(doc(db, 'admins', sanitizedId), (docSnap) => {
+      const unsubscribeAdmin = onSnapshot(doc(db, 'admins', sanitizedId), (docSnap) => {
         if (docSnap.exists()) {
           setCurrentUserAdminConfig(docSnap.data());
         } else {
@@ -585,7 +589,9 @@ export default function App() {
             setCurrentUserAdminConfig(null);
           }
         }
+        setIsAdminConfigLoading(false);
       }, (error) => {
+        setIsAdminConfigLoading(false);
         if (isAdminEmail(user.email)) {
           setCurrentUserAdminConfig({
             email: user.email,
@@ -596,9 +602,27 @@ export default function App() {
           setCurrentUserAdminConfig(null);
         }
       });
-      return () => unsubscribe();
+
+      // Real-time request subscription
+      const unsubscribeRequest = onSnapshot(doc(db, 'adminRequests', user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          setCurrentUserRequest(docSnap.data());
+        } else {
+          setCurrentUserRequest(null);
+        }
+      }, (error) => {
+        console.error("Error subscribing to admin requests updates:", error);
+        setCurrentUserRequest(null);
+      });
+
+      return () => {
+        unsubscribeAdmin();
+        unsubscribeRequest();
+      };
     } else {
       setCurrentUserAdminConfig(null);
+      setCurrentUserRequest(null);
+      setIsAdminConfigLoading(false);
     }
   }, [user]);
 
@@ -1165,126 +1189,32 @@ export default function App() {
           return;
         }
 
-        // Special check: Is this the super admin?
-        if (emailLower === 'melaniagonzalez@gmail.com') {
-          setUser(currentUser);
-          // Ensure user profile exists in Firestore
-          const userRef = doc(db, 'users', currentUser.uid);
-          try {
-            const userDoc = await getDoc(userRef);
-            const userData: any = {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName || 'Administrador',
-              email: currentUser.email || '',
-              searchName: (currentUser.displayName || 'Administrador').toLowerCase(),
-              searchEmail: (currentUser.email || '').toLowerCase(),
-              photoURL: currentUser.photoURL || '',
-              isAdmin: true
-            };
-            
-            if (!userDoc.exists()) {
-              userData.totalPoints = 0;
-              userData.correctResults = 0;
-              userData.correctWinners = 0;
-              await setDoc(userRef, userData);
-            } else {
-              await updateDoc(userRef, userData);
-            }
-          } catch (error) {
-            console.error("Error setting up user profile:", error);
-          }
-          setIsAuthReady(true);
-          return;
-        }
+        setUser(currentUser);
 
-        // Check if licensed in `admins`
-        const docId = emailLower.replace(/[^a-z0-9]/g, '_');
+        // Ensure user profile exists in Firestore
+        const userRef = doc(db, 'users', currentUser.uid);
         try {
-          const adminDoc = await getDoc(doc(db, 'admins', docId));
-          if (adminDoc.exists()) {
-            // Verified registered admin!
-            // Check if there is an adminRequest we need to show congrats page for:
-            const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
-            if (reqDoc.exists()) {
-              const reqData = reqDoc.data();
-              if (reqData.status === 'approved' && !reqData.notified) {
-                setPendingApprovalUser(currentUser);
-                setAdminLoginState('approved_congrats');
-                setUser(null);
-                setIsAuthReady(true);
-                return;
-              }
-            }
-
-            setUser(currentUser);
-            // Ensure user profile exists in Firestore
-            const userRef = doc(db, 'users', currentUser.uid);
-            try {
-              const userDoc = await getDoc(userRef);
-              const userData: any = {
-                uid: currentUser.uid,
-                displayName: currentUser.displayName || 'Administrador',
-                email: currentUser.email || '',
-                searchName: (currentUser.displayName || 'Administrador').toLowerCase(),
-                searchEmail: (currentUser.email || '').toLowerCase(),
-                photoURL: currentUser.photoURL || '',
-                isAdmin: true
-              };
-              
-              if (!userDoc.exists()) {
-                userData.totalPoints = 0;
-                userData.correctResults = 0;
-                userData.correctWinners = 0;
-                await setDoc(userRef, userData);
-              } else {
-                await updateDoc(userRef, userData);
-              }
-            } catch (error) {
-              console.error("Error setting up user profile:", error);
-            }
+          const userDoc = await getDoc(userRef);
+          const userData: any = {
+            uid: currentUser.uid,
+            displayName: currentUser.displayName || 'Administrador',
+            email: currentUser.email || '',
+            searchName: (currentUser.displayName || 'Administrador').toLowerCase(),
+            searchEmail: (currentUser.email || '').toLowerCase(),
+            photoURL: currentUser.photoURL || '',
+            isAdmin: true
+          };
+          
+          if (!userDoc.exists()) {
+            userData.totalPoints = 0;
+            userData.correctResults = 0;
+            userData.correctWinners = 0;
+            await setDoc(userRef, userData);
           } else {
-            // No admin document in admins collection.
-            // Check if there is an existing request
-            const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
-            if (reqDoc.exists()) {
-              const reqData = reqDoc.data();
-              if (reqData.status === 'approved') {
-                // Re-create raw admin document
-                try {
-                  await setDoc(doc(db, 'admins', docId), {
-                    email: emailLower,
-                    role: 'admin',
-                    maxLeaguesAllowed: 3
-                  }, { merge: true });
-                } catch (e) {
-                  console.error("Auto recovery error:", e);
-                }
-
-                if (!reqData.notified) {
-                  setPendingApprovalUser(currentUser);
-                  setAdminLoginState('approved_congrats');
-                  setUser(null);
-                } else {
-                  setUser(currentUser);
-                }
-              } else if (reqData.status === 'rejected') {
-                setUser(null);
-                setAdminLoginState('rejected_status');
-              } else {
-                setUser(null);
-                setAdminLoginState('pending_status');
-              }
-            } else {
-              // Sign out if not in explicit registration flow
-              if (adminLoginState !== 'ask' && adminLoginState !== 'authenticating' && adminLoginState !== 'not_registered') {
-                setUser(null);
-                await signOut(auth);
-              }
-            }
+            await updateDoc(userRef, userData);
           }
         } catch (error) {
-          console.error("Error doing auth check:", error);
-          setUser(null);
+          console.error("Error setting up user profile:", error);
         }
       } else {
         setUser(null);
@@ -1292,7 +1222,7 @@ export default function App() {
       setIsAuthReady(true);
     });
     return () => unsubscribe();
-  }, [adminLoginState]);
+  }, []);
 
   // Sync Predictions from Firestore for active participant
   useEffect(() => {
@@ -1421,13 +1351,6 @@ export default function App() {
       // Check if they are in the admins collection
       const adminDoc = await getDoc(doc(db, 'admins', docId));
       if (adminDoc.exists()) {
-        const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
-        if (reqDoc.exists() && reqDoc.data().status === 'approved' && !reqDoc.data().notified) {
-          setPendingApprovalUser(currentUser);
-          setAdminLoginState('approved_congrats');
-          return;
-        }
-
         setUser(currentUser);
         setAdminLoginState(null);
         toast.success(`¡Bienvenido Administrador!`);
@@ -1437,31 +1360,9 @@ export default function App() {
       // Check access requests
       const reqDoc = await getDoc(doc(db, 'adminRequests', currentUser.uid));
       if (reqDoc.exists()) {
-        const reqData = reqDoc.data();
-        if (reqData.status === 'approved') {
-          try {
-            await setDoc(doc(db, 'admins', docId), {
-              email: emailLower,
-              role: 'admin',
-              maxLeaguesAllowed: 3
-            }, { merge: true });
-          } catch (e) {
-            console.error(e);
-          }
-          
-          if (!reqData.notified) {
-            setPendingApprovalUser(currentUser);
-            setAdminLoginState('approved_congrats');
-          } else {
-            setUser(currentUser);
-            setAdminLoginState(null);
-            toast.success(`¡Bienvenido Administrador!`);
-          }
-        } else if (reqData.status === 'rejected') {
-          setAdminLoginState('rejected_status');
-        } else {
-          setAdminLoginState('pending_status');
-        }
+        setUser(currentUser);
+        setAdminLoginState(null);
+        toast.success('Sesión iniciada');
       } else {
         if (intent === 'existing_admin') {
           setPendingApprovalUser(currentUser);
@@ -1477,7 +1378,10 @@ export default function App() {
             notified: false,
             createdAt: new Date().toISOString()
           });
-          setAdminLoginState('pending_status_new');
+          setJustRequestedInSession(true);
+          setUser(currentUser);
+          setAdminLoginState(null);
+          toast.success('Solicitud enviada con éxito');
         }
       }
     } catch (error) {
@@ -1498,6 +1402,9 @@ export default function App() {
       setUser(null);
       setAdminLoginState(null);
       setPendingApprovalUser(null);
+      setJustRequestedInSession(false);
+      setCurrentUserRequest(null);
+      setCurrentUserAdminConfig(null);
       await signOut(auth);
       toast.success('Sesión cerrada');
     } catch (error) {
@@ -1852,6 +1759,145 @@ export default function App() {
       return "BASE LOCAL (2026)";
     }
   };
+
+  const isSuperAdmin = user && user.email?.toLowerCase() === 'melaniagonzalez@gmail.com';
+  const isApprovedAdmin = isSuperAdmin || (currentUserAdminConfig !== null);
+  
+  // Decide if there is a restricted session active
+  const isRestrictedSession = user && (
+    !isApprovedAdmin || 
+    (currentUserRequest && currentUserRequest.status === 'approved' && !currentUserRequest.notified)
+  );
+
+  if (!isAuthReady || (user && isAdminConfigLoading)) {
+    return (
+      <div className="min-h-screen bg-[#09090b] flex flex-col items-center justify-center space-y-4">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary"></div>
+        <p className="text-[11px] uppercase font-black tracking-widest text-muted-foreground animate-pulse">Iniciando sesión segura...</p>
+      </div>
+    );
+  }
+
+  if (isRestrictedSession) {
+    // Determine which restricted UI card to show
+    let statusHeading = "Solicitud en Proceso";
+    let statusDescription = "Tu solicitud de acceso para el correo electrónico está actualmente en revisión por el Súper Administrador.";
+    let statusExtra = "Recibirás acceso automáticamente en el sistema una vez que sea aprobada por un súper admin. ¡Vuelve a intentarlo pronto!";
+    let showCongrats = false;
+    let showRejected = false;
+    let showJustSubmitted = false;
+
+    if (currentUserRequest && currentUserRequest.status === 'approved' && !currentUserRequest.notified) {
+      showCongrats = true;
+      statusHeading = "¡Felicidades por tu Aprobación!";
+      statusDescription = "Tu solicitud de acceso para ser Administrador ha sido formalmente aprobada por el Súper Administrador.";
+      statusExtra = "¡Bienvenido! Ahora tienes permitido ingresar, crear tus propias ligas de quiniela, agregar participantes y actualizar marcadores.";
+    } else if (currentUserRequest && currentUserRequest.status === 'rejected') {
+      showRejected = true;
+      statusHeading = "Solicitud Denegada / Revocada";
+      statusDescription = "Lamentablemente, la solicitud de acceso para tu cuenta fue rechazada o revocada por el Súper Administrador.";
+      statusExtra = "";
+    } else if (justRequestedInSession) {
+      showJustSubmitted = true;
+      statusHeading = "¡Solicitud Enviada con éxito!";
+      statusDescription = "Se ha enviado una solicitud de acceso al Súper Administrador para el correo electrónico:";
+      statusExtra = "El Súper Administrador revisará tus detalles para aprobar tus permisos de Administrador de Ligas.";
+    }
+
+    return (
+      <div className="min-h-screen bg-[#09090b] text-foreground flex flex-col items-center justify-center p-4 selection:bg-primary selection:text-primary-foreground">
+        {/* Isolated aesthetic workspace header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl sm:text-4xl font-black leading-none uppercase tracking-tight">
+            <span className="text-purple">Quiniela</span>
+            <span className="text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)] ml-2 animate-pulse">Mundial</span>
+          </h1>
+          <p className="text-[9px] text-[#71717a] uppercase font-black tracking-widest mt-2 leading-none">Sistema Administrativo Cerrado</p>
+        </div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-md bg-[#18181b]/50 border border-[#27272a] p-6 sm:p-8 space-y-6 backdrop-blur-sm"
+        >
+          <div className="space-y-6 text-center">
+            {showCongrats ? (
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-500/10 border-2 border-emerald-500 text-emerald-500 animate-bounce">
+                <Trophy className="w-7 h-7" />
+              </div>
+            ) : showRejected ? (
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
+                <UserMinus className="w-6 h-6" />
+              </div>
+            ) : showJustSubmitted ? (
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 border border-primary/20 text-primary">
+                <Check className="w-6 h-6 animate-pulse" />
+              </div>
+            ) : (
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500">
+                <FlaskConical className="w-6 h-6 animate-pulse animate-spin" style={{ animationDuration: '3s' }} />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {showCongrats && (
+                <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-2.5 py-0.5 font-bold uppercase tracking-widest border border-emerald-500/20 rounded-none inline-block mb-1">
+                  Acceso Aprobado de Ligas
+                </span>
+              )}
+              <h2 className="text-xl font-black uppercase tracking-tight text-foreground">{statusHeading}</h2>
+              <p className="text-xs text-[#a1a1aa] font-medium leading-relaxed">
+                {statusDescription}
+              </p>
+              
+              <div className="bg-[#09090b]/40 border border-[#27272a]/50 p-2.5 text-center mt-2">
+                <span className="text-primary font-mono text-xs select-all font-semibold tracking-wide lowercase block">{user?.email}</span>
+              </div>
+            </div>
+
+            {statusExtra && (
+              <div className="bg-[#18181b]/20 border border-[#27272a]/40 p-4 text-[10px] uppercase font-bold text-[#a1a1aa] leading-relaxed">
+                {statusExtra}
+              </div>
+            )}
+
+            <div className="pt-2 space-y-3">
+              {showCongrats ? (
+                <Button
+                  onClick={async () => {
+                    try {
+                      // Mark request as notified to grant full access
+                      await updateDoc(doc(db, 'adminRequests', user.uid), {
+                        notified: true
+                      });
+                      toast.success('¡Bienvenido Acceso Autorizado!');
+                    } catch (e) {
+                      console.error("Error transitioning approved user:", e);
+                    }
+                  }}
+                  className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black uppercase tracking-widest rounded-none shadow-lg shadow-emerald-950/20"
+                >
+                  Ingresar al Panel de Administrador
+                </Button>
+              ) : null}
+
+              <Button
+                variant={showCongrats ? "outline" : "default"}
+                onClick={handleLogout}
+                className={showCongrats 
+                  ? "w-full h-11 text-[10px] font-black uppercase tracking-widest rounded-none border-[#27272a] hover:bg-[#18181b] text-[#a1a1aa]" 
+                  : "w-full h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none"
+                }
+              >
+                {showCongrats ? "Cerrar Sesión (Cambiar Cuenta)" : "Salir / Cerrar Sesión"}
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
@@ -4186,7 +4232,9 @@ export default function App() {
                             notified: false,
                             createdAt: new Date().toISOString()
                           });
-                          setAdminLoginState('pending_status_new');
+                          setJustRequestedInSession(true);
+                          setUser(pendingApprovalUser);
+                          setAdminLoginState(null);
                         } catch (e) {
                           console.error(e);
                           toast.error("Error al enviar la solicitud");
