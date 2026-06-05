@@ -19,8 +19,8 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminRole == "superadmin") ||
         ('email' in request.auth.token && (
-          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower())) && 
-          get(/databases/$(database)/documents/admins/$(request.auth.token.email.lower())).data.role == "superadmin"
+          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.toLower())) && 
+          get(/databases/$(database)/documents/admins/$(request.auth.token.email.toLower())).data.role == "superadmin"
         )) ||
         ('email' in request.auth.token && (
           exists(/databases/$(database)/documents/admins/$(request.auth.token.email)) && 
@@ -40,7 +40,7 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/adminRequests/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/adminRequests/$(request.auth.uid)).data.status == "approved") ||
         ('email' in request.auth.token && (
-          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
+          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.toLower()))
         )) ||
         ('email' in request.auth.token && (
           exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
@@ -69,7 +69,7 @@ service cloud.firestore {
       // Predictions subcollection
       match /predictions/{matchId} {
         allow read: if true;
-        allow write: if isAdmin() && isValidId(matchId);
+        allow write: if (isAdmin() || (isSignedIn() && userId == request.auth.uid)) && isValidId(matchId);
       }
     }
 
@@ -83,7 +83,8 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() ||
-        adminId == request.auth.token.email
+        adminId == request.auth.token.email ||
+        ('email' in request.auth.token && adminId == request.auth.token.email.toLower())
       );
       allow write: if isSuperAdmin();
     }

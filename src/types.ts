@@ -22,6 +22,12 @@ export interface Prediction {
   matchId: string;
   homeScore: number | null;
   awayScore: number | null;
+  championTeamId?: string | null;
+  championTeamName?: string | null;
+  championTeamFlag?: string | null;
+  scorerPlayerName?: string | null;
+  scorerTeamName?: string | null;
+  scorerTeamFlag?: string | null;
 }
 
 export interface League {

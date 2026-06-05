@@ -5,12 +5,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
 import { calculateStandings } from './lib/calculations';
 import { cn } from './lib/utils';
+import { SearchSelector } from './components/SearchSelector';
 
 // UI Components from shadcn
 import { Button } from './components/ui/button';
@@ -131,7 +132,9 @@ export default function App() {
   const currentMatches = useMemo(() => {
     // Both modes now use 2026 data, but simulation uses local constants with mocked results
     const baseMatches = isSimulationMode ? MATCHES : (apiMatches.length > 0 ? apiMatches : MATCHES);
-    let processedMatches = baseMatches.map(m => ({ ...m }));
+    let processedMatches = baseMatches
+      .filter(m => m.group !== 'THIRD_PLACE' && (m as any).stage !== 'THIRD_PLACE' && (m as any).stage !== '3RD_PLACE')
+      .map(m => ({ ...m }));
     
     if (isSimulationMode) {
       // First, map simulated scores to make them actual results in simulator mode
@@ -339,6 +342,8 @@ export default function App() {
   const [predictions, setPredictions] = useState<Prediction[]>(() => 
     currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }))
   );
+  const [championPrediction, setChampionPrediction] = useState<Prediction | null>(null);
+  const [scorerPrediction, setScorerPrediction] = useState<Prediction | null>(null);
 
   const [participants, setParticipants] = useState<any[]>([]);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
@@ -350,7 +355,7 @@ export default function App() {
   const [dbAdmins, setDbAdmins] = useState<any[]>([]);
   const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
-  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues'>('admins');
+  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'peligro'>('admins');
   const [requestStatusFilter, setRequestStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [adminFormEmail, setAdminFormEmail] = useState('');
   const [adminFormRole, setAdminFormRole] = useState<'admin' | 'superadmin'>('admin');
@@ -472,6 +477,13 @@ export default function App() {
     setActiveParticipantId(null);
     setPredictionsReadOnly(false);
   }, [activeLeagueId]);
+
+  // Whenever the user goes into predictions viewing/editing mode (or adding a participant), default matchday to 'PTS Extra' (day 0)
+  useEffect(() => {
+    if (predictionsEditMode) {
+      setViewingMatchday(0);
+    }
+  }, [predictionsEditMode]);
 
   const [predictionsStats, setPredictionsStats] = useState<Record<string, { filled: number; total: number }>>({});
   const [participantsPredictions, setParticipantsPredictions] = useState<Record<string, Prediction[]>>({});
@@ -1257,8 +1269,64 @@ export default function App() {
     let totalPoints = 0;
     let correctResults = 0;
     let correctWinners = 0;
+    let extraPoints = 0;
+
+    // Helper to check actual champion and actual top scorer
+    const finalMatch = currentMatches.find(m => m.matchday === 8 || m.matchday === 17 || (m.group || '').toLowerCase().includes('final'));
+    const isFinalFinished = finalMatch ? (
+      isSimulationMode 
+        ? new Date(finalMatch.date) < new Date(simulatedDate)
+        : (['FINISHED', 'FT', 'AWARDED'].includes(finalMatch.status || '') || (apiMatches.length === 0 && new Date(finalMatch.date) < new Date()))
+    ) : false;
+
+    let actualChampionId = '';
+    if (isFinalFinished && finalMatch) {
+      if (finalMatch.actualHomeScore !== null && finalMatch.actualAwayScore !== null) {
+        if (finalMatch.actualHomeScore > finalMatch.actualAwayScore) {
+          actualChampionId = finalMatch.homeTeamId || '';
+        } else if (finalMatch.actualAwayScore > finalMatch.actualHomeScore) {
+          actualChampionId = finalMatch.awayTeamId || '';
+        } else {
+          // Deterministic tie-breaker
+          let val = 0;
+          for (let i = 0; i < finalMatch.id.length; i++) {
+            val += finalMatch.id.charCodeAt(i);
+          }
+          actualChampionId = (val % 2 === 0 ? finalMatch.homeTeamId : finalMatch.awayTeamId) || '';
+        }
+      }
+    }
+
+    let actualTopScorers: string[] = [];
+    if (isFinalFinished && currentScorers && currentScorers.length > 0) {
+      const maxGoals = Math.max(...currentScorers.map(s => s.goals || 0));
+      if (maxGoals > 0) {
+        actualTopScorers = currentScorers
+          .filter(s => s.goals === maxGoals)
+          .map(s => (s.player?.name || '').toLowerCase().trim());
+      }
+    }
 
     userPredictions.forEach(pred => {
+      if (pred.matchId === 'world_champion') {
+        if (actualChampionId && pred.championTeamId === actualChampionId) {
+          totalPoints += 5; // +5 PTS extra
+          extraPoints += 5;
+        }
+        return;
+      }
+
+      if (pred.matchId === 'top_scorer') {
+        if (actualTopScorers.length > 0 && pred.scorerPlayerName) {
+          const predictedName = pred.scorerPlayerName.toLowerCase().trim();
+          if (actualTopScorers.includes(predictedName)) {
+            totalPoints += 5; // +5 PTS extra
+            extraPoints += 5;
+          }
+        }
+        return;
+      }
+
       if (pred.homeScore === null || pred.awayScore === null) return;
 
       const actualMatch = currentMatches.find(m => m.id === pred.matchId);
@@ -1293,7 +1361,7 @@ export default function App() {
       }
     });
 
-    return { totalPoints, correctResults, correctWinners };
+    return { totalPoints, correctResults, correctWinners, extraPoints };
   };
 
   // Seed Test Users
@@ -1408,12 +1476,16 @@ export default function App() {
     if (!targetLeagueId) {
       // Not in any league, load blank predictions
       setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
+      setChampionPrediction(null);
+      setScorerPrediction(null);
       return;
     }
 
     const targetId = activeParticipantId || (user ? user.uid : null);
     if (!targetId) {
       setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
+      setChampionPrediction(null);
+      setScorerPrediction(null);
       return;
     }
 
@@ -1426,8 +1498,26 @@ export default function App() {
         const found = firestorePredictions.find(p => p.matchId === m.id);
         return found || { matchId: m.id, homeScore: null, awayScore: null };
       });
-      
       setPredictions(fullPredictions);
+
+      const champ = firestorePredictions.find(p => p.matchId === 'world_champion');
+      const scorer = firestorePredictions.find(p => p.matchId === 'top_scorer');
+      setChampionPrediction(champ || {
+        matchId: 'world_champion',
+        homeScore: null,
+        awayScore: null,
+        championTeamId: null,
+        championTeamName: null,
+        championTeamFlag: null
+      });
+      setScorerPrediction(scorer || {
+        matchId: 'top_scorer',
+        homeScore: null,
+        awayScore: null,
+        scorerPlayerName: null,
+        scorerTeamName: null,
+        scorerTeamFlag: null
+      });
     }, (error) => {
       console.error('Error fetching predictions:', error);
     });
@@ -1445,16 +1535,18 @@ export default function App() {
           ...p,
           totalPoints: p.totalPoints || 0,
           correctResults: p.correctResults || 0,
-          correctWinners: p.correctWinners || 0
+          correctWinners: p.correctWinners || 0,
+          extraPoints: p.extraPoints || 0
         };
       }
       
-      const { totalPoints, correctResults, correctWinners } = calculateUserPoints(userPreds);
+      const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
       return {
         ...p,
         totalPoints,
         correctResults,
-        correctWinners
+        correctWinners,
+        extraPoints
       };
     });
     
@@ -1476,16 +1568,25 @@ export default function App() {
       return onSnapshot(predictionsRef, (snapshot) => {
         const docs = snapshot.docs;
         const predsList = docs.map(doc => doc.data() as Prediction);
-        const filledCount = predsList.filter(pred => 
+        const filledMatchesCount = predsList.filter(pred => 
+          pred.matchId !== 'world_champion' && pred.matchId !== 'top_scorer' &&
           pred.homeScore !== null && pred.homeScore !== undefined && 
           pred.awayScore !== null && pred.awayScore !== undefined
         ).length;
+        
+        const champPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'world_champion');
+        const hasChampion = champPred && champPred.championTeamId !== null && champPred.championTeamId !== undefined;
+        
+        const scorerPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'top_scorer');
+        const hasScorer = scorerPred && scorerPred.scorerPlayerName !== null && scorerPred.scorerPlayerName !== undefined && scorerPred.scorerPlayerName !== '';
+        
+        const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasScorer ? 1 : 0);
         
         setPredictionsStats(prev => ({
           ...prev,
           [p.uid]: {
             filled: filledCount,
-            total: currentMatches.length
+            total: currentMatches.length + 2
           }
         }));
 
@@ -1680,12 +1781,29 @@ export default function App() {
           }, { merge: true });
         });
 
-        const { totalPoints, correctResults, correctWinners } = calculateUserPoints(predictions);
+        if (championPrediction) {
+          const predictionRef = doc(db, 'users', targetId, 'predictions', 'world_champion');
+          batch.set(predictionRef, {
+            ...championPrediction,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+
+        if (scorerPrediction) {
+          const predictionRef = doc(db, 'users', targetId, 'predictions', 'top_scorer');
+          batch.set(predictionRef, {
+            ...scorerPrediction,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+
+        const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(predictions);
         const userRef = doc(db, 'users', targetId);
         batch.update(userRef, {
           totalPoints,
           correctResults,
           correctWinners,
+          extraPoints,
           lastUpdatedAt: new Date().toISOString()
         });
 
@@ -1693,6 +1811,8 @@ export default function App() {
       }
       
       localStorage.setItem('wc_predictions', JSON.stringify(predictions));
+      if (championPrediction) localStorage.setItem('wc_champion_prediction', JSON.stringify(championPrediction));
+      if (scorerPrediction) localStorage.setItem('wc_scorer_prediction', JSON.stringify(scorerPrediction));
       setHasUnsavedChanges(false);
       toast.success('Cambios guardados correctamente');
     } catch (error) {
@@ -1790,7 +1910,7 @@ export default function App() {
 
   const resetPredictions = async () => {
     if (confirm('¿Estás seguro de que quieres reiniciar todas tus predicciones?')) {
-      const empty = MATCHES.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
+      const empty = currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
       setPredictions(empty);
       setHasUnsavedChanges(true);
       
@@ -1819,10 +1939,19 @@ export default function App() {
 
   const matchdays = useMemo(() => {
     const days = Array.from(new Set<number>(currentMatches.map(m => m.matchday || 1))).sort((a, b) => a - b);
-    return days;
+    return [0, ...days];
   }, [currentMatches]);
 
+  const isJornada0Locked = useMemo(() => {
+    const firstMatch = currentMatches.find(m => m.matchday === 1);
+    if (!firstMatch) return false;
+    return isSimulationMode
+      ? new Date(firstMatch.date) < new Date(simulatedDate)
+      : new Date(firstMatch.date) < new Date() || (firstMatch.status && !['SCHEDULED', 'TIMED'].includes(firstMatch.status));
+  }, [currentMatches, isSimulationMode, simulatedDate]);
+
   const getMatchdayLabel = (day: number) => {
+    if (day === 0) return 'PTS Extra';
     const comp = activeLeague?.competition || 'WC';
     if (comp === 'WC') {
       if (day <= 3) return `Jornada ${day}`;
@@ -1878,10 +2007,10 @@ export default function App() {
 
   // Sync viewing matchday with current matchday on load or mode switch
   useEffect(() => {
-    if (currentMatchday) {
+    if (currentMatchday && !predictionsEditMode) {
       setViewingMatchday(currentMatchday);
     }
-  }, [currentMatchday]);
+  }, [currentMatchday, predictionsEditMode]);
 
   const allGroupStandings = useMemo(() => {
     return groups.map(group => {
@@ -1896,6 +2025,20 @@ export default function App() {
   }, [predictions, currentTeams, currentMatches]);
 
   const getTimeUntilPhase = (day: number) => {
+    if (day === 0) {
+      const firstMatch = currentMatches.find(m => m.matchday === 1);
+      if (!firstMatch) return "No disponible";
+      const earliestTime = new Date(firstMatch.date).getTime();
+      const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+      const diffMs = earliestTime - nowTime;
+      if (diffMs <= 0) return "Plazo Cerrado";
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHours = Math.floor(diffMin / 60);
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ${diffHours % 24}h ${diffMin % 60}m`;
+    }
+
     const dayMatches = currentMatches.filter(m => m.matchday === day);
     if (dayMatches.length === 0) return "No disponible";
     
@@ -2118,13 +2261,13 @@ export default function App() {
                     setSelectedLeagueId(null);
                   }}
                   className={cn(
-                    "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-none relative overflow-visible shrink-0 transition-all",
+                    "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 w-8 sm:w-auto p-0 sm:px-4 rounded-none relative overflow-visible shrink-0 transition-all flex items-center justify-center",
                     showSuperAdminPanel ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary hover:bg-primary/5"
                   )}
+                  title="Panel Súper Admin"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5" /> 
-                  <span className="hidden xs:inline">Panel Súper Admin</span>
-                  <span className="xs:hidden">Súper Admin</span>
+                  <span className="hidden sm:inline">Súper Admin</span>
                   {adminRequests.filter(r => r.status === 'pending').length > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-450 opacity-75"></span>
@@ -2135,7 +2278,7 @@ export default function App() {
               )}
 
               {/* 3. Simula */}
-              {isSuperAdmin && (
+              {isSuperAdmin && !showSuperAdminPanel && (
                 <Button
                   variant={isSimulationMode ? "default" : "outline"}
                   size="sm"
@@ -2148,14 +2291,15 @@ export default function App() {
                     }
                   }}
                   className={cn(
-                    "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-none shrink-0 transition-all",
+                    "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 w-8 sm:w-auto p-0 sm:px-4 rounded-none shrink-0 transition-all flex items-center justify-center",
                     isSimulationMode 
                       ? "bg-lime text-black border-lime hover:bg-lime/90 font-black" 
                       : "border-lime/40 text-lime hover:bg-lime/5 font-black"
                   )}
+                  title="Simulación"
                 >
                   <FlaskConical className="w-3.5 h-3.5" />
-                  <span>Simula</span>
+                  <span className="hidden sm:inline">Simula</span>
                 </Button>
               )}
 
@@ -2167,7 +2311,7 @@ export default function App() {
               {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-primary/30 shrink-0" referrerPolicy="no-referrer" />}
             </div>
           ) : (
-            <Button size="sm" onClick={handleLogin} className="bg-white text-black hover:bg-white/90 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10 rounded-none">
+            <Button size="sm" onClick={handleLogin} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10 rounded-none">
               Soy Admin
             </Button>
           )}
@@ -2282,19 +2426,16 @@ export default function App() {
           showSuperAdminPanel && isSuperAdmin ? (
             <div className="space-y-12 max-w-5xl mx-auto py-8">
               {/* Header de Panel Súper Admin */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border mb-0">
                 <div className="space-y-2">
                   <h2 className="text-[24px] font-black uppercase tracking-tight text-primary flex items-center gap-3">
                     <LayoutDashboard className="w-6 h-6 text-primary" /> Panel Súper Admin
                   </h2>
-                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest">
-                    Gestión de administradores autorizados, roles y límites de creación de quinielas
-                  </p>
                 </div>
               </div>
 
               {/* Sub-navegación del Panel Súper Admin */}
-              <div className="flex border-b border-border">
+              <div className="grid grid-cols-2 md:grid-cols-4 border-b border-border w-full !mt-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -2302,27 +2443,29 @@ export default function App() {
                     setEditingAdminId(null);
                   }}
                   className={cn(
-                    "flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none",
+                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
                     superAdminTab === 'admins' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Users className="w-4 h-4 text-primary" /> Administradores Autorizados
+                  <Users className="w-4 h-4 text-primary" />
+                  <span className="hidden sm:inline">Administradores</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSuperAdminTab('requests')}
                   className={cn(
-                    "flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none relative",
+                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none relative w-full",
                     superAdminTab === 'requests' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <UserPlus className="w-4 h-4 text-primary" /> Solicitudes de Acceso
+                  <UserPlus className="w-4 h-4 text-primary" />
+                  <span className="hidden sm:inline">Solicitudes</span>
                   {adminRequests.filter(r => r.status === 'pending').length > 0 && (
-                    <span className="ml-1.5 bg-red-500 text-white font-mono text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                    <span className="ml-1 bg-red-500 text-white font-mono text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                       {adminRequests.filter(r => r.status === 'pending').length}
                     </span>
                   )}
@@ -2334,13 +2477,30 @@ export default function App() {
                     setEditingAdminId(null);
                   }}
                   className={cn(
-                    "flex items-center gap-2 px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none",
+                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
                     superAdminTab === 'leagues' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Trophy className="w-4 h-4 text-primary" /> Todas las Quinielas ({allLeagues.length})
+                  <Trophy className="w-4 h-4 text-primary" />
+                  <span className="hidden sm:inline">Quinielas ({allLeagues.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuperAdminTab('peligro');
+                    setEditingAdminId(null);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
+                    superAdminTab === 'peligro' 
+                      ? "border-red text-red bg-red/5 font-black" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <AlertTriangle className="w-4 h-4 text-red" />
+                  <span className="hidden sm:inline">Peligro</span>
                 </button>
               </div>
 
@@ -2381,7 +2541,9 @@ export default function App() {
                               className="w-full bg-background border border-border h-10 px-3 text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none rounded-none uppercase font-bold"
                             >
                               <option value="admin">Administrador Regular (Admin)</option>
-                              <option value="superadmin">Súper Administrador (Super Admin)</option>
+                              {isSuperAdmin && (
+                                <option value="superadmin">Súper Administrador (Super Admin)</option>
+                              )}
                             </select>
                           </div>
 
@@ -2459,9 +2621,11 @@ export default function App() {
                                   </TableCell>
                                   <TableCell className="py-4">
                                     {adm.role === 'superadmin' ? (
-                                      <span className="bg-primary/10 border border-primary/20 text-primary text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
-                                        Súper Admin
-                                      </span>
+                                      isSuperAdmin ? (
+                                        <span className="bg-primary/10 border border-primary/20 text-primary text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
+                                          Súper Admin
+                                        </span>
+                                      ) : null
                                     ) : (
                                       <span className="bg-sky-500/10 border border-sky-500/20 text-sky-450 text-[8px] font-black uppercase px-2 py-0.5 tracking-tight rounded-none select-none">
                                         Liga Admin
@@ -2536,7 +2700,7 @@ export default function App() {
                       onClick={() => setRequestStatusFilter('approved')}
                       className="text-[10px] uppercase font-black tracking-wider rounded-none h-10 border-border"
                     >
-                      Aceptadas / Aprobadas
+                      Aprobadas
                       <span className={cn(
                         "ml-2 px-1.5 py-0.5 text-[9px] font-mono font-black rounded-full",
                         requestStatusFilter === 'approved' ? "bg-primary-foreground text-primary" : "bg-primary/10 text-primary"
@@ -2549,7 +2713,7 @@ export default function App() {
                       onClick={() => setRequestStatusFilter('rejected')}
                       className="text-[10px] uppercase font-black tracking-wider rounded-none h-10 border-border"
                     >
-                      Denegadas / Rechazadas
+                      Denegadas
                       <span className={cn(
                         "ml-2 px-1.5 py-0.5 text-[9px] font-mono font-black rounded-full",
                         requestStatusFilter === 'rejected' ? "bg-primary-foreground text-primary" : "bg-primary/10 text-primary"
@@ -2672,7 +2836,7 @@ export default function App() {
                     </CardContent>
                   </Card>
                 </div>
-              ) : (
+              ) : superAdminTab === 'leagues' ? (
                 <div className="space-y-6">
                   <Card className="bg-card border-2 border-border rounded-none shadow-xl">
                     <CardHeader className="border-b border-border bg-primary/5">
@@ -2697,7 +2861,7 @@ export default function App() {
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Nombre</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Competencia</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Creador (Dueño)</TableHead>
-                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3 text-center">Miembros</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3 text-center">Participantes</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Fecha Creación</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3 text-right">Acciones</TableHead>
                               </TableRow>
@@ -2754,7 +2918,7 @@ export default function App() {
                                       )}
                                     </TableCell>
                                     <TableCell className="py-4 text-center text-xs font-mono font-bold text-foreground">
-                                      {league.memberUids?.length || 0}
+                                      {(league.memberUids || []).filter((id: string) => id !== league.creatorId).length}
                                     </TableCell>
                                     <TableCell className="py-4 text-xs font-mono font-bold text-muted-foreground">
                                       {league.createdAt ? new Date(league.createdAt).toLocaleDateString('es-ES', {
@@ -2804,26 +2968,100 @@ export default function App() {
                     </CardContent>
                   </Card>
                 </div>
+              ) : (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="bg-red-500/10 border border-red-500/30 p-8 space-y-6">
+                    {!showCleanupConfirm && !isCleaningDb && (
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-1 text-center md:text-left">
+                          <h3 className="text-[14px] font-black uppercase tracking-tight text-red-500">Mantenimiento de Administrador</h3>
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase leading-relaxed">
+                            Limpia la base de datos de todos los usuarios y las quinielas para iniciar con datos limpios de forma definitiva. No afecta los resultados generales de los partidos.
+                          </p>
+                        </div>
+                        <Button 
+                          variant="destructive"
+                          onClick={() => setShowCleanupConfirm(true)}
+                          className="h-12 px-10 text-[10px] font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white transition-all font-black rounded-none"
+                        >
+                          Limpiar Base de Datos
+                        </Button>
+                      </div>
+                    )}
+
+                    {showCleanupConfirm && !isCleaningDb && (
+                      <div className="space-y-4 animate-in fade-in duration-200">
+                        <div className="border-l-4 border-red-500 pl-4 py-2 space-y-2">
+                          <h4 className="text-[12px] font-black uppercase text-red-500 tracking-wider">¡ATENCIÓN: OPERACIÓN CRÍTICA IRREVERSIBLE!</h4>
+                          <p className="text-[11px] text-muted-foreground uppercase leading-relaxed font-bold">
+                            ¿Estás absolutamente seguro de que deseas limpiar la base de datos? Esta acción borrará de manera definitiva:
+                          </p>
+                          <ul className="text-[10px] text-muted-foreground uppercase list-disc list-inside space-y-1 font-bold pl-2">
+                            <li>Todas las quinielas y ligas creadas en la plataforma.</li>
+                            <li>Todos los perfiles de los usuarios participantes.</li>
+                            <li>Todas las predicciones y puntajes enviados.</li>
+                          </ul>
+                          <p className="text-[10px] text-emerald-400 font-bold uppercase">
+                            Nota: Los resultados oficiales de los partidos, equipos y configuraciones generales NO sufrirán ningún cambio.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-4 pt-2">
+                          <Button
+                            variant="destructive"
+                            className="h-11 px-8 text-[10px] font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white shadow-lg rounded-none"
+                            onClick={async () => {
+                              setShowCleanupConfirm(false);
+                              await handleCleanDatabase();
+                            }}
+                          >
+                            SÍ, ELIMINAR Y LIMPIAR DATOS
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="h-11 px-8 text-[10px] font-black uppercase tracking-widest border-border text-muted-foreground hover:bg-muted/15 rounded-none"
+                            onClick={() => setShowCleanupConfirm(false)}
+                          >
+                            CANCELAR
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {(isCleaningDb || (cleanupProgress > 0 && cleanupProgress <= 100)) && (
+                      <div className="space-y-3 pt-4 border-t border-red-500/20">
+                        <div className="flex justify-between items-center text-[10px] font-mono text-red-500 font-bold uppercase">
+                          <span className="truncate max-w-[80%]">{cleanupStatus}</span>
+                          <span>{cleanupProgress}%</span>
+                        </div>
+                        <div className="w-full bg-black/40 h-3 rounded-none overflow-hidden border border-red-500/20">
+                          <div 
+                            className="bg-red-500 h-full transition-all duration-300 ease-out"
+                            style={{ width: `${cleanupProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           ) : (
             <div className="space-y-12 max-w-5xl mx-auto py-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-border">
+              <div className="flex items-center justify-between gap-4 pb-8 border-b border-border">
                 <div className="space-y-2">
                   <h2 className="text-[24px] font-black uppercase tracking-tight text-primary">Mis Quinielas</h2>
-                  <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest">Selecciona una quiniela para ver tus resultados y ranking</p>
                 </div>
                 <div className="flex gap-3">
                   <div className="relative group">
                      <Button 
                       onClick={() => setIsCreatingLeague(true)} 
-                      className="h-12 text-[10px] font-black uppercase tracking-widest px-8 shadow-lg shadow-primary/20"
+                      className="h-9 text-[10px] font-black uppercase tracking-widest px-4 shadow-lg shadow-primary/20 flex items-center gap-1.5"
                       disabled={leagues.filter(l => l.creatorId === user?.uid).length >= maxLeaguesAllowed}
                     >
-                      <Plus className="w-4 h-4 mr-2" /> Crear Nueva
+                      <Plus className="w-3.5 h-3.5" /> Crear
                     </Button>
                     {leagues.filter(l => l.creatorId === user?.uid).length >= maxLeaguesAllowed && (
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-purple text-white text-[9px] font-black uppercase px-2 py-1 whitespace-nowrap hidden group-hover:block z-10">
+                      <div className="absolute bottom-full right-0 mb-2 bg-purple text-white text-[9px] font-black uppercase px-2 py-1 whitespace-nowrap hidden group-hover:block z-10">
                         Límite de {maxLeaguesAllowed} quinielas alcanzado
                       </div>
                     )}
@@ -3026,42 +3264,42 @@ export default function App() {
             </div>
 
             {!predictionsEditMode && activeTab !== 'settings' && (
-              <div className="grid grid-cols-3 sm:flex border-b border-border">
+              <div className="grid grid-cols-3 border-b border-border w-full">
                 <button
                   onClick={() => setActiveTab('leaderboard')}
                   className={cn(
-                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
                     activeTab === 'leaderboard' 
                       ? "border-primary text-primary" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Trophy className="w-3.5 h-3.5" />
-                  <span className="text-[8px] sm:text-[12px] text-center">Ranking</span>
+                  <Users className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Ranking</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('noticias')}
                   className={cn(
-                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
                     activeTab === 'noticias' 
                       ? "border-primary text-primary" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <Newspaper className="w-3.5 h-3.5" />
-                  <span className="text-[8px] sm:text-[12px] text-center">Noticias</span>
+                  <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Noticias</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('resultados')}
                   className={cn(
-                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center gap-1 sm:gap-2",
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
                     activeTab === 'resultados' 
                       ? "border-primary text-primary" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span className="text-[8px] sm:text-[12px] text-center">Resultados</span>
+                  <Trophy className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Resultados</span>
                 </button>
               </div>
             )}
@@ -3073,7 +3311,7 @@ export default function App() {
               )}>
                 {/* Left Column: Matches */}
                 <div className="space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 pb-5 border-b border-border/20 -mb-[3px]">
+                  <div className="flex flex-row items-center justify-between gap-4 pt-2 pb-5 border-b border-border/20 -mb-[3px]">
                     <div className="flex items-center gap-4 min-w-0">
                       {user && activeParticipantId && !predictionsReadOnly ? (
                         <button
@@ -3179,10 +3417,10 @@ export default function App() {
                                 const targetId = activeParticipantId;
                                 if (!targetId) return null;
                                 const userPreds = participantsPredictions[targetId] || predictions || [];
-                                const { totalPoints, correctResults, correctWinners } = calculateUserPoints(userPreds);
+                                const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
                                 return (
                                   <span className="text-lime font-black ml-2 text-[10px] sm:text-[11px] border-l border-white/20 pl-2">
-                                    ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} DE GANADOR)
+                                    ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} GANADOR | {extraPoints} EXTRAS)
                                   </span>
                                 );
                               })()}
@@ -3197,10 +3435,10 @@ export default function App() {
                               const targetId = activeParticipantId;
                               if (!targetId) return null;
                               const userPreds = participantsPredictions[targetId] || predictions || [];
-                              const { totalPoints, correctResults, correctWinners } = calculateUserPoints(userPreds);
+                              const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
                               return (
                                 <span className="text-lime font-black ml-2 text-[10px] sm:text-[11px] border-l border-white/20 pl-2">
-                                  ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} DE GANADOR)
+                                  ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} GANADOR | {extraPoints} EXTRAS)
                                 </span>
                               );
                             })()}
@@ -3219,9 +3457,11 @@ export default function App() {
                             setIsDeleteConfirmOpen(true);
                           }
                         }}
-                        className="h-10 text-[10px] font-black uppercase tracking-widest px-4 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500 rounded-none shrink-0"
+                        className="h-10 w-10 sm:w-auto text-[10px] font-black uppercase tracking-widest p-0 sm:px-4 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500 rounded-none shrink-0 flex items-center justify-center animate-in fade-in duration-200"
+                        title="Eliminar Participante"
                       >
-                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar Participante
+                        <Trash2 className="w-4 h-4 sm:mr-2 shrink-0" />
+                        <span className="hidden sm:inline">Eliminar</span>
                       </Button>
                     )}
                   </div>
@@ -3327,6 +3567,230 @@ export default function App() {
                         </Button>
                       )}
                     </div>
+                    
+                    {day === 0 && (() => {
+                      const finalMatch = currentMatches.find(m => m.matchday === 8 || m.matchday === 17 || (m.group || '').toLowerCase().includes('final'));
+                      const isFinalFinished = finalMatch ? (
+                        isSimulationMode 
+                          ? new Date(finalMatch.date) < new Date(simulatedDate)
+                          : (['FINISHED', 'FT', 'AWARDED'].includes(finalMatch.status || '') || (apiMatches.length === 0 && new Date(finalMatch.date) < new Date()))
+                      ) : false;
+
+                      let actualChampionId = '';
+                      if (isFinalFinished && finalMatch) {
+                        if (finalMatch.actualHomeScore !== null && finalMatch.actualAwayScore !== null) {
+                          if (finalMatch.actualHomeScore > finalMatch.actualAwayScore) {
+                            actualChampionId = finalMatch.homeTeamId || '';
+                          } else if (finalMatch.actualAwayScore > finalMatch.actualHomeScore) {
+                            actualChampionId = finalMatch.awayTeamId || '';
+                          } else {
+                            let val = 0;
+                            for (let i = 0; i < finalMatch.id.length; i++) {
+                              val += finalMatch.id.charCodeAt(i);
+                            }
+                            actualChampionId = (val % 2 === 0 ? finalMatch.homeTeamId : finalMatch.awayTeamId) || '';
+                          }
+                        }
+                      }
+
+                      const champTeam = actualChampionId ? currentTeams.find(t => t.id === actualChampionId) : null;
+
+                      let actualTopScorers: string[] = [];
+                      if (isFinalFinished && currentScorers && currentScorers.length > 0) {
+                        const maxGoals = Math.max(...currentScorers.map(s => s.goals || 0));
+                        if (maxGoals > 0) {
+                          actualTopScorers = currentScorers
+                            .filter(s => s.goals === maxGoals)
+                            .map(s => (s.player?.name || '').toLowerCase().trim());
+                        }
+                      }
+
+                      const topScorersList = isFinalFinished && currentScorers && currentScorers.length > 0
+                        ? (() => {
+                            const maxGoals = Math.max(...currentScorers.map(s => s.goals || 0));
+                            return maxGoals > 0 ? currentScorers.filter(s => s.goals === maxGoals) : [];
+                          })()
+                        : [];
+
+                      const userMatchedChampion = championPrediction?.championTeamId && (championPrediction.championTeamId === actualChampionId);
+                      const userMatchedScorer = scorerPrediction?.scorerPlayerName && actualTopScorers.includes(scorerPrediction.scorerPlayerName.toLowerCase().trim());
+
+                      return (
+                        <div className="space-y-4 pt-4 mb-8">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Campéon Mundial Box */}
+                            <div className="bg-card border border-border overflow-visible rounded-none relative p-6 space-y-6 z-10 focus-within:z-20">
+                              <div className="absolute top-0 left-0 w-1.5 h-full bg-[#FFD700]" />
+                              <div className="flex items-center gap-3">
+                                <Trophy className="w-5 h-5 text-[#FFD700]" />
+                                <div>
+                                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                    Pronóstico Campeón Mundial
+                                  </h3>
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                                    {activeLeague?.competition === 'CL' ? '¿Quién ganará la Champions?' : '¿Quién ganará el Mundial 2026?'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4">
+                                <SearchSelector
+                                  placeholder="Buscar país..."
+                                  type="teams"
+                                  competition={activeLeague?.competition || 'WC'}
+                                  value={
+                                    championPrediction?.championTeamId ? {
+                                      id: championPrediction.championTeamId,
+                                      name: championPrediction.championTeamName || '',
+                                      flag: championPrediction.championTeamFlag || ''
+                                    } : null
+                                  }
+                                  disabled={isJornada0Locked || predictionsReadOnly || !user}
+                                  onChange={(val) => {
+                                    setChampionPrediction(val ? {
+                                      matchId: 'world_champion',
+                                      homeScore: null,
+                                      awayScore: null,
+                                      championTeamId: val.id,
+                                      championTeamName: val.name,
+                                      championTeamFlag: val.flag
+                                    } : {
+                                      matchId: 'world_champion',
+                                      homeScore: null,
+                                      awayScore: null,
+                                      championTeamId: null,
+                                      championTeamName: null,
+                                      championTeamFlag: null
+                                    });
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                />
+                              </div>
+
+                              {isFinalFinished && (
+                                <div className="mt-4 p-4 border rounded-none bg-primary/10 border-primary/20 space-y-2 text-left animate-in fade-in">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase text-muted-foreground/80 tracking-wider">Campeón Oficial:</span>
+                                    {userMatchedChampion ? (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-lime/10 border-lime/20 text-lime">
+                                        +5 PTS (ACERTADO)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-red-500/5 border-red-500/15 text-red-400/80">
+                                        0 PTS
+                                      </span>
+                                    )}
+                                  </div>
+                                  {champTeam ? (
+                                    <div className="flex items-center gap-2">
+                                      {champTeam.flag?.startsWith('http') ? (
+                                        <img src={champTeam.flag} alt="" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <span className="text-xl">{champTeam.flag}</span>
+                                      )}
+                                      <span className="text-xs font-black uppercase text-white">{champTeam.name}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs font-black text-muted-foreground uppercase">Por definir</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Goleador Box */}
+                            <div className="bg-card border border-border overflow-visible rounded-none relative p-6 space-y-6 z-10 focus-within:z-20">
+                              <div className="absolute top-0 left-0 w-1.5 h-full bg-lime" />
+                              <div className="flex items-center gap-3">
+                                <Users className="w-5 h-5 text-lime" />
+                                <div>
+                                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                    Pronóstico Goleador
+                                  </h3>
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                                    ¿Quién anotará más goles en el torneo?
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4">
+                                <SearchSelector
+                                  placeholder="Buscar jugador..."
+                                  type="players"
+                                  competition={activeLeague?.competition || 'WC'}
+                                  value={
+                                    scorerPrediction?.scorerPlayerName ? {
+                                      name: scorerPrediction.scorerPlayerName,
+                                      team: scorerPrediction.scorerTeamName || undefined,
+                                      flag: scorerPrediction.scorerTeamFlag || undefined
+                                    } : null
+                                  }
+                                  disabled={isJornada0Locked || predictionsReadOnly || !user}
+                                  onChange={(val) => {
+                                    setScorerPrediction(val ? {
+                                      matchId: 'top_scorer',
+                                      homeScore: null,
+                                      awayScore: null,
+                                      scorerPlayerName: val.name,
+                                      scorerTeamName: val.team,
+                                      scorerTeamFlag: val.flag
+                                    } : {
+                                      matchId: 'top_scorer',
+                                      homeScore: null,
+                                      awayScore: null,
+                                      scorerPlayerName: null,
+                                      scorerTeamName: null,
+                                      scorerTeamFlag: null
+                                    });
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                />
+                              </div>
+
+                              {isFinalFinished && (
+                                <div className="mt-4 p-4 border rounded-none bg-lime/5 border-lime/20 space-y-2 text-left animate-in fade-in">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase text-muted-foreground/85 tracking-wider">Goleador(es) Oficial(es):</span>
+                                    {userMatchedScorer ? (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-lime/10 border-lime/20 text-lime">
+                                        +5 PTS (ACERTADO)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-red-500/5 border-red-500/15 text-red-400/80">
+                                        0 PTS
+                                      </span>
+                                    )}
+                                  </div>
+                                  {topScorersList.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {topScorersList.map((scorer, index) => (
+                                        <div key={index} className="flex items-center justify-between border-b border-white/5 pb-1 last:border-0 last:pb-0">
+                                          <div className="flex items-center gap-2">
+                                            {isSimulationMode ? (
+                                              <span className="text-sm">{scorer.team?.crest || ''}</span>
+                                            ) : (
+                                              scorer.team?.crest && <img src={scorer.team.crest} alt="" className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
+                                            )}
+                                            <span className="text-xs font-black uppercase text-white">{scorer.player?.name}</span>
+                                            <span className="text-[10px] text-muted-foreground uppercase">({scorer.team?.name})</span>
+                                          </div>
+                                          <span className="text-xs font-black text-lime">{scorer.goals} goles</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs font-black text-muted-foreground uppercase">Por definir</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="text-[10px] text-muted-foreground/80 leading-relaxed font-semibold uppercase tracking-wider bg-white/5 p-4 border border-white/5">
+                            ⚠️ NOTA: Estos pronósticos se cerrarán al inicio de la jornada uno y los puntos se acreditarán al final del último partido cuando se sepan los resultados.
+                          </div>
+                        </div>
+                      );
+                    })()}
                     
                     <div className="space-y-12">
                       {Array.from(new Set(currentMatches.filter(m => m.matchday === day).map(m => m.group)))
@@ -3542,7 +4006,7 @@ export default function App() {
                 <p className="text-[9px] text-muted-foreground uppercase leading-tight font-bold">
                   {user 
                     ? '* Esta tabla se calcula automáticamente según tus marcadores.' 
-                    : '* Esta tabla se calcula automáticamente según los marcadores de este competidor.'}
+                    : '* Esta tabla se calcula automáticamente según los marcadores de este participante.'}
                 </p>
               </div>
 
@@ -3662,9 +4126,10 @@ export default function App() {
                     <TableHead className="w-[45px] sm:w-[60px] text-center text-[10px] font-black uppercase py-4 sm:py-6 px-1 sm:px-4">POS</TableHead>
                     <TableHead className="text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Participante</TableHead>
                     <TableHead className="hidden sm:table-cell text-center text-[10px] font-black uppercase py-6">Progreso</TableHead>
-                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">Exactos (3 PTS)</TableHead>
-                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">Ganador (1 PT)</TableHead>
-                    <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Puntos</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">PTS Exactos</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">PTS Ganador</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">PTS Extras</TableHead>
+                    <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Total</TableHead>
                     <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 pr-3 sm:pr-8 pl-1.5 sm:pl-4">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -3749,12 +4214,17 @@ export default function App() {
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
                           <span className="text-[12px] font-black text-white/95">
-                            {entry.correctResults || 0} <span className="text-[9px] text-muted-foreground font-medium ml-1">({(entry.correctResults || 0) * 3} PTS)</span>
+                            {(entry.correctResults || 0) * 3} <span className="text-[9px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
                           <span className="text-[12px] font-black text-white/95">
-                            {entry.correctWinners || 0} <span className="text-[9px] text-muted-foreground font-medium ml-1">({(entry.correctWinners || 0) * 1} PTS)</span>
+                            {(entry.correctWinners || 0) * 1} <span className="text-[9px] text-muted-foreground font-medium ml-1">PTS</span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
+                          <span className="text-[12px] font-black text-white/95">
+                            {entry.extraPoints || 0} <span className="text-[9px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right px-1.5 sm:px-4">
@@ -3848,6 +4318,34 @@ export default function App() {
                     Se otorgan si aciertas quién gana (o empate), pero no el marcador exacto de goles. Ej. Predicción: 3-1 | Resultado: 2-0.
                   </p>
                 </div>
+
+                <div className="border border-border/40 p-4 bg-white/[0.01]">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-[#FFD700]">
+                      Campeón Mundial
+                    </span>
+                    <span className="text-[12px] font-black uppercase tracking-wide text-[#FFD700] bg-[#FFD700]/10 px-2 py-0.5 border border-[#FFD700]/20">
+                      5 Puntos
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                    Se otorgan si tu predicción de Campeón coincide con el ganador final del torneo. Se acreditan automáticamente al término de la gran final.
+                  </p>
+                </div>
+
+                <div className="border border-border/40 p-4 bg-white/[0.01]">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-500">
+                      Máximo Goleador
+                    </span>
+                    <span className="text-[12px] font-black uppercase tracking-wide text-amber-500 bg-amber-500/10 px-2 py-0.5 border border-amber-500/25">
+                      5 Puntos
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                    Se otorgan si tu jugador seleccionado termina como el goleador oficial del torneo (incluye empates). Se acreditan al término de la gran final.
+                  </p>
+                </div>
               </div>
               <div className="mt-6 flex items-center gap-2 border-t border-border/30 pt-4 text-muted-foreground">
                 <span className="text-[9px] font-mono font-bold tracking-wider uppercase">
@@ -3857,7 +4355,7 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === 'noticias' ? (
-      <div className="space-y-12">
+      <div className="space-y-12 max-w-5xl mx-auto w-full pt-4">
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-12">
           {/* Content from the original 'resultados' sub-tab: Matches and Scorers */}
           <div className="space-y-8">
@@ -3866,39 +4364,43 @@ export default function App() {
                 <div className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">{isSimulationMode ? `Resultados Simulados` : 'Últimos Resultados'}</span>
-                  {isSimulationMode ? (
-                    <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[8px] font-black tracking-widest uppercase rounded-none">
-                      Simulado
-                    </span>
-                  ) : apiMatches.length > 0 ? (
-                    <span className="px-2 py-0.5 bg-lime/10 border border-lime/30 text-lime text-[8px] font-black tracking-widest uppercase rounded-none">
-                      API Real-Time
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 bg-sky-550/10 border border-sky-500/30 text-sky-400 text-[8px] font-black tracking-widest uppercase rounded-none">
-                      {formatDbLastUpdated(dbLastUpdated)}
-                    </span>
+                  {isSuperAdmin && (
+                    isSimulationMode ? (
+                      <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[8px] font-black tracking-widest uppercase rounded-none">
+                        Simulado
+                      </span>
+                    ) : apiMatches.length > 0 ? (
+                      <span className="px-2 py-0.5 bg-lime/10 border border-lime/30 text-lime text-[8px] font-black tracking-widest uppercase rounded-none">
+                        API Real-Time
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-sky-550/10 border border-sky-500/30 text-sky-400 text-[8px] font-black tracking-widest uppercase rounded-none">
+                        {formatDbLastUpdated(dbLastUpdated)}
+                      </span>
+                    )
                   )}
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition)} 
-                  disabled={isSyncing || !activeLeague?.competition}
-                  className="text-[9px] font-black uppercase tracking-widest border-border h-8 px-4"
-                >
-                  {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
-                </Button>
+                {isSuperAdmin && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition)} 
+                    disabled={isSyncing || !activeLeague?.competition}
+                    className="text-[9px] font-black uppercase tracking-widest border-border h-8 px-4"
+                  >
+                    {isSyncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+                  </Button>
+                )}
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(() => {
-                  const displayResults = isSimulationMode 
-                    ? MATCHES.filter(m => new Date(m.date) < new Date(simulatedDate))
-                    : (apiMatches.length > 0 
-                        ? apiMatches.filter(m => m.status === 'FINISHED' || m.status === 'LIVE' || m.status === 'IN_PLAY')
-                        : MATCHES.filter(m => new Date(m.date) < new Date())
-                      );
+                  const displayResults = currentMatches.filter(m => {
+                    const isFinished = isSimulationMode 
+                      ? new Date(m.date) < new Date(simulatedDate)
+                      : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'AWARDED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) < new Date()));
+                    return isFinished;
+                  });
                   
                   if (displayResults.length > 0) {
                     return displayResults
@@ -3947,33 +4449,36 @@ export default function App() {
                   );
                 })()}
               </div>
+            </div>
               
-              <div className="pt-8 space-y-8">
+            <div className="pt-8 space-y-8">
                 <div className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span className="text-[9px]! font-black uppercase tracking-tight leading-none block">Próximos Encuentros</span>
-                  {isSimulationMode ? (
-                    <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[8px] font-black tracking-widest uppercase rounded-none">
-                      Simulado
-                    </span>
-                  ) : apiMatches.length > 0 ? (
-                    <span className="px-2 py-0.5 bg-lime/10 border border-lime/30 text-lime text-[8px] font-black tracking-widest uppercase rounded-none">
-                      API Real-Time
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 bg-sky-550/10 border border-sky-500/30 text-sky-400 text-[8px] font-black tracking-widest uppercase rounded-none">
-                      {formatDbLastUpdated(dbLastUpdated)}
-                    </span>
+                  {isSuperAdmin && (
+                    isSimulationMode ? (
+                      <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-[8px] font-black tracking-widest uppercase rounded-none">
+                        Simulado
+                      </span>
+                    ) : apiMatches.length > 0 ? (
+                      <span className="px-2 py-0.5 bg-lime/10 border border-lime/30 text-lime text-[8px] font-black tracking-widest uppercase rounded-none">
+                        API Real-Time
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-sky-550/10 border border-sky-500/30 text-sky-400 text-[8px] font-black tracking-widest uppercase rounded-none">
+                        {formatDbLastUpdated(dbLastUpdated)}
+                      </span>
+                    )
                   )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {(() => {
-                    const displayUpcoming = isSimulationMode
-                      ? MATCHES.filter(m => new Date(m.date) >= new Date(simulatedDate))
-                      : (apiMatches.length > 0
-                          ? apiMatches.filter(m => m.status === 'SCHEDULED' || m.status === 'TIMED')
-                          : MATCHES.filter(m => new Date(m.date) >= new Date())
-                        );
+                    const displayUpcoming = currentMatches.filter(m => {
+                      const isUpcoming = isSimulationMode
+                        ? new Date(m.date) >= new Date(simulatedDate)
+                        : (['SCHEDULED', 'TIMED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) >= new Date()));
+                      return isUpcoming;
+                    });
                     
                     if (displayUpcoming.length > 0) {
                       return displayUpcoming
@@ -4050,7 +4555,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
         ) : activeTab === 'settings' ? (
           <div className="max-w-4xl mx-auto space-y-12 pb-20 pt-4">
             {/* Header section (Renaming - Only for Creator) */}
@@ -4121,80 +4625,7 @@ export default function App() {
               </div>
             </div>
 
-            {isSuperAdmin && (
-              <div className="bg-amber-500/10 border border-amber-500/30 p-8 space-y-6">
-                {!showCleanupConfirm && !isCleaningDb && (
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="space-y-1 text-center md:text-left">
-                      <h3 className="text-[14px] font-black uppercase tracking-tight text-amber-500">Mantenimiento de Administrador</h3>
-                      <p className="text-[10px] text-muted-foreground font-bold uppercase">
-                        Limpia la base de datos de todos los usuarios y las quinielas para iniciar con datos limpios de forma definitiva. No afecta los resultados generales de los partidos.
-                      </p>
-                    </div>
-                    <Button 
-                      variant="outline"
-                      onClick={() => setShowCleanupConfirm(true)}
-                      className="h-12 px-10 text-[10px] font-black uppercase tracking-widest border-amber-500/50 hover:bg-amber-500/20 text-amber-500 hover:text-amber-400 transition-all font-black"
-                    >
-                      Limpiar Base de Datos
-                    </Button>
-                  </div>
-                )}
 
-                {showCleanupConfirm && !isCleaningDb && (
-                  <div className="space-y-4 animate-in fade-in duration-200">
-                    <div className="border-l-4 border-red-500 pl-4 py-2 space-y-2">
-                      <h4 className="text-[12px] font-black uppercase text-red-500 tracking-wider">¡ATENCIÓN: OPERACIÓN CRÍTICA IRREVERSIBLE!</h4>
-                      <p className="text-[11px] text-muted-foreground uppercase leading-relaxed font-bold">
-                        ¿Estás absolutamente seguro de que deseas limpiar la base de datos? Esta acción borrará de manera definitiva:
-                      </p>
-                      <ul className="text-[10px] text-muted-foreground uppercase list-disc list-inside space-y-1 font-bold pl-2">
-                        <li>Todas las quinielas y ligas creadas en la plataforma.</li>
-                        <li>Todos los perfiles de los usuarios participantes.</li>
-                        <li>Todas las predicciones y puntajes enviados.</li>
-                      </ul>
-                      <p className="text-[10px] text-emerald-400 font-bold uppercase">
-                        Nota: Los resultados oficiales de los partidos, equipos y configuraciones generales NO sufrirán ningún cambio.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-4 pt-2">
-                      <Button
-                        variant="destructive"
-                        className="h-11 px-8 text-[10px] font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white shadow-lg"
-                        onClick={async () => {
-                          setShowCleanupConfirm(false);
-                          await handleCleanDatabase();
-                        }}
-                      >
-                        SÍ, ELIMINAR Y LIMPIAR DATOS
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="h-11 px-8 text-[10px] font-black uppercase tracking-widest border-border text-muted-foreground hover:bg-muted/15"
-                        onClick={() => setShowCleanupConfirm(false)}
-                      >
-                        CANCELAR
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {(isCleaningDb || (cleanupProgress > 0 && cleanupProgress <= 100)) && (
-                  <div className="space-y-3 pt-4 border-t border-amber-500/20">
-                    <div className="flex justify-between items-center text-[10px] font-mono text-amber-500 font-bold uppercase">
-                      <span className="truncate max-w-[80%]">{cleanupStatus}</span>
-                      <span>{cleanupProgress}%</span>
-                    </div>
-                    <div className="w-full bg-black/40 h-3 rounded-full overflow-hidden border border-amber-500/20">
-                      <div 
-                        className="bg-amber-500 h-full rounded-full transition-all duration-300 ease-out"
-                        style={{ width: `${cleanupProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="bg-destructive/10 border border-destructive/30 p-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -4231,7 +4662,7 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === 'resultados' ? (
-      <div className="space-y-12 pt-10">
+      <div className="space-y-12 max-w-5xl mx-auto w-full pt-4">
         <div className="space-y-20">
             <div className="space-y-8">
               <div className="flex items-center gap-3">
@@ -4497,9 +4928,7 @@ export default function App() {
                     <div className="flex flex-col items-center gap-4 mt-[90px]">
                       <Trophy className="w-12 h-12 text-primary animate-bounce mb-4" />
                       {(() => {
-                        const finalMatches = isSimulationMode 
-                          ? currentMatches.filter(m => m.matchday === 8)
-                          : apiMatches.filter(m => m.stage === 'FINAL');
+                        const finalMatches = currentMatches.filter(m => m.matchday === 8);
                         
                         return finalMatches.map(m => {
                           const home = currentTeams.find(t => t.id === m.homeTeamId);
