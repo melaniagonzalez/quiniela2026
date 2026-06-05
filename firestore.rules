@@ -15,16 +15,16 @@ service cloud.firestore {
     // Checking if the signed-in user is a super administrator
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == "melaniagonzalez@gmail.com" ||
+        ('email' in request.auth.token && request.auth.token.email == "melaniagonzalez@gmail.com") ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminRole == "superadmin") ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('adminRole', 'none') == "superadmin") ||
         ('email' in request.auth.token && (
-          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.toLower())) && 
-          get(/databases/$(database)/documents/admins/$(request.auth.token.email.toLower())).data.role == "superadmin"
+          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower())) && 
+          get(/databases/$(database)/documents/admins/$(request.auth.token.email.lower())).data.get('role', 'none') == "superadmin"
         )) ||
         ('email' in request.auth.token && (
           exists(/databases/$(database)/documents/admins/$(request.auth.token.email)) && 
-          get(/databases/$(database)/documents/admins/$(request.auth.token.email)).data.role == "superadmin"
+          get(/databases/$(database)/documents/admins/$(request.auth.token.email)).data.get('role', 'none') == "superadmin"
         ))
       );
     }
@@ -32,15 +32,15 @@ service cloud.firestore {
     // Checking if the signed-in user is an administrator
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == "melaniagonzalez@gmail.com" || 
-        request.auth.token.email.matches('(?i).*admin.*') ||
         isSuperAdmin() ||
+        ('email' in request.auth.token && request.auth.token.email == "melaniagonzalez@gmail.com") || 
+        ('email' in request.auth.token && request.auth.token.email.matches('(?i).*admin.*')) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true) ||
         (exists(/databases/$(database)/documents/adminRequests/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/adminRequests/$(request.auth.uid)).data.status == "approved") ||
+         get(/databases/$(database)/documents/adminRequests/$(request.auth.uid)).data.get('status', 'none') == "approved") ||
         ('email' in request.auth.token && (
-          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.toLower()))
+          exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
         )) ||
         ('email' in request.auth.token && (
           exists(/databases/$(database)/documents/admins/$(request.auth.token.email))
@@ -62,14 +62,25 @@ service cloud.firestore {
         (!('adminRole' in request.resource.data) || request.resource.data.adminRole == 'none') &&
         (!('adminRequestStatus' in request.resource.data) || request.resource.data.adminRequestStatus == 'none' || request.resource.data.adminRequestStatus == 'pending')
       );
-      allow update: if isSignedIn() && userId == request.auth.uid && isValidId(userId) && (
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus'])
+      allow update: if isValidId(userId) && (
+        (isSignedIn() && userId == request.auth.uid && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus'])
+        )) ||
+        ((userId.matches('^p_.*') || resource.data.get('isParticipant', false) == true) && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'isParticipant', 'leagueId', 'email', 'searchEmail'])
+        ))
       );
       
       // Predictions subcollection
       match /predictions/{matchId} {
         allow read: if true;
-        allow write: if (isAdmin() || (isSignedIn() && userId == request.auth.uid)) && isValidId(matchId);
+        allow write: if (
+          isAdmin() || 
+          (isSignedIn() && userId == request.auth.uid) || 
+          userId.matches('^p_.*') || 
+          (exists(/databases/$(database)/documents/users/$(userId)) && 
+           get(/databases/$(database)/documents/users/$(userId)).data.get('isParticipant', false) == true)
+        ) && isValidId(matchId);
       }
     }
 
@@ -83,8 +94,8 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() ||
-        adminId == request.auth.token.email ||
-        ('email' in request.auth.token && adminId == request.auth.token.email.toLower())
+        ('email' in request.auth.token && adminId == request.auth.token.email) ||
+        ('email' in request.auth.token && adminId == request.auth.token.email.lower())
       );
       allow write: if isSuperAdmin();
     }

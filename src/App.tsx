@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -386,6 +386,7 @@ export default function App() {
   const [isSuspendConfirmOpen, setIsSuspendConfirmOpen] = useState(false);
   const [isDeleteLeagueConfirmOpen, setIsDeleteLeagueConfirmOpen] = useState(false);
   const [leagueToDeleteAdmin, setLeagueToDeleteAdmin] = useState<{ id: string; name: string } | null>(null);
+  const [isSettingsDeleteConfirmOpen, setIsSettingsDeleteConfirmOpen] = useState(false);
 
   const isSuperAdmin = user ? (
     user.email?.toLowerCase() === 'melaniagonzalez@gmail.com' ||
@@ -466,9 +467,29 @@ export default function App() {
   const [newsData, setNewsData] = useState<any>(null);
   const [loadingNews, setLoadingNews] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+  const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [predictionsEditMode, setPredictionsEditMode] = useState(false);
   const [predictionsReadOnly, setPredictionsReadOnly] = useState(false);
+
+  // PIN Verification for Common User Editing
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinModalTargetId, setPinModalTargetId] = useState<string | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [unlockedParticipants, setUnlockedParticipants] = useState<Record<string, boolean>>({});
+
+  // Code Editing for admin/user
+  const [isEditingCode, setIsEditingCode] = useState(false);
+  const [editingCodeValue, setEditingCodeValue] = useState('');
+  const [editingCodeTargetId, setEditingCodeTargetId] = useState<string | null>(null);
+
+  // New Profile Edit Popup Modal States
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [modalProfileName, setModalProfileName] = useState('');
+  const [modalProfileCode, setModalProfileCode] = useState('');
+
+  const canEditActive = !!(user || (activeParticipantId && unlockedParticipants[activeParticipantId]));
 
   // Reset navigation and edit states when entering or leaving a pool
   useEffect(() => {
@@ -603,7 +624,7 @@ export default function App() {
         return () => unsubscribe();
       }
     }
-  }, [user]);
+  }, [user, isSuperAdmin]);
 
   // Fetch the current user admin permissions config and real-time request status
   useEffect(() => {
@@ -687,7 +708,17 @@ export default function App() {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data());
+      const list = snapshot.docs.map(d => {
+        const data = d.data() as any;
+        if (!data.accessCode) {
+          const generatedCode = Math.floor(10000 + Math.random() * 90000).toString();
+          data.accessCode = generatedCode;
+          updateDoc(doc(db, 'users', data.uid), {
+            accessCode: generatedCode
+          }).catch(err => console.error("Error auto-generating accessCode for", data.uid, err));
+        }
+        return data;
+      });
       // Ordenar por totalPoints descendente para que actúe como leaderboard
       const sorted = list.sort((a: any, b: any) => (b.totalPoints || 0) - (a.totalPoints || 0));
       setParticipants(sorted);
@@ -1770,8 +1801,9 @@ export default function App() {
     
     setIsSyncing(true);
     try {
-      if (user) {
-        const targetId = activeParticipantId || user.uid;
+      if (user || (activeParticipantId && unlockedParticipants[activeParticipantId])) {
+        const targetId = activeParticipantId || (user ? user.uid : null);
+        if (!targetId) return;
         const batch = writeBatch(db);
         predictions.forEach(p => {
           const predictionRef = doc(db, 'users', targetId, 'predictions', p.matchId);
@@ -1823,6 +1855,35 @@ export default function App() {
     }
   };
 
+  const handleProtectedAction = (action: () => void) => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(() => action);
+      setIsUnsavedChangesModalOpen(true);
+    } else {
+      action();
+    }
+  };
+
+  const handleCancelNavigation = () => {
+    setIsUnsavedChangesModalOpen(false);
+    setPendingNavigation(null);
+  };
+
+  const handleSaveAndNavigate = async () => {
+    try {
+      await handleSavePredictions();
+      if (pendingNavigation) {
+        pendingNavigation();
+      }
+    } catch (err) {
+      console.error("Error saving while navigating:", err);
+      toast.error("Error al guardar antes de salir");
+    } finally {
+      setIsUnsavedChangesModalOpen(false);
+      setPendingNavigation(null);
+    }
+  };
+
   const handleAddParticipant = async () => {
     if (!selectedLeagueId) return;
     const name = newParticipantName.trim();
@@ -1839,7 +1900,7 @@ export default function App() {
       const participantId = `p_${selectedLeagueId}_${Date.now()}`;
       const userRef = doc(db, 'users', participantId);
       
-      // Crear perfil del participante
+      // Crear perfil del participante (con código de acceso autogenerado)
       await setDoc(userRef, {
         uid: participantId,
         displayName: name,
@@ -1851,7 +1912,8 @@ export default function App() {
         correctResults: 0,
         correctWinners: 0,
         leagueId: selectedLeagueId,
-        isParticipant: true
+        isParticipant: true,
+        accessCode: Math.floor(10000 + Math.random() * 90000).toString()
       });
 
       // Agregar a memberUids de la liga/quiniela
@@ -1868,6 +1930,128 @@ export default function App() {
     } catch (error) {
       console.error("Error adding participant:", error);
       handleFirestoreError(error, OperationType.CREATE, 'users');
+    }
+  };
+
+  const handleCopyAccessCode = async (participant: any) => {
+    let code = participant.accessCode;
+    if (!code) {
+      code = Math.floor(10000 + Math.random() * 90000).toString();
+      try {
+        await updateDoc(doc(db, 'users', participant.uid), {
+          accessCode: code
+        });
+      } catch (error) {
+        console.error("Error generating/saving code dynamically:", error);
+      }
+    }
+
+    const message = `Hola ${participant.displayName || ''},
+
+Esta es la información para ingresar a tu Quiniela.
+
+Ingresa a la página: https://2026quiniela.netlify.app/
+Código de Quiniela: ${selectedLeagueId || ''}
+Clave de Usuario: ${code}
+
+Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
+
+    try {
+      await navigator.clipboard.writeText(message);
+      toast.success(`Información copiada al portapapeles con éxito`);
+    } catch (err) {
+      console.warn("Clipboard copy fallback:", err);
+      toast.success(`Clave de usuario: ${code}`);
+    }
+  };
+
+  const handleVerifyPin = () => {
+    if (!pinModalTargetId) return;
+    const participant = leaderboard.find(p => p.uid === pinModalTargetId) || participants.find(p => p.uid === pinModalTargetId);
+    if (!participant) {
+      toast.error("No se pudo encontrar al participante");
+      return;
+    }
+
+    const correctCode = participant.accessCode;
+    if (!correctCode) {
+      toast.error("Este participante no tiene una clave asignada. Solicita tu clave al administrador.");
+      return;
+    }
+
+    if (pinInput.trim() === correctCode) {
+      setUnlockedParticipants(prev => ({
+        ...prev,
+        [pinModalTargetId]: true
+      }));
+      setPredictionsEditMode(true);
+      setPredictionsReadOnly(false);
+      setActiveParticipantId(pinModalTargetId);
+      setIsPinModalOpen(false);
+      setPinInput('');
+      toast.success("¡Acceso concedido! Ahora puedes editar tus pronósticos.");
+    } else {
+      toast.error("Clave de 5 dígitos incorrecta. Solicita tu clave al administrador.");
+    }
+  };
+
+  const handleSaveNewCode = async (targetUid: string) => {
+    const trimmedVal = editingCodeValue.trim().toUpperCase();
+    if (trimmedVal.length !== 5) {
+      toast.error("La clave debe tener exactamente 5 caracteres");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', targetUid), {
+        accessCode: trimmedVal
+      });
+      setUnlockedParticipants(prev => ({
+        ...prev,
+        [targetUid]: true
+      }));
+
+      setIsEditingCode(false);
+      setEditingCodeTargetId(null);
+      toast.success("Clave de acceso actualizada");
+    } catch (error) {
+      console.error("Error saving new access code:", error);
+      toast.error("Error al actualizar la clave de acceso");
+    }
+  };
+
+  const handleSaveProfileChanges = async () => {
+    if (!activeParticipantId) return;
+    const nameVal = modalProfileName.trim().toUpperCase();
+    const codeVal = modalProfileCode.trim().toUpperCase();
+
+    if (!nameVal) {
+      toast.error("El nombre no puede estar vacío");
+      return;
+    }
+    if (nameVal.length > 10) {
+      toast.error("El nombre no puede superar los 10 caracteres");
+      return;
+    }
+    if (codeVal.length !== 5) {
+      toast.error("La clave de seguridad debe tener exactamente 5 caracteres");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', activeParticipantId), {
+        displayName: nameVal,
+        accessCode: codeVal
+      });
+      setUnlockedParticipants(prev => ({
+        ...prev,
+        [activeParticipantId]: true
+      }));
+      setIsProfileModalOpen(false);
+      toast.success("Perfil actualizado correctamente");
+    } catch (error) {
+      console.error("Error saving profile changes:", error);
+      toast.error("Error al actualizar el perfil");
     }
   };
 
@@ -1901,6 +2085,8 @@ export default function App() {
       if (activeParticipantId === participantId) {
         setActiveParticipantId(null);
       }
+      setActiveTab('leaderboard');
+      setPredictionsEditMode(false);
       toast.success(`Participante "${participantName}" eliminado correctamente`);
     } catch (error) {
       console.error("Error deleting participant:", error);
@@ -2240,10 +2426,10 @@ export default function App() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => {
+                  onClick={() => handleProtectedAction(() => {
                     setSelectedLeagueId(null);
                     setShowSuperAdminPanel(false);
-                  }}
+                  })}
                   className="h-8 sm:h-9 w-8 sm:w-9 p-0 rounded-none border-primary/40 text-primary hover:bg-primary/5 flex items-center justify-center shrink-0 transition-all"
                   title="Mis Quinielas"
                 >
@@ -2256,10 +2442,10 @@ export default function App() {
                 <Button 
                   variant={showSuperAdminPanel ? "default" : "outline"} 
                   size="sm" 
-                  onClick={() => {
+                  onClick={() => handleProtectedAction(() => {
                     setShowSuperAdminPanel(!showSuperAdminPanel);
                     setSelectedLeagueId(null);
-                  }}
+                  })}
                   className={cn(
                     "text-[9px] font-black uppercase tracking-widest gap-1.5 sm:gap-2 h-8 sm:h-9 w-8 sm:w-auto p-0 sm:px-4 rounded-none relative overflow-visible shrink-0 transition-all flex items-center justify-center",
                     showSuperAdminPanel ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary hover:bg-primary/5"
@@ -2306,7 +2492,7 @@ export default function App() {
               {/* User Profiling Area */}
               <div className="flex flex-col items-end shrink-0 ml-1">
                 <span className="text-[11px] sm:text-[12px] font-black uppercase tracking-widest max-w-[140px] sm:max-w-none truncate">{user.displayName}</span>
-                <button type="button" onClick={handleLogout} className="text-[10px] text-muted-foreground hover:text-primary uppercase font-bold tracking-widest transition-colors">Salir</button>
+                <button type="button" onClick={() => handleProtectedAction(handleLogout)} className="text-[10px] text-muted-foreground hover:text-primary uppercase font-bold tracking-widest transition-colors">Salir</button>
               </div>
               {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-primary/30 shrink-0" referrerPolicy="no-referrer" />}
             </div>
@@ -2435,7 +2621,7 @@ export default function App() {
               </div>
 
               {/* Sub-navegación del Panel Súper Admin */}
-              <div className="grid grid-cols-2 md:grid-cols-4 border-b border-border w-full !mt-0">
+              <div className="grid grid-cols-4 border-b border-border w-full !mt-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -3079,7 +3265,7 @@ export default function App() {
                 <div className="space-y-3 relative">
                   <span className="text-[11px] font-black uppercase text-primary tracking-[0.3em]">Nueva Competición</span>
                   <div className="flex justify-between items-end">
-                    <h3 className="text-2xl font-black uppercase tracking-tight">Personaliza tu Quiniela</h3>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Nueva Quiniela</h3>
                     <span className="text-[10px] font-mono text-muted-foreground font-bold tracking-wider mb-1">
                       {newLeagueName.length}/10 CARACTERES
                     </span>
@@ -3148,7 +3334,7 @@ export default function App() {
               </motion.div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
               {leagues.length > 0 ? (
                 leagues.map((league) => (
                   <Card 
@@ -3157,31 +3343,30 @@ export default function App() {
                     onClick={() => setSelectedLeagueId(league.id)}
                   >
                     <div className="absolute top-0 left-0 w-full h-1 bg-primary scale-x-0 group-hover:scale-x-100 transition-transform origin-left" />
-                    <CardHeader className="p-8 pb-4">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="p-3 bg-primary/5 rounded-none border border-primary/20">
-                          <Users className="w-5 h-5 text-primary" />
+                    <CardHeader className="p-5 pb-3">
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="p-2 bg-primary/5 rounded-none border border-primary/20">
+                          <Users className="w-4 h-4 text-primary" />
                         </div>
                         {league.creatorId === user?.uid && (
                           <Badge className="bg-primary text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-none">Admin</Badge>
                         )}
                       </div>
-                      <CardTitle className="text-[20px] font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors">{league.name}</CardTitle>
-                      <div className="flex flex-wrap gap-2 pt-3">
+                      <CardTitle className="text-[16px] font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors truncate">{league.name}</CardTitle>
+                      <div className="flex flex-wrap gap-1.5 pt-2">
                         <Badge variant="outline" className={cn(
-                          "rounded-none text-[8px] font-black uppercase px-2 py-0.5",
+                          "rounded-none text-[9px] font-black uppercase px-1.5 py-0.5",
                           league.competition === 'CL' ? "border-sky-500/50 text-sky-500 bg-sky-500/5" : "border-primary/50 text-primary bg-primary/5"
                         )}>
-                          {league.competition === 'CL' ? '🏆 Champions League 24/25' : '🌎 Mundial 2026'}
+                          {league.competition === 'CL' ? '🏆 UCL' : '🌎 Mundial'}
                         </Badge>
-                        <Badge variant="secondary" className="rounded-none text-[8px] font-black uppercase px-2 py-0.5 bg-muted/50 text-muted-foreground border-none">
+                        <Badge variant="secondary" className="rounded-none text-[10.5px] font-black uppercase px-2 py-0.5 bg-muted/50 text-muted-foreground border-none">
                           {league.memberUids.filter((id: string) => id !== league.creatorId).length} Participantes
                         </Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="p-8 pt-0 flex-1 flex flex-col">
-                      <div className="flex-1" />
-                      <Button className="w-full h-12 text-[10px] font-black uppercase tracking-widest mt-6 bg-transparent border-2 border-primary text-primary hover:bg-primary hover:text-white transition-all">
+                    <CardContent className="p-5 pt-0 flex-1 flex flex-col justify-end">
+                      <Button className="w-full h-9 text-[9px] font-black uppercase tracking-widest mt-3 bg-transparent border-2 border-primary text-primary hover:bg-primary hover:text-white transition-all">
                         Ver Quiniela
                       </Button>
                     </CardContent>
@@ -3208,7 +3393,7 @@ export default function App() {
                  <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={handleGoBack}
+                  onClick={() => handleProtectedAction(handleGoBack)}
                   className="h-10 w-10 p-0 border-2 border-primary/50 text-primary bg-primary/10 hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all flex items-center justify-center shadow-md scale-105"
                 >
                   <ChevronLeft className="w-7 h-7" strokeWidth={3.5} />
@@ -3216,10 +3401,10 @@ export default function App() {
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => {
+                      onClick={() => handleProtectedAction(() => {
                         setActiveTab('leaderboard');
                         setPredictionsEditMode(false);
-                      }}
+                      })}
                       disabled={activeTab === 'leaderboard' && !predictionsEditMode}
                       className={cn(
                         "text-[14px] sm:text-[18px] font-black uppercase tracking-tight transition-colors",
@@ -3255,9 +3440,10 @@ export default function App() {
                       setActiveTab('settings');
                       if (selectedLeague) setEditLeagueName(selectedLeague.name);
                     }}
-                    className="h-9 text-[10px] font-black uppercase px-4 flex items-center gap-2 border-border hover:bg-white/5 transition-all"
+                    className="h-9 text-[10px] font-black uppercase px-2.5 sm:px-4 flex items-center gap-1.5 sm:gap-2 border-border hover:bg-white/5 transition-all"
                   >
-                    <Settings className="w-3.5 h-3.5" /> Configurar
+                    <Settings className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Configurar</span>
                   </Button>
                 </div>
               )}
@@ -3305,15 +3491,65 @@ export default function App() {
             )}
 
             {predictionsEditMode ? (
-              <div className={cn(
-                "grid gap-16 w-full",
-                user ? "grid-cols-1 max-w-5xl mx-auto" : "grid-cols-1 lg:grid-cols-[1fr_350px]"
-              )}>
+              <div className="w-full space-y-6">
+                
+                {/* Sticky Matchday navigation */}
+                <div className="sticky top-[64px] sm:top-[92px] md:top-[100px] lg:top-[101px] z-30 bg-background/95 backdrop-blur-md py-[3px] mb-0 shadow-[0_10px_10px_-10px_rgba(0,0,0,0.5)] border-b border-border/10 -mx-6 px-6 lg:-mx-16 lg:px-16 flex items-center justify-center gap-4">
+                  <div className="h-[1px] flex-1 bg-border/40" />
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex items-center gap-4">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        disabled={matchdays.indexOf(viewingMatchday) <= 0}
+                        onClick={() => {
+                          const currentIndex = matchdays.indexOf(viewingMatchday);
+                          if (currentIndex > 0) {
+                            setViewingMatchday(matchdays[currentIndex - 1]);
+                          }
+                        }}
+                        className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20 cursor-pointer"
+                      >
+                        <ChevronLeft className="h-6 w-6" />
+                      </Button>
+                      
+                      <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border border-primary/30 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden">
+                        {getMatchdayLabel(viewingMatchday)}
+                        {viewingMatchday === currentMatchday && (
+                          <span className="absolute top-0 left-0 h-full flex items-center pl-4">
+                            <span className="text-[8px] font-black tracking-widest text-[#FFD700] animate-pulse">ACTUAL</span>
+                          </span>
+                        )}
+                      </span>
+
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        disabled={matchdays.indexOf(viewingMatchday) === -1 || matchdays.indexOf(viewingMatchday) >= matchdays.length - 1}
+                        onClick={() => {
+                          const currentIndex = matchdays.indexOf(viewingMatchday);
+                          if (currentIndex !== -1 && currentIndex < matchdays.length - 1) {
+                            setViewingMatchday(matchdays[currentIndex + 1]);
+                          }
+                        }}
+                        className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20 cursor-pointer"
+                      >
+                        <ChevronRight className="h-6 w-6" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="h-[1px] flex-1 bg-border/40" />
+                </div>
+
+                <div className={cn(
+                  "grid gap-16 w-full",
+                  user ? "grid-cols-1 max-w-5xl mx-auto" : "grid-cols-1 lg:grid-cols-[1fr_350px]"
+                )}>
                 {/* Left Column: Matches */}
                 <div className="space-y-6">
-                  <div className="flex flex-row items-center justify-between gap-4 pt-2 pb-5 border-b border-border/20 -mb-[3px]">
+                  <div className="flex flex-row items-center justify-between gap-4 pt-2 pb-[7px] border-b border-border/20 -mb-[3px]">
                     <div className="flex items-center gap-4 min-w-0">
-                      {user && activeParticipantId && !predictionsReadOnly ? (
+                      {canEditActive && activeParticipantId && !predictionsReadOnly ? (
                         <button
                           type="button"
                           onClick={() => setIsAvatarPickerOpen(!isAvatarPickerOpen)}
@@ -3346,127 +3582,81 @@ export default function App() {
                         )
                       )}
 
-                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-                        {isApprovedAdmin ? (
-                          isEditingName ? (
-                            <div className="flex items-center gap-2">
-                              <Input
-                                value={editingNameValue}
-                                onChange={(e) => setEditingNameValue(e.target.value.toUpperCase())}
-                                maxLength={10}
-                                className="bg-background border-border text-xs rounded-none h-8 w-32 uppercase font-bold px-2"
-                                placeholder="NOMBRE"
-                                autoFocus
-                              />
-                              <Button
-                                size="sm"
-                                onClick={async () => {
-                                  if (!activeParticipantId) return;
-                                  const val = editingNameValue.trim().toUpperCase();
-                                  if (!val) {
-                                    toast.error("El nombre no puede estar vacío");
-                                    return;
-                                  }
-                                  if (val.length > 10) {
-                                    toast.error("El nombre no puede superar los 10 caracteres");
-                                    return;
-                                  }
-                                  try {
-                                    await updateDoc(doc(db, 'users', activeParticipantId), {
-                                      displayName: val
-                                    });
-                                    toast.success("Nombre actualizado");
-                                    setIsEditingName(false);
-                                  } catch (error) {
-                                    console.error(error);
-                                    toast.error("Error al guardar el nombre");
-                                  }
-                                }}
-                                className="h-8 w-8 p-0 bg-primary hover:bg-primary/95 text-black rounded-none"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setIsEditingName(false)}
-                                className="h-8 w-8 p-0 border-border hover:bg-white/5 rounded-none"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground uppercase tracking-[0.2em] inline-flex flex-wrap items-center gap-x-1.5 min-w-0">
-                              <span className="text-foreground font-black flex items-center gap-1.5 truncate">
-                                {participants.find(p => p.uid === activeParticipantId)?.displayName || 'Cargando...'}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    const currentName = participants.find(p => p.uid === activeParticipantId)?.displayName || '';
-                                    setEditingNameValue(currentName);
-                                    setIsEditingName(true);
-                                  }}
-                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                  title="Editar nombre"
-                                >
-                                  <Edit className="w-3 h-3" />
-                                </Button>
+                      <div className="flex flex-col min-w-0">
+                        <h2 className="text-sm sm:text-base font-black text-foreground uppercase tracking-wider truncate">
+                          {participants.find(p => p.uid === activeParticipantId)?.displayName || 'Cargando...'}
+                        </h2>
+                        {(() => {
+                          const p = participants.find(pi => pi.uid === activeParticipantId);
+                          const isUnlocked = activeParticipantId && unlockedParticipants[activeParticipantId];
+                          const showCode = isApprovedAdmin || isUnlocked;
+                          
+                          if (!p || !showCode) return null;
+                          
+                          return (
+                            <div className="flex items-center gap-1.5 font-mono text-xs sm:text-[13px] text-muted-foreground uppercase font-black mt-1">
+                              <span>CLAVE:</span>
+                              <span className="text-foreground">
+                                {p.accessCode || 'SIN CLAVE'}
                               </span>
-                              {(() => {
-                                const targetId = activeParticipantId;
-                                if (!targetId) return null;
-                                const userPreds = participantsPredictions[targetId] || predictions || [];
-                                const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
-                                return (
-                                  <span className="text-lime font-black ml-2 text-[10px] sm:text-[11px] border-l border-white/20 pl-2">
-                                    ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} GANADOR | {extraPoints} EXTRAS)
-                                  </span>
-                                );
-                              })()}
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-[10px] sm:text-[11px] font-bold text-muted-foreground uppercase tracking-[0.2em] inline-flex flex-wrap items-center gap-x-1.5 min-w-0">
-                            <span className="text-foreground font-black truncate">
-                              {participants.find(p => p.uid === activeParticipantId)?.displayName || 'Cargando...'}
-                            </span>
-                            {(() => {
-                              const targetId = activeParticipantId;
-                              if (!targetId) return null;
-                              const userPreds = participantsPredictions[targetId] || predictions || [];
-                              const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
-                              return (
-                                <span className="text-lime font-black ml-2 text-[10px] sm:text-[11px] border-l border-white/20 pl-2">
-                                  ({totalPoints} PTS | {correctResults} EXACTOS | {correctWinners} GANADOR | {extraPoints} EXTRAS)
-                                </span>
-                              );
-                            })()}
-                          </span>
-                        )}
+                              {isApprovedAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyAccessCode(p)}
+                                  className="ml-2 h-7 w-7 bg-primary/10 hover:bg-primary text-primary hover:text-black border border-primary/20 hover:border-primary rounded-none flex items-center justify-center transition-all cursor-pointer shadow-sm hover:shadow-md shrink-0"
+                                  title={p.accessCode ? "Compartir información de acceso" : "Generar y compartir información de acceso"}
+                                >
+                                  <Share2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
-                    {isApprovedAdmin && activeParticipantId && (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const p = participants.find(p => p.uid === activeParticipantId);
-                          if (p) {
-                            setParticipantToDelete({ id: p.uid, name: p.displayName || 'Participante' });
-                            setIsDeleteConfirmOpen(true);
-                          }
-                        }}
-                        className="h-10 w-10 sm:w-auto text-[10px] font-black uppercase tracking-widest p-0 sm:px-4 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500 rounded-none shrink-0 flex items-center justify-center animate-in fade-in duration-200"
-                        title="Eliminar Participante"
-                      >
-                        <Trash2 className="w-4 h-4 sm:mr-2 shrink-0" />
-                        <span className="hidden sm:inline">Eliminar</span>
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Botón único de edición de perfil si es admin o usuario identificado */}
+                      {(isApprovedAdmin || canEditActive) && activeParticipantId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const p = participants.find(pi => pi.uid === activeParticipantId);
+                            if (p) {
+                              setModalProfileName(p.displayName || '');
+                              setModalProfileCode(p.accessCode || '');
+                              setIsProfileModalOpen(true);
+                            }
+                          }}
+                          className="h-8 text-[10px] font-black uppercase tracking-widest px-3 border-border hover:bg-white/5 rounded-none flex items-center gap-1.5"
+                        >
+                          <Edit className="w-3 h-3 text-primary" />
+                          <span>Perfil</span>
+                        </Button>
+                      )}
+
+                      {/* Botón para usuario que aún no se ha autenticado con su código */}
+                      {!isApprovedAdmin && activeParticipantId && !unlockedParticipants[activeParticipantId] && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setPinModalTargetId(activeParticipantId);
+                            setPinInput('');
+                            setIsPinModalOpen(true);
+                          }}
+                          className="h-8 text-[9px] font-black uppercase tracking-wider px-2.5 border-primary/45 text-primary hover:bg-primary/10 rounded-none flex items-center gap-1.5"
+                          title="Habilitar edición de tus pronósticos"
+                        >
+                          <Lock className="w-3 h-3 text-primary" />
+                          <span>Editar</span>
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
-                  {user && activeParticipantId && isAvatarPickerOpen && (
+                  {canEditActive && activeParticipantId && isAvatarPickerOpen && (
                     <div className="border border-border/30 bg-card/10 p-4 animate-in fade-in slide-in-from-top-1 duration-200">
                       <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 justify-items-center">
                         {AVATARS_LIST.map((avatar) => {
@@ -3501,56 +3691,11 @@ export default function App() {
                     </div>
                   )}
 
+                  <div className="border-t border-white/30 my-2 w-full" />
+
                   <div className="grid grid-cols-1 gap-12 mb-6">
                      {[viewingMatchday].map(day => (
                        <div key={day} className="space-y-6 mt-[5px] mb-[14px]">
-                    <div className="flex items-center gap-4 pt-[5px]">
-                      <div className="h-[1px] flex-1 bg-border" />
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="flex items-center gap-4">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            disabled={matchdays.indexOf(viewingMatchday) <= 0}
-                            onClick={() => {
-                              const currentIndex = matchdays.indexOf(viewingMatchday);
-                              if (currentIndex > 0) {
-                                setViewingMatchday(matchdays[currentIndex - 1]);
-                              }
-                            }}
-                            className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20"
-                          >
-                            <ChevronLeft className="h-6 w-6" />
-                          </Button>
-                          
-                          <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border border-primary/30 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden">
-                            {getMatchdayLabel(day)}
-                            {day === currentMatchday && (
-                              <span className="absolute top-0 left-0 h-full flex items-center pl-4">
-                                <span className="text-[8px] font-black tracking-widest text-[#FFD700] animate-pulse">ACTUAL</span>
-                              </span>
-                            )}
-                          </span>
-
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            disabled={matchdays.indexOf(viewingMatchday) === -1 || matchdays.indexOf(viewingMatchday) >= matchdays.length - 1}
-                            onClick={() => {
-                              const currentIndex = matchdays.indexOf(viewingMatchday);
-                              if (currentIndex !== -1 && currentIndex < matchdays.length - 1) {
-                                setViewingMatchday(matchdays[currentIndex + 1]);
-                              }
-                            }}
-                            className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20"
-                          >
-                            <ChevronRight className="h-6 w-6" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="h-[1px] flex-1 bg-border" />
-                    </div>
-
                     <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -3645,7 +3790,7 @@ export default function App() {
                                       flag: championPrediction.championTeamFlag || ''
                                     } : null
                                   }
-                                  disabled={isJornada0Locked || predictionsReadOnly || !user}
+                                  disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
                                   onChange={(val) => {
                                     setChampionPrediction(val ? {
                                       matchId: 'world_champion',
@@ -3724,7 +3869,7 @@ export default function App() {
                                       flag: scorerPrediction.scorerTeamFlag || undefined
                                     } : null
                                   }
-                                  disabled={isJornada0Locked || predictionsReadOnly || !user}
+                                  disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
                                   onChange={(val) => {
                                     setScorerPrediction(val ? {
                                       matchId: 'top_scorer',
@@ -3892,7 +4037,7 @@ export default function App() {
                                         <div className="flex items-center gap-1 sm:gap-2">
                                           <Input
                                             type="number"
-                                            disabled={isTBD || isLocked || !user || predictionsReadOnly}
+                                            disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
                                             className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                             value={prediction.homeScore ?? ''}
                                             onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
@@ -3901,7 +4046,7 @@ export default function App() {
                                           <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
                                           <Input
                                             type="number"
-                                            disabled={isTBD || isLocked || !user || predictionsReadOnly}
+                                            disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
                                             className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                             value={prediction.awayScore ?? ''}
                                             onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
@@ -3980,7 +4125,7 @@ export default function App() {
                 ))}
               </div>
 
-              {user && !predictionsReadOnly && (
+              {(user || (activeParticipantId && unlockedParticipants[activeParticipantId])) && !predictionsReadOnly && (
                 <div className="pt-6 flex justify-end">
                   <Button 
                     onClick={handleSavePredictions}
@@ -4068,6 +4213,7 @@ export default function App() {
             </div>
           )}
         </div>
+      </div>
       ) : activeTab === 'leaderboard' ? (
           <div className="space-y-12">
             <div className="max-w-4xl mx-auto bg-card border border-border">
@@ -4153,11 +4299,21 @@ export default function App() {
                         </TableCell>
                         <TableCell 
                           className="py-4 sm:py-6 px-1.5 sm:px-4 cursor-pointer hover:text-primary transition-colors group/cell"
-                          title={`Ver predicciones de ${entry.displayName || 'Anónimo'}`}
+                          title={
+                            isApprovedAdmin || unlockedParticipants[entry.uid]
+                              ? `Ver/Editar perfil de ${entry.displayName || 'Anónimo'}`
+                              : `Ver predicciones de ${entry.displayName || 'Anónimo'}`
+                          }
                           onClick={() => {
                             setActiveParticipantId(entry.uid);
                             setPredictionsEditMode(true);
-                            setPredictionsReadOnly(true);
+                            if (isApprovedAdmin || unlockedParticipants[entry.uid]) {
+                              setPredictionsReadOnly(false);
+                              setEditingNameValue(entry.displayName || '');
+                              setIsEditingName(false);
+                            } else {
+                              setPredictionsReadOnly(true);
+                            }
                           }}
                         >
                           <div className="flex items-center gap-1.5 sm:gap-3">
@@ -4235,35 +4391,61 @@ export default function App() {
                         <TableCell className="py-4 sm:py-6 text-right pr-3 sm:pr-8 pl-1.5 sm:pl-4">
                           <div className="flex items-center justify-end gap-1.5 sm:gap-2">
                             {isApprovedAdmin ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setActiveParticipantId(entry.uid);
-                                  setPredictionsEditMode(true);
-                                  setPredictionsReadOnly(false);
-                                  setEditingNameValue(entry.displayName || '');
-                                  setIsEditingName(false);
-                                }}
-                                className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-primary/40 hover:bg-primary/10 text-primary hover:text-primary-foreground"
-                                title="Editar Predicciones y Datos"
-                              >
-                                <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                              </Button>
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleCopyAccessCode(entry)}
+                                  className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-lime/30 hover:bg-lime/10 text-lime hover:text-white rounded-none shrink-0"
+                                  title="Compartir Información de Acceso del Participante"
+                                >
+                                  <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setActiveParticipantId(entry.uid);
+                                    setPredictionsEditMode(true);
+                                    setPredictionsReadOnly(false);
+                                    setEditingNameValue(entry.displayName || '');
+                                    setIsEditingName(false);
+                                  }}
+                                  className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-primary/40 hover:bg-primary/10 text-primary hover:text-primary-foreground rounded-none shrink-0"
+                                  title="Editar Predicciones y Datos"
+                                >
+                                  <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                </Button>
+                              </>
                             ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setActiveParticipantId(entry.uid);
-                                  setPredictionsEditMode(true);
-                                  setPredictionsReadOnly(!user);
-                                }}
-                                className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-border hover:bg-white/5 text-muted-foreground hover:text-foreground"
-                                title={user ? 'Editar Predicciones' : 'Ver Predicciones'}
-                              >
-                                <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                              </Button>
+                              <div className="flex items-center gap-1.5 sm:gap-2 justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setActiveParticipantId(entry.uid);
+                                    setPredictionsEditMode(true);
+                                    setPredictionsReadOnly(true);
+                                  }}
+                                  className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-border hover:bg-white/5 text-muted-foreground hover:text-foreground rounded-none shrink-0"
+                                  title="Ver Predicciones"
+                                >
+                                  <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setPinModalTargetId(entry.uid);
+                                    setPinInput('');
+                                    setIsPinModalOpen(true);
+                                  }}
+                                  className="h-7 w-7 sm:h-8 sm:w-8 p-0 border-primary/40 hover:bg-primary/10 text-primary hover:text-primary-foreground rounded-none shrink-0"
+                                  title="Editar con Código de 5 Dígitos"
+                                >
+                                  <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </TableCell>
@@ -4556,23 +4738,23 @@ export default function App() {
           </div>
         </div>
         ) : activeTab === 'settings' ? (
-          <div className="max-w-4xl mx-auto space-y-12 pb-20 pt-4">
+          <div className="max-w-4xl mx-auto space-y-6 pb-16 pt-4">
             {/* Header section (Renaming - Only for Creator) */}
             {selectedLeague?.creatorId === user?.uid && (
-              <div className="bg-card border border-border p-8 space-y-6">
-                <div className="flex items-center gap-3 border-b border-border pb-4">
+              <div className="bg-card border border-border p-6 pb-5 space-y-4">
+                <div className="flex items-center gap-3 border-b border-border pb-3">
                   <Edit className="w-5 h-5 text-primary" />
                   <h2 className="text-[14px] font-black uppercase tracking-widest text-primary">Gestionar Quiniela</h2>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_200px] gap-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Nombre de la Quiniela</label>
-                      <span className="text-[9px] font-mono text-muted-foreground font-bold tracking-wider">
-                        {editLeagueName.length}/10 CARACTERES
-                      </span>
-                    </div>
+                <div className="space-y-2 max-w-xs">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Nombre de la Quiniela</label>
+                    <span className="text-[9px] font-mono text-muted-foreground font-bold tracking-wider">
+                      {editLeagueName.length}/10 CARACTERES
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <Input 
                       value={editLeagueName}
                       onChange={(e) => {
@@ -4581,15 +4763,16 @@ export default function App() {
                         }
                       }}
                       maxLength={10}
-                      className="h-12 text-[14px] font-black uppercase tracking-tight"
+                      className="h-10 text-[13px] font-black uppercase tracking-tight w-full max-w-[180px] rounded-none border border-border bg-background focus:ring-1 focus:ring-primary focus:outline-none"
                     />
-                  </div>
-                  <div className="flex items-end">
                     <Button 
                       onClick={updateLeagueName}
-                      className="w-full h-12 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20"
+                      type="button"
+                      size="icon"
+                      className="h-10 w-10 flex items-center justify-center shadow-md shadow-primary/10 rounded-none bg-primary hover:bg-primary/95 text-primary-foreground focus:outline-none"
+                      title="Guardar Cambios"
                     >
-                      Guardar Cambios
+                      <Save className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
@@ -4597,17 +4780,16 @@ export default function App() {
             )}
 
             {/* Access Information section */}
-            <div className="bg-card border border-border p-8 space-y-6">
-              <div className="flex items-center gap-3 border-b border-border pb-4">
+            <div className="bg-card border border-border p-6 pb-5 space-y-4">
+              <div className="flex items-center gap-3 border-b border-border pb-3">
                 <Info className="w-5 h-5 text-amber-500" />
                 <h3 className="text-[12px] font-black uppercase tracking-widest text-primary">Información de Acceso</h3>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-3">
                  <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-bold">
-                  ID único de la quiniela. Compártelo con las personas que desees invitar.
+                  Comparte el código con los Participantes
                 </p>
-                <div className="p-6 bg-black/20 border-2 border-dashed border-primary/30 text-center space-y-3">
-                  <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">ID de esta Quiniela</span>
+                <div className="p-4 bg-black/20 border border-dashed border-primary/30 text-center space-y-3">
                   <p className="text-[16px] font-mono font-black text-primary select-all break-all">{selectedLeagueId}</p>
                   <Button 
                     variant="outline" 
@@ -4627,8 +4809,8 @@ export default function App() {
 
 
 
-            <div className="bg-destructive/10 border border-destructive/30 p-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="bg-destructive/10 border border-destructive/30 p-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1 text-center md:text-left">
                   <h3 className="text-[14px] font-black uppercase tracking-tight text-destructive">Zona de Peligro</h3>
                   <p className="text-[10px] text-muted-foreground font-bold uppercase">
@@ -4640,21 +4822,9 @@ export default function App() {
                 <Button 
                   variant="destructive"
                   onClick={() => {
-                    const isCreator = selectedLeague?.creatorId === user?.uid;
-                    const confirmMsg = isCreator 
-                      ? '¿ESTÁS SEGURO? Se borrará permanentemente la quiniela y todos sus datos.' 
-                      : '¿Seguro que deseas salir de esta quiniela?';
-                    
-                    if (confirm(confirmMsg)) {
-                      if (isCreator) {
-                        deleteLeague(selectedLeagueId || '');
-                      } else {
-                        leaveLeague(selectedLeagueId || '');
-                      }
-                      setSelectedLeagueId(null);
-                    }
+                    setIsSettingsDeleteConfirmOpen(true);
                   }}
-                  className="h-12 px-10 text-[10px] font-black uppercase tracking-widest"
+                  className="h-10 px-6 text-[10px] font-black uppercase tracking-widest"
                 >
                   {selectedLeague?.creatorId === user?.uid ? 'Eliminar Quiniela' : 'Salir de la Quiniela'}
                 </Button>
@@ -5102,6 +5272,102 @@ export default function App() {
       )}
     </AnimatePresence>
 
+    {/* Unsaved Changes Warning Modal */}
+    <AnimatePresence>
+      {isUnsavedChangesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm" id="modal-unsaved-changes-warning">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-red-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-red-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-red-500 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
+                ¿Guardar cambios pendientes?
+              </h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                No has guardado los cambios realizados en tu quiniela. Debes guardar los cambios realizados antes de salir o cancelar para seguir editando.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={handleCancelNavigation}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+                id="btn-unsaved-changes-cancel"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveAndNavigate}
+                className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+                id="btn-unsaved-changes-save"
+              >
+                Guardar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Custom User Settings Delete/Leave League Confirmation Modal */}
+    <AnimatePresence>
+      {isSettingsDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm" id="modal-settings-delete-confirm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-red-500/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl shadow-red-950/20 relative z-50"
+          >
+            <div className="space-y-3">
+              <h3 className="text-lg font-black uppercase tracking-tight text-red-500">
+                {selectedLeague?.creatorId === user?.uid ? '¿Eliminar Quiniela?' : '¿Salir de la Quiniela?'}
+              </h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                {selectedLeague?.creatorId === user?.uid 
+                  ? '¿ESTÁS SEGURO? Se borrará permanentemente la quiniela y todo su progreso. Esta acción es irreversible.' 
+                  : '¿Seguro que deseas salir de esta quiniela? Ya no podrás ver sus datos a menos que te vuelvas a unir.'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={async () => {
+                  const isCreator = selectedLeague?.creatorId === user?.uid;
+                  setIsSettingsDeleteConfirmOpen(false);
+                  if (isCreator) {
+                    await deleteLeague(selectedLeagueId || '');
+                  } else {
+                    await leaveLeague(selectedLeagueId || '');
+                    setSelectedLeagueId(null);
+                  }
+                }}
+                className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
+                id="btn-settings-delete-accept"
+              >
+                Aceptar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsSettingsDeleteConfirmOpen(false);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+                id="btn-settings-delete-cancel"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
     {/* Custom Deny/Reject Request Confirmation Modal */}
     <AnimatePresence>
       {isDenyRequestConfirmOpen && requestToDeny && (
@@ -5192,6 +5458,192 @@ export default function App() {
               >
                 Cancelar
               </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* PIN Verification Modal for Common User Editing */}
+    <AnimatePresence>
+      {isPinModalOpen && pinModalTargetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-primary/40 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl relative z-50 text-left"
+          >
+            <div className="space-y-3">
+              <h3 className="text-md sm:text-lg font-black uppercase tracking-tight text-primary flex items-center gap-2">
+                <Lock className="w-5 h-5 text-primary shrink-0" /> ACCESO A EDICIÓN DE MARCADORES
+              </h3>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
+                Para editar los datos de <span className="text-white font-black">"{participants.find(p => p.uid === pinModalTargetId)?.displayName || leaderboard.find(p => p.uid === pinModalTargetId)?.displayName || 'este participante'}"</span>, ingresa la clave de 5 dígitos otorgada por el administrador.
+              </p>
+              <p className="text-[10px] text-primary/70 uppercase font-black tracking-widest leading-relaxed">
+                Solo podrás modificar las jornadas que no hayan sido cerradas oficialmente.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Input
+                type="text"
+                maxLength={5}
+                value={pinInput}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setPinInput(val);
+                }}
+                placeholder="CLAVE DE 5 DÍGITOS"
+                className="w-full text-center tracking-[0.5em] text-lg font-mono font-black h-12 bg-background border-border text-foreground rounded-none uppercase placeholder:tracking-normal placeholder:text-xs"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && pinInput.length === 5) handleVerifyPin();
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={handleVerifyPin}
+                disabled={pinInput.length !== 5}
+                className="flex-1 h-11 bg-primary hover:bg-primary/90 text-black text-[10px] font-black uppercase tracking-widest rounded-none shadow-md disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Verificar Clave
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsPinModalOpen(false);
+                  setPinInput('');
+                  setPinModalTargetId(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none cursor-pointer"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Custom Profile Edit Modal */}
+    <AnimatePresence>
+      {isProfileModalOpen && activeParticipantId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm text-left">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-primary/40 p-6 sm:p-8 max-w-sm w-full rounded-none space-y-6 shadow-2xl relative z-50"
+          >
+            <div className="space-y-1.5">
+              <h3 className="text-md sm:text-lg font-black uppercase tracking-tight text-primary">
+                Perfil de {participants.find(p => p.uid === activeParticipantId)?.displayName || 'Participante'}
+              </h3>
+            </div>
+
+            {/* Display Score breakdown as requested */}
+            {(() => {
+              const targetId = activeParticipantId;
+              const userPreds = participantsPredictions[targetId] || predictions || [];
+              const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
+              return (
+                <div className="bg-zinc-900 border border-border/40 p-4 space-y-2.5 rounded-none">
+                  <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Desglose de Puntos</h4>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px] uppercase font-black font-semibold">
+                    <div className="flex justify-between border-b border-border/10 pb-1">
+                      <span className="text-muted-foreground">TOTALES:</span>
+                      <span className="text-lime">{totalPoints} PTS</span>
+                    </div>
+                    <div className="flex justify-between border-b border-border/10 pb-1">
+                      <span className="text-muted-foreground">EXACTOS:</span>
+                      <span className="text-foreground">{correctResults}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-border/10 pb-1">
+                      <span className="text-muted-foreground">GANADOR:</span>
+                      <span className="text-foreground">{correctWinners}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-border/10 pb-1">
+                      <span className="text-muted-foreground">EXTRAS:</span>
+                      <span className="text-foreground">{extraPoints}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Edit inputs for Name and Code */}
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase font-black text-muted-foreground tracking-widest">Nombre del Participante</label>
+                <Input
+                  value={modalProfileName}
+                  onChange={(e) => setModalProfileName(e.target.value.toUpperCase())}
+                  maxLength={10}
+                  className="bg-background border-border text-xs rounded-none h-10 w-full uppercase font-bold px-3 focus-visible:ring-primary text-foreground"
+                  placeholder="NOMBRE"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase font-black text-muted-foreground tracking-widest">Clave de Seguridad (5 caracteres)</label>
+                <Input
+                  value={modalProfileCode}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\s+/g, '').toUpperCase();
+                    if (val.length <= 5) {
+                      setModalProfileCode(val);
+                    }
+                  }}
+                  maxLength={5}
+                  className="bg-background border-border text-xs rounded-none h-10 w-full uppercase font-bold px-3 font-mono tracking-widest focus-visible:ring-primary text-foreground"
+                  placeholder="CLAVE"
+                />
+              </div>
+            </div>
+
+            {/* Actions: Save / Cancel / Delete */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleSaveProfileChanges}
+                  className="flex-1 h-11 bg-primary hover:bg-primary/95 text-black text-[10px] font-black uppercase tracking-widest rounded-none shadow-md cursor-pointer"
+                >
+                  Guardar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsProfileModalOpen(false)}
+                  className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none cursor-pointer"
+                >
+                  Cancelar
+                </Button>
+              </div>
+
+              {/* Delete Option if Admin */}
+              {isApprovedAdmin && (
+                <div className="pt-2 border-t border-border/10">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const p = participants.find(pi => pi.uid === activeParticipantId);
+                      if (p) {
+                        setParticipantToDelete({ id: p.uid, name: p.displayName || 'Participante' });
+                        setIsDeleteConfirmOpen(true);
+                        setIsProfileModalOpen(false);
+                      }
+                    }}
+                    className="w-full h-10 text-[10px] font-black uppercase tracking-widest border-red-500/20 text-red-500 hover:bg-red-500/10 hover:border-red-500 rounded-none shrink-0 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Eliminar Participante
+                  </Button>
+                </div>
+              )}
             </div>
           </motion.div>
         </div>
