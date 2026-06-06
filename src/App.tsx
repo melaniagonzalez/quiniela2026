@@ -3508,12 +3508,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             setViewingMatchday(matchdays[currentIndex - 1]);
                           }
                         }}
-                        className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20 cursor-pointer"
+                        className="h-10 w-10 p-0 border-2 border-primary/80 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer"
                       >
-                        <ChevronLeft className="h-6 w-6" />
+                        <ChevronLeft className="h-6 w-6" strokeWidth={3} />
                       </Button>
                       
-                      <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border border-primary/30 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden">
+                      <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border-2 border-primary/40 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden rounded-md shadow-sm">
                         {getMatchdayLabel(viewingMatchday)}
                         {viewingMatchday === currentMatchday && (
                           <span className="absolute top-0 left-0 h-full flex items-center pl-4">
@@ -3532,9 +3532,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             setViewingMatchday(matchdays[currentIndex + 1]);
                           }
                         }}
-                        className="h-10 w-10 p-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all disabled:opacity-20 cursor-pointer"
+                        className="h-10 w-10 p-0 border-2 border-primary/80 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer"
                       >
-                        <ChevronRight className="h-6 w-6" />
+                        <ChevronRight className="h-6 w-6" strokeWidth={3} />
                       </Button>
                     </div>
                   </div>
@@ -4269,14 +4269,14 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-b border-border">
-                    <TableHead className="w-[45px] sm:w-[60px] text-center text-[10px] font-black uppercase py-4 sm:py-6 px-1 sm:px-4">POS</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Participante</TableHead>
-                    <TableHead className="hidden sm:table-cell text-center text-[10px] font-black uppercase py-6">Progreso</TableHead>
-                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">PTS Exactos</TableHead>
-                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">PTS Ganador</TableHead>
-                    <TableHead className="hidden md:table-cell text-right text-[10px] font-black uppercase py-6 px-4">PTS Extras</TableHead>
-                    <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Total</TableHead>
-                    <TableHead className="text-right text-[10px] font-black uppercase py-4 sm:py-6 pr-3 sm:pr-8 pl-1.5 sm:pl-4">Acciones</TableHead>
+                    <TableHead className="w-[45px] sm:w-[60px] text-center text-[12px] font-black uppercase py-4 sm:py-6 px-1 sm:px-4">POS</TableHead>
+                    <TableHead className="text-[12px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Participante</TableHead>
+                    <TableHead className="hidden sm:table-cell text-center text-[12px] font-black uppercase py-6">Progreso</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[12px] font-black uppercase py-6 px-4">PTS Exactos</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[12px] font-black uppercase py-6 px-4">PTS Ganador</TableHead>
+                    <TableHead className="hidden md:table-cell text-right text-[12px] font-black uppercase py-6 px-4">PTS Extras</TableHead>
+                    <TableHead className="text-right text-[12px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Total</TableHead>
+                    <TableHead className="text-right text-[12px] font-black uppercase py-4 sm:py-6 pr-3 sm:pr-8 pl-1.5 sm:pl-4">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4291,7 +4291,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       >
                         <TableCell className="py-4 sm:py-6 text-center px-1 sm:px-4">
                           <span className={cn(
-                            "text-[12px] font-black",
+                            "text-[14px] font-black",
                             index === 0 ? "text-lime" : index === 1 ? "text-gray-300" : index === 2 ? "text-amber-600" : ""
                           )}>
                             {(index + 1).toString().padStart(2, '0')}
@@ -4323,7 +4323,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               referrerPolicy="no-referrer" 
                             />
                             <div className="flex flex-col min-w-0">
-                              <span className="text-[12px] font-black uppercase truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px] transition-all group-hover/cell:text-primary">
+                              <span className="text-[14px] font-black uppercase truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px] transition-all group-hover/cell:text-primary">
                                 {entry.displayName || 'Anónimo'}
                               </span>
                             </div>
@@ -4334,7 +4334,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             const stat = predictionsStats[entry.uid];
                             if (!stat) {
                               return (
-                                <span className="text-[10px] font-black uppercase text-muted-foreground animate-pulse">
+                                <span className="text-[11px] font-black uppercase text-muted-foreground animate-pulse">
                                   Cargando...
                                 </span>
                               );
@@ -4346,12 +4346,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               <div className="flex flex-col items-center gap-1.5 min-w-[85px] mx-auto">
                                 <div className="flex items-center justify-center gap-1">
                                   <span className={cn(
-                                    "text-[11px] font-black tracking-tight",
+                                    "text-[13px] font-black tracking-tight",
                                     isCompleted ? "text-lime" : filled > 0 ? "text-[#FFD700]" : "text-muted-foreground"
                                   )}>
                                     {percentage}%
                                   </span>
-                                  <span className="text-[9px] text-muted-foreground font-bold">
+                                  <span className="text-[11px] text-muted-foreground font-bold">
                                     ({filled}/{total})
                                   </span>
                                 </div>
@@ -4369,23 +4369,23 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           })()}
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className="text-[12px] font-black text-white/95">
-                            {(entry.correctResults || 0) * 3} <span className="text-[9px] text-muted-foreground font-medium ml-1">PTS</span>
+                          <span className="text-[14px] font-black text-white/95">
+                            {(entry.correctResults || 0) * 3} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className="text-[12px] font-black text-white/95">
-                            {(entry.correctWinners || 0) * 1} <span className="text-[9px] text-muted-foreground font-medium ml-1">PTS</span>
+                          <span className="text-[14px] font-black text-white/95">
+                            {(entry.correctWinners || 0) * 1} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className="text-[12px] font-black text-white/95">
-                            {entry.extraPoints || 0} <span className="text-[9px] text-muted-foreground font-medium ml-1">PTS</span>
+                          <span className="text-[14px] font-black text-white/95">
+                            {entry.extraPoints || 0} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right px-1.5 sm:px-4">
-                          <span className="text-[13px] sm:text-[16px] font-black text-lime">
-                            {entry.totalPoints || 0} <span className="text-[8px] sm:text-[10px] text-muted-foreground ml-0.5 sm:ml-1">PTS</span>
+                          <span className="text-[15px] sm:text-[18px] font-black text-lime">
+                            {entry.totalPoints || 0} <span className="text-[10px] sm:text-[12px] text-muted-foreground ml-0.5 sm:ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right pr-3 sm:pr-8 pl-1.5 sm:pl-4">
