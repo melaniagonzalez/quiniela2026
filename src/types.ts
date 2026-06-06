@@ -39,6 +39,12 @@ export interface League {
   createdAt: string;
   isPrivate: boolean;
   competition: 'WC' | 'CL';
+  actualBestPlayerName?: string;
+  actualBestPlayerTeam?: string;
+  actualBestPlayerFlag?: string;
+  actualBestGoalkeeperName?: string;
+  actualBestGoalkeeperTeam?: string;
+  actualBestGoalkeeperFlag?: string;
 }
 
 export interface LeagueMember {

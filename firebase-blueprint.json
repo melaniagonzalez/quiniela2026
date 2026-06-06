@@ -54,7 +54,13 @@
         "memberUids": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string", "format": "date-time" },
         "isPrivate": { "type": "boolean" },
-        "competition": { "type": "string", "enum": ["WC", "CL"], "description": "El torneo que usa esta quiniela (WC o CL)" }
+        "competition": { "type": "string", "enum": ["WC", "CL"], "description": "El torneo que usa esta quiniela (WC o CL)" },
+        "actualBestPlayerName": { "type": "string", "description": "Nombre del mejor jugador seleccionado por super admin" },
+        "actualBestPlayerTeam": { "type": "string", "description": "Nombre de la selección/club del mejor jugador" },
+        "actualBestPlayerFlag": { "type": "string", "description": "Bandera de la selección/club del mejor jugador" },
+        "actualBestGoalkeeperName": { "type": "string", "description": "Nombre del mejor portero seleccionado por super admin" },
+        "actualBestGoalkeeperTeam": { "type": "string", "description": "Nombre de la selección/club del mejor portero" },
+        "actualBestGoalkeeperFlag": { "type": "string", "description": "Bandera de la selección/club del mejor portero" }
       },
       "required": ["id", "name", "creatorId", "memberUids", "competition"]
     },

@@ -15,7 +15,7 @@ service cloud.firestore {
     // Checking if the signed-in user is a super administrator
     function isSuperAdmin() {
       return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email == "melaniagonzalez@gmail.com") ||
+        ('email' in request.auth.token && request.auth.token.email.lower() == "melaniagonzalez@gmail.com") ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('adminRole', 'none') == "superadmin") ||
         ('email' in request.auth.token && (
@@ -33,7 +33,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         isSuperAdmin() ||
-        ('email' in request.auth.token && request.auth.token.email == "melaniagonzalez@gmail.com") || 
+        ('email' in request.auth.token && request.auth.token.email.lower() == "melaniagonzalez@gmail.com") || 
         ('email' in request.auth.token && request.auth.token.email.matches('(?i).*admin.*')) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true) ||
@@ -88,6 +88,12 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read: if true;
       allow write: if isAdmin() && isValidId(leagueId);
+    }
+
+    // Rules for General Configurations (Extra Points by Competition)
+    match /configurations/{configId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() && isValidId(configId);
     }
 
     // Rules for Admins Configuration

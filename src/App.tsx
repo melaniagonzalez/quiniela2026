@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -330,6 +330,23 @@ export default function App() {
   }, [isSimulationMode, simulatedDate, currentMatches, currentTeams]);
 
   const [user, setUser] = useState<User | null>(null);
+
+  interface CompetitionConfig {
+    actualBestPlayerName?: string | null;
+    actualBestPlayerTeam?: string | null;
+    actualBestPlayerFlag?: string | null;
+    actualBestGoalkeeperName?: string | null;
+    actualBestGoalkeeperTeam?: string | null;
+    actualBestGoalkeeperFlag?: string | null;
+  }
+
+  const [compConfigs, setCompConfigs] = useState<Record<'WC' | 'CL', CompetitionConfig>>({
+    WC: {},
+    CL: {}
+  });
+
+  const [adminSelectedCompetition, setAdminSelectedCompetition] = useState<'WC' | 'CL'>('WC');
+
   const activeLeagueId = user ? selectedLeagueId : guestLeagueId;
   const activeLeague = useMemo(() => {
     if (user) {
@@ -344,6 +361,8 @@ export default function App() {
   );
   const [championPrediction, setChampionPrediction] = useState<Prediction | null>(null);
   const [scorerPrediction, setScorerPrediction] = useState<Prediction | null>(null);
+  const [bestPlayerPrediction, setBestPlayerPrediction] = useState<Prediction | null>(null);
+  const [bestGoalkeeperPrediction, setBestGoalkeeperPrediction] = useState<Prediction | null>(null);
 
   const [participants, setParticipants] = useState<any[]>([]);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
@@ -355,7 +374,10 @@ export default function App() {
   const [dbAdmins, setDbAdmins] = useState<any[]>([]);
   const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
-  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'peligro'>('admins');
+  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'puntos_extras'>('admins');
+  const [adminSelectedLeagueId, setAdminSelectedLeagueId] = useState<string>('');
+  const [adminBestPlayer, setAdminBestPlayer] = useState<any | null>(null);
+  const [adminBestGoalkeeper, setAdminBestGoalkeeper] = useState<any | null>(null);
   const [requestStatusFilter, setRequestStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [adminFormEmail, setAdminFormEmail] = useState('');
   const [adminFormRole, setAdminFormRole] = useState<'admin' | 'superadmin'>('admin');
@@ -372,6 +394,26 @@ export default function App() {
   const [currentUserRequest, setCurrentUserRequest] = useState<any | null>(null);
   const [justRequestedInSession, setJustRequestedInSession] = useState<boolean>(false);
   const [isAdminConfigLoading, setIsAdminConfigLoading] = useState(true);
+
+  // Sync admin selection when adminSelectedCompetition changes
+  useEffect(() => {
+    const config = compConfigs[adminSelectedCompetition];
+    if (config) {
+      setAdminBestPlayer(config.actualBestPlayerName ? {
+        name: config.actualBestPlayerName,
+        team: config.actualBestPlayerTeam || undefined,
+        flag: config.actualBestPlayerFlag || undefined
+      } : null);
+      setAdminBestGoalkeeper(config.actualBestGoalkeeperName ? {
+        name: config.actualBestGoalkeeperName,
+        team: config.actualBestGoalkeeperTeam || undefined,
+        flag: config.actualBestGoalkeeperFlag || undefined
+      } : null);
+    } else {
+      setAdminBestPlayer(null);
+      setAdminBestGoalkeeper(null);
+    }
+  }, [adminSelectedCompetition, compConfigs]);
 
   // State variables for editing participant and delete confirmation dialog
   const [isEditingName, setIsEditingName] = useState(false);
@@ -521,6 +563,25 @@ export default function App() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const leaguesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as League));
         setLeagues(leaguesData);
+      });
+      return () => unsubscribe();
+    }
+  }, [user]);
+
+  // Load configurations for competitions (puntos extras)
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = onSnapshot(collection(db, 'configurations'), (snapshot) => {
+        const newConfigs: Record<string, CompetitionConfig> = { WC: {}, CL: {} };
+        snapshot.docs.forEach(doc => {
+          newConfigs[doc.id] = doc.data() as CompetitionConfig;
+        });
+        setCompConfigs({
+          WC: newConfigs.WC || {},
+          CL: newConfigs.CL || {}
+        });
+      }, (error) => {
+        console.error("Error loading configurations:", error);
       });
       return () => unsubscribe();
     }
@@ -1140,94 +1201,33 @@ export default function App() {
     }
   };
 
-  const [isCleaningDb, setIsCleaningDb] = useState(false);
-  const [cleanupProgress, setCleanupProgress] = useState(0);
-  const [cleanupStatus, setCleanupStatus] = useState('');
-  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
+  const [isSavingExtraPoints, setIsSavingExtraPoints] = useState(false);
 
-  const handleCleanDatabase = async () => {
+  const handleSaveAdminExtraPoints = async () => {
     if (!user || !isSuperAdmin) {
-      toast.error('No tienes permisos de administrador para realizar esta acción');
+      toast.error('No tienes permisos de súper administrador para realizar esta acción');
       return;
     }
 
-    setIsCleaningDb(true);
-    setCleanupProgress(0);
-    setCleanupStatus('Iniciando limpieza y preparando conexión...');
-    const toastId = toast.loading('Iniciando limpieza de base de datos...');
-
+    setIsSavingExtraPoints(true);
+    const toastId = toast.loading('Guardando configuración de puntos extras...');
     try {
-      setCleanupStatus('Obteniendo información de quinielas y usuarios...');
-      const [leaguesSnap, usersSnap] = await Promise.all([
-        getDocs(collection(db, 'leagues')),
-        getDocs(collection(db, 'users'))
-      ]);
+      const configRef = doc(db, 'configurations', adminSelectedCompetition);
+      await setDoc(configRef, {
+        actualBestPlayerName: adminBestPlayer?.name || null,
+        actualBestPlayerTeam: adminBestPlayer?.team || null,
+        actualBestPlayerFlag: adminBestPlayer?.flag || null,
+        actualBestGoalkeeperName: adminBestGoalkeeper?.name || null,
+        actualBestGoalkeeperTeam: adminBestGoalkeeper?.team || null,
+        actualBestGoalkeeperFlag: adminBestGoalkeeper?.flag || null
+      });
 
-      const totalLeagues = leaguesSnap.size;
-      const totalUsers = usersSnap.size;
-      const totalSteps = totalLeagues + totalUsers;
-
-      let processedSteps = 0;
-      let leaguesCount = 0;
-      let usersCount = 0;
-      let predictionsCount = 0;
-
-      if (totalSteps === 0) {
-        setCleanupProgress(100);
-        setCleanupStatus('La base de datos ya está vacía.');
-        toast.success('La base de datos ya está vacía', { id: toastId });
-        setIsCleaningDb(false);
-        return;
-      }
-
-      setCleanupProgress(5);
-
-      // 1. Delete all leagues
-      for (const lDoc of leaguesSnap.docs) {
-        setCleanupStatus(`Eliminando quiniela: "${lDoc.data()?.name || lDoc.id}" (${leaguesCount + 1}/${totalLeagues})...`);
-        await deleteDoc(doc(db, 'leagues', lDoc.id));
-        leaguesCount++;
-        processedSteps++;
-        setCleanupProgress(Math.min(95, Math.round((processedSteps / totalSteps) * 100)));
-      }
-
-      // 2. Delete all users and their predictions
-      toast.loading('Eliminando perfiles de usuarios y predicciones...', { id: toastId });
-      for (const uDoc of usersSnap.docs) {
-        const uId = uDoc.id;
-        const uData = uDoc.data();
-        const displayName = uData?.displayName || 'Usuario';
-        
-        setCleanupStatus(`Obteniendo predicciones del usuario: ${displayName}...`);
-
-        // Delete predictions
-        const predsSnap = await getDocs(collection(db, 'users', uId, 'predictions'));
-        for (const pDoc of predsSnap.docs) {
-          await deleteDoc(doc(db, 'users', uId, 'predictions', pDoc.id));
-          predictionsCount++;
-        }
-        
-        setCleanupStatus(`Eliminando perfil del usuario: ${displayName}...`);
-        await deleteDoc(doc(db, 'users', uId));
-        usersCount++;
-        processedSteps++;
-        setCleanupProgress(Math.min(95, Math.round((processedSteps / totalSteps) * 100)));
-      }
-
-      setCleanupProgress(100);
-      setCleanupStatus(`¡Completado con éxito! Se eliminaron: ${leaguesCount} quinielas, ${usersCount} usuarios y ${predictionsCount} predicciones.`);
-      toast.success(`Base de datos limpiada con éxito: Se eliminaron ${leaguesCount} quinielas, ${usersCount} perfiles de usuario y ${predictionsCount} predicciones.`, { id: toastId });
-      setSelectedLeagueId(null);
-      
-      setTimeout(() => {
-        window.location.reload();
-      }, 3000);
+      toast.success('Configuración de puntos extras guardada exitosamente.', { id: toastId });
     } catch (error) {
-      console.error('Error al limpiar la base de datos:', error);
-      toast.error('Error durante la limpieza de la base de datos', { id: toastId });
-      setCleanupStatus('Error al limpiar la base de datos.');
+      console.error('Error al guardar puntos extras:', error);
+      toast.error('Error al guardar la configuración de puntos extras.', { id: toastId });
     } finally {
-      setIsCleaningDb(false);
+      setIsSavingExtraPoints(false);
     }
   };
 
@@ -1296,7 +1296,7 @@ export default function App() {
     }
   };
 
-  const calculateUserPoints = (userPredictions: Prediction[]) => {
+  const calculateUserPoints = (userPredictions: Prediction[], leagueCompParam?: 'WC' | 'CL') => {
     let totalPoints = 0;
     let correctResults = 0;
     let correctWinners = 0;
@@ -1315,7 +1315,7 @@ export default function App() {
       if (finalMatch.actualHomeScore !== null && finalMatch.actualAwayScore !== null) {
         if (finalMatch.actualHomeScore > finalMatch.actualAwayScore) {
           actualChampionId = finalMatch.homeTeamId || '';
-        } else if (finalMatch.actualAwayScore > finalMatch.actualHomeScore) {
+        } else if (finalMatch.actualAwayScore > finalMatch.actualAwayScore) {
           actualChampionId = finalMatch.awayTeamId || '';
         } else {
           // Deterministic tie-breaker
@@ -1338,7 +1338,22 @@ export default function App() {
       }
     }
 
-    userPredictions.forEach(pred => {
+    // Combine predictions to make sure it includes the extras if they are not in the main array
+    const allPredictions = [...userPredictions];
+    if (!allPredictions.some(p => p.matchId === 'world_champion') && championPrediction) {
+      allPredictions.push(championPrediction);
+    }
+    if (!allPredictions.some(p => p.matchId === 'top_scorer') && scorerPrediction) {
+      allPredictions.push(scorerPrediction);
+    }
+    if (!allPredictions.some(p => p.matchId === 'best_player') && bestPlayerPrediction) {
+      allPredictions.push(bestPlayerPrediction);
+    }
+    if (!allPredictions.some(p => p.matchId === 'best_goalkeeper') && bestGoalkeeperPrediction) {
+      allPredictions.push(bestGoalkeeperPrediction);
+    }
+
+    allPredictions.forEach(pred => {
       if (pred.matchId === 'world_champion') {
         if (actualChampionId && pred.championTeamId === actualChampionId) {
           totalPoints += 5; // +5 PTS extra
@@ -1351,6 +1366,34 @@ export default function App() {
         if (actualTopScorers.length > 0 && pred.scorerPlayerName) {
           const predictedName = pred.scorerPlayerName.toLowerCase().trim();
           if (actualTopScorers.includes(predictedName)) {
+            totalPoints += 5; // +5 PTS extra
+            extraPoints += 5;
+          }
+        }
+        return;
+      }
+
+      if (pred.matchId === 'best_player') {
+        const comp = leagueCompParam || activeLeague?.competition || 'WC';
+        const config = compConfigs[comp as 'WC' | 'CL'];
+        if (config?.actualBestPlayerName && pred.scorerPlayerName) {
+          const predictedName = pred.scorerPlayerName.toLowerCase().trim();
+          const actualName = config.actualBestPlayerName.toLowerCase().trim();
+          if (predictedName === actualName) {
+            totalPoints += 5; // +5 PTS extra
+            extraPoints += 5;
+          }
+        }
+        return;
+      }
+
+      if (pred.matchId === 'best_goalkeeper') {
+        const comp = leagueCompParam || activeLeague?.competition || 'WC';
+        const config = compConfigs[comp as 'WC' | 'CL'];
+        if (config?.actualBestGoalkeeperName && pred.scorerPlayerName) {
+          const predictedName = pred.scorerPlayerName.toLowerCase().trim();
+          const actualName = config.actualBestGoalkeeperName.toLowerCase().trim();
+          if (predictedName === actualName) {
             totalPoints += 5; // +5 PTS extra
             extraPoints += 5;
           }
@@ -1509,6 +1552,8 @@ export default function App() {
       setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
       setChampionPrediction(null);
       setScorerPrediction(null);
+      setBestPlayerPrediction(null);
+      setBestGoalkeeperPrediction(null);
       return;
     }
 
@@ -1517,6 +1562,8 @@ export default function App() {
       setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
       setChampionPrediction(null);
       setScorerPrediction(null);
+      setBestPlayerPrediction(null);
+      setBestGoalkeeperPrediction(null);
       return;
     }
 
@@ -1533,6 +1580,9 @@ export default function App() {
 
       const champ = firestorePredictions.find(p => p.matchId === 'world_champion');
       const scorer = firestorePredictions.find(p => p.matchId === 'top_scorer');
+      const bestPlayer = firestorePredictions.find(p => p.matchId === 'best_player');
+      const bestGoalkeeper = firestorePredictions.find(p => p.matchId === 'best_goalkeeper');
+
       setChampionPrediction(champ || {
         matchId: 'world_champion',
         homeScore: null,
@@ -1543,6 +1593,22 @@ export default function App() {
       });
       setScorerPrediction(scorer || {
         matchId: 'top_scorer',
+        homeScore: null,
+        awayScore: null,
+        scorerPlayerName: null,
+        scorerTeamName: null,
+        scorerTeamFlag: null
+      });
+      setBestPlayerPrediction(bestPlayer || {
+        matchId: 'best_player',
+        homeScore: null,
+        awayScore: null,
+        scorerPlayerName: null,
+        scorerTeamName: null,
+        scorerTeamFlag: null
+      });
+      setBestGoalkeeperPrediction(bestGoalkeeper || {
+        matchId: 'best_goalkeeper',
         homeScore: null,
         awayScore: null,
         scorerPlayerName: null,
@@ -1571,7 +1637,7 @@ export default function App() {
         };
       }
       
-      const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
+      const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds, activeLeague?.competition);
       return {
         ...p,
         totalPoints,
@@ -1584,7 +1650,7 @@ export default function App() {
     // Sort descending by totalPoints
     const sorted = recalculated.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
     setLeaderboard(sorted);
-  }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate]);
+  }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate, compConfigs, activeLeague]);
 
   // Obtener estadísticas de predicciones llenas y listas de predicciones para cada participante de la quiniela
   useEffect(() => {
@@ -1601,6 +1667,7 @@ export default function App() {
         const predsList = docs.map(doc => doc.data() as Prediction);
         const filledMatchesCount = predsList.filter(pred => 
           pred.matchId !== 'world_champion' && pred.matchId !== 'top_scorer' &&
+          pred.matchId !== 'best_player' && pred.matchId !== 'best_goalkeeper' &&
           pred.homeScore !== null && pred.homeScore !== undefined && 
           pred.awayScore !== null && pred.awayScore !== undefined
         ).length;
@@ -1611,13 +1678,19 @@ export default function App() {
         const scorerPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'top_scorer');
         const hasScorer = scorerPred && scorerPred.scorerPlayerName !== null && scorerPred.scorerPlayerName !== undefined && scorerPred.scorerPlayerName !== '';
         
-        const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasScorer ? 1 : 0);
+        const bestPlayerPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'best_player');
+        const hasBestPlayer = bestPlayerPred && bestPlayerPred.scorerPlayerName !== null && bestPlayerPred.scorerPlayerName !== undefined && bestPlayerPred.scorerPlayerName !== '';
+
+        const bestGoalkeeperPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'best_goalkeeper');
+        const hasBestGoalkeeper = bestGoalkeeperPred && bestGoalkeeperPred.scorerPlayerName !== null && bestGoalkeeperPred.scorerPlayerName !== undefined && bestGoalkeeperPred.scorerPlayerName !== '';
+
+        const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasScorer ? 1 : 0) + (hasBestPlayer ? 1 : 0) + (hasBestGoalkeeper ? 1 : 0);
         
         setPredictionsStats(prev => ({
           ...prev,
           [p.uid]: {
             filled: filledCount,
-            total: currentMatches.length + 2
+            total: currentMatches.length + 4
           }
         }));
 
@@ -1829,7 +1902,23 @@ export default function App() {
           }, { merge: true });
         }
 
-        const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(predictions);
+        if (bestPlayerPrediction) {
+          const predictionRef = doc(db, 'users', targetId, 'predictions', 'best_player');
+          batch.set(predictionRef, {
+            ...bestPlayerPrediction,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+
+        if (bestGoalkeeperPrediction) {
+          const predictionRef = doc(db, 'users', targetId, 'predictions', 'best_goalkeeper');
+          batch.set(predictionRef, {
+            ...bestGoalkeeperPrediction,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+
+        const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(predictions, activeLeague?.competition);
         const userRef = doc(db, 'users', targetId);
         batch.update(userRef, {
           totalPoints,
@@ -1845,6 +1934,8 @@ export default function App() {
       localStorage.setItem('wc_predictions', JSON.stringify(predictions));
       if (championPrediction) localStorage.setItem('wc_champion_prediction', JSON.stringify(championPrediction));
       if (scorerPrediction) localStorage.setItem('wc_scorer_prediction', JSON.stringify(scorerPrediction));
+      if (bestPlayerPrediction) localStorage.setItem('wc_best_player_prediction', JSON.stringify(bestPlayerPrediction));
+      if (bestGoalkeeperPrediction) localStorage.setItem('wc_best_goalkeeper_prediction', JSON.stringify(bestGoalkeeperPrediction));
       setHasUnsavedChanges(false);
       toast.success('Cambios guardados correctamente');
     } catch (error) {
@@ -1891,8 +1982,8 @@ export default function App() {
       toast.error('El nombre del participante es obligatorio');
       return;
     }
-    if (name.length > 10) {
-      toast.error('El nombre del participante no puede tener más de 10 caracteres');
+    if (name.length > 8) {
+      toast.error('El nombre del participante no puede tener más de 8 caracteres');
       return;
     }
 
@@ -2029,8 +2120,8 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       toast.error("El nombre no puede estar vacío");
       return;
     }
-    if (nameVal.length > 10) {
-      toast.error("El nombre no puede superar los 10 caracteres");
+    if (nameVal.length > 8) {
+      toast.error("El nombre no puede superar los 8 caracteres");
       return;
     }
     if (codeVal.length !== 5) {
@@ -2129,11 +2220,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   }, [currentMatches]);
 
   const isJornada0Locked = useMemo(() => {
-    const firstMatch = currentMatches.find(m => m.matchday === 1);
-    if (!firstMatch) return false;
+    const targetMatch = currentMatches.find(m => m.matchday === 2) || currentMatches.find(m => m.matchday === 1);
+    if (!targetMatch) return false;
     return isSimulationMode
-      ? new Date(firstMatch.date) < new Date(simulatedDate)
-      : new Date(firstMatch.date) < new Date() || (firstMatch.status && !['SCHEDULED', 'TIMED'].includes(firstMatch.status));
+      ? new Date(targetMatch.date) < new Date(simulatedDate)
+      : new Date(targetMatch.date) < new Date() || (targetMatch.status && !['SCHEDULED', 'TIMED'].includes(targetMatch.status));
   }, [currentMatches, isSimulationMode, simulatedDate]);
 
   const getMatchdayLabel = (day: number) => {
@@ -2635,7 +2726,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Users className="w-4 h-4 text-primary" />
+                  <Users className="w-6 h-6 text-primary" />
                   <span className="hidden sm:inline">Administradores</span>
                 </button>
                 <button
@@ -2648,7 +2739,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <UserPlus className="w-4 h-4 text-primary" />
+                  <UserPlus className="w-6 h-6 text-primary" />
                   <span className="hidden sm:inline">Solicitudes</span>
                   {adminRequests.filter(r => r.status === 'pending').length > 0 && (
                     <span className="ml-1 bg-red-500 text-white font-mono text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
@@ -2669,24 +2760,27 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Trophy className="w-4 h-4 text-primary" />
+                  <Trophy className="w-6 h-6 text-primary" />
                   <span className="hidden sm:inline">Quinielas ({allLeagues.length})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setSuperAdminTab('peligro');
+                    setSuperAdminTab('puntos_extras');
                     setEditingAdminId(null);
+                    if (!adminSelectedLeagueId && allLeagues.length > 0) {
+                      setAdminSelectedLeagueId(allLeagues[0].id);
+                    }
                   }}
                   className={cn(
                     "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
-                    superAdminTab === 'peligro' 
-                      ? "border-red text-red bg-red/5 font-black" 
+                    superAdminTab === 'puntos_extras' 
+                      ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <AlertTriangle className="w-4 h-4 text-red" />
-                  <span className="hidden sm:inline">Peligro</span>
+                  <Award className="w-6 h-6 text-primary" />
+                  <span className="hidden sm:inline">Puntos Extras</span>
                 </button>
               </div>
 
@@ -3156,78 +3250,117 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 </div>
               ) : (
                 <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="bg-red-500/10 border border-red-500/30 p-8 space-y-6">
-                    {!showCleanupConfirm && !isCleaningDb && (
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="space-y-1 text-center md:text-left">
-                          <h3 className="text-[14px] font-black uppercase tracking-tight text-red-500">Mantenimiento de Administrador</h3>
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase leading-relaxed">
-                            Limpia la base de datos de todos los usuarios y las quinielas para iniciar con datos limpios de forma definitiva. No afecta los resultados generales de los partidos.
-                          </p>
-                        </div>
-                        <Button 
-                          variant="destructive"
-                          onClick={() => setShowCleanupConfirm(true)}
-                          className="h-12 px-10 text-[10px] font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white transition-all font-black rounded-none"
-                        >
-                          Limpiar Base de Datos
-                        </Button>
-                      </div>
-                    )}
-
-                    {showCleanupConfirm && !isCleaningDb && (
-                      <div className="space-y-4 animate-in fade-in duration-200">
-                        <div className="border-l-4 border-red-500 pl-4 py-2 space-y-2">
-                          <h4 className="text-[12px] font-black uppercase text-red-500 tracking-wider">¡ATENCIÓN: OPERACIÓN CRÍTICA IRREVERSIBLE!</h4>
-                          <p className="text-[11px] text-muted-foreground uppercase leading-relaxed font-bold">
-                            ¿Estás absolutamente seguro de que deseas limpiar la base de datos? Esta acción borrará de manera definitiva:
-                          </p>
-                          <ul className="text-[10px] text-muted-foreground uppercase list-disc list-inside space-y-1 font-bold pl-2">
-                            <li>Todas las quinielas y ligas creadas en la plataforma.</li>
-                            <li>Todos los perfiles de los usuarios participantes.</li>
-                            <li>Todas las predicciones y puntajes enviados.</li>
-                          </ul>
-                          <p className="text-[10px] text-emerald-400 font-bold uppercase">
-                            Nota: Los resultados oficiales de los partidos, equipos y configuraciones generales NO sufrirán ningún cambio.
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-4 pt-2">
-                          <Button
-                            variant="destructive"
-                            className="h-11 px-8 text-[10px] font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white shadow-lg rounded-none"
-                            onClick={async () => {
-                              setShowCleanupConfirm(false);
-                              await handleCleanDatabase();
-                            }}
+                  <Card className="bg-card border-2 border-border rounded-none">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground">
+                        Configuración de Puntos Extras
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground leading-relaxed">
+                        Define manualmente el Mejor Jugador y el Mejor Portero por competición (Mundial o Champions) una vez que los premios oficiales sean anunciados. Se aplicará de forma global y automática para todas las quinielas de esta competición.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-border">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            Seleccionar Competición
+                          </label>
+                          <select
+                            value={adminSelectedCompetition}
+                            onChange={(e) => setAdminSelectedCompetition(e.target.value as 'WC' | 'CL')}
+                            className="w-full bg-background border border-border px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary uppercase rounded-none h-11"
                           >
-                            SÍ, ELIMINAR Y LIMPIAR DATOS
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="h-11 px-8 text-[10px] font-black uppercase tracking-widest border-border text-muted-foreground hover:bg-muted/15 rounded-none"
-                            onClick={() => setShowCleanupConfirm(false)}
-                          >
-                            CANCELAR
-                          </Button>
+                            <option value="WC">🌎 Mundial / World Cup (WC)</option>
+                            <option value="CL">🏆 Champions League (CL)</option>
+                          </select>
                         </div>
-                      </div>
-                    )}
 
-                    {(isCleaningDb || (cleanupProgress > 0 && cleanupProgress <= 100)) && (
-                      <div className="space-y-3 pt-4 border-t border-red-500/20">
-                        <div className="flex justify-between items-center text-[10px] font-mono text-red-500 font-bold uppercase">
-                          <span className="truncate max-w-[80%]">{cleanupStatus}</span>
-                          <span>{cleanupProgress}%</span>
-                        </div>
-                        <div className="w-full bg-black/40 h-3 rounded-none overflow-hidden border border-red-500/20">
-                          <div 
-                            className="bg-red-500 h-full transition-all duration-300 ease-out"
-                            style={{ width: `${cleanupProgress}%` }}
-                          />
+                        <div className="flex items-center gap-4 bg-primary/5 p-4 border border-border h-11 self-end">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Competición Activa:</span>
+                          <span className="text-xs font-black text-primary uppercase">
+                            {adminSelectedCompetition === 'CL' ? '🏆 Champions League' : '🌎 Mundial / World Cup'}
+                          </span>
                         </div>
                       </div>
-                    )}
-                  </div>
+
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* MEJOR JUGADOR INPUT */}
+                          <div className="space-y-3 bg-white/5 p-5 border border-border">
+                            <div className="flex items-center gap-2 text-primary">
+                              <Award className="w-5 h-5 text-primary" />
+                              <h4 className="text-[12px] font-black uppercase tracking-wider text-foreground">
+                                Mejor Jugador del Torneo ({adminSelectedCompetition === 'CL' ? 'Champions' : 'Mundial'})
+                              </h4>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase leading-relaxed">
+                              Escoge de la lista oficial de jugadores activos en esta competición.
+                            </p>
+                            <SearchSelector
+                              placeholder="Buscar Jugador..."
+                              type="players"
+                              competition={adminSelectedCompetition}
+                              value={adminBestPlayer}
+                              onChange={(val) => setAdminBestPlayer(val)}
+                            />
+                            {adminBestPlayer && (
+                              <div className="mt-2 text-xs font-bold uppercase text-emerald-400">
+                                Seleccionado: {adminBestPlayer.name} ({adminBestPlayer.team || 'Sin equipo'})
+                              </div>
+                            )}
+                          </div>
+
+                          {/* MEJOR PORTERO INPUT */}
+                          {adminSelectedCompetition === 'WC' ? (
+                            <div className="space-y-3 bg-white/5 p-5 border border-border">
+                              <div className="flex items-center gap-2 text-primary">
+                                <Shield className="w-5 h-5 text-primary" />
+                                <h4 className="text-[12px] font-black uppercase tracking-wider text-foreground">
+                                  Mejor Portero del Torneo (Mundial)
+                                </h4>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground font-bold uppercase leading-relaxed">
+                                Escoge el mejor guardameta de la lista de jugadores de la competición.
+                              </p>
+                              <SearchSelector
+                                placeholder="Buscar Portero..."
+                                type="players"
+                                competition={adminSelectedCompetition}
+                                value={adminBestGoalkeeper}
+                                onChange={(val) => setAdminBestGoalkeeper(val)}
+                              />
+                              {adminBestGoalkeeper && (
+                                <div className="mt-2 text-xs font-bold uppercase text-emerald-400">
+                                  Seleccionado: {adminBestGoalkeeper.name} ({adminBestGoalkeeper.team || 'Sin equipo'})
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-3 bg-white/10 p-5 border border-dashed border-border flex flex-col justify-center items-center text-center">
+                              <Shield className="w-8 h-8 text-muted-foreground mb-2" />
+                              <h4 className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                                Sin Mejor Portero
+                              </h4>
+                              <p className="text-[9px] text-muted-foreground uppercase font-bold max-w-[250px] mt-1 leading-normal">
+                                La competición Champions League no incluye la predicción de Mejor Portero de forma individual.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pt-4 border-t border-border flex justify-end">
+                          <Button
+                            onClick={handleSaveAdminExtraPoints}
+                            disabled={isSavingExtraPoints}
+                            className="h-12 px-10 text-[10px] font-black uppercase tracking-widest bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg shadow-primary/20 flex items-center gap-2"
+                          >
+                            <Save className="w-4 h-4" />
+                            {isSavingExtraPoints ? 'GUARDANDO...' : 'GUARDAR CONFIGURACIÓN DE PUNTOS'}
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               )}
             </div>
@@ -3460,7 +3593,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Users className="w-3.5 h-3.5" />
+                  <Users className="w-6 h-6" />
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Ranking</span>
                 </button>
                 <button
@@ -3472,7 +3605,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Newspaper className="w-3.5 h-3.5" />
+                  <Newspaper className="w-6 h-6" />
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Noticias</span>
                 </button>
                 <button
@@ -3484,7 +3617,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Trophy className="w-3.5 h-3.5" />
+                  <Trophy className="w-6 h-6" />
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Resultados</span>
                 </button>
               </div>
@@ -3757,8 +3890,18 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           })()
                         : [];
 
+                      const currentCompConfig = compConfigs[activeLeague?.competition || 'WC'];
+                      const activeLeagueBestPlayerName = currentCompConfig?.actualBestPlayerName;
+                      const activeLeagueBestGoalkeeperName = currentCompConfig?.actualBestGoalkeeperName;
+
                       const userMatchedChampion = championPrediction?.championTeamId && (championPrediction.championTeamId === actualChampionId);
                       const userMatchedScorer = scorerPrediction?.scorerPlayerName && actualTopScorers.includes(scorerPrediction.scorerPlayerName.toLowerCase().trim());
+                      const userMatchedBestPlayer = bestPlayerPrediction?.scorerPlayerName && 
+                        activeLeagueBestPlayerName && 
+                        (bestPlayerPrediction.scorerPlayerName.toLowerCase().trim() === activeLeagueBestPlayerName.toLowerCase().trim());
+                      const userMatchedBestGoalkeeper = bestGoalkeeperPrediction?.scorerPlayerName && 
+                        activeLeagueBestGoalkeeperName && 
+                        (bestGoalkeeperPrediction.scorerPlayerName.toLowerCase().trim() === activeLeagueBestGoalkeeperName.toLowerCase().trim());
 
                       return (
                         <div className="space-y-4 pt-4 mb-8">
@@ -3928,10 +4071,174 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 </div>
                               )}
                             </div>
+
+                            {/* Mejor Jugador Box */}
+                            {activeLeague?.competition !== 'CL' && (
+                              <div className="bg-card border border-border overflow-visible rounded-none relative p-6 space-y-6 z-10 focus-within:z-20">
+                                <div className="absolute top-0 left-0 w-1.5 h-full bg-purple-500" />
+                                <div className="flex items-center gap-3">
+                                  <Award className="w-5 h-5 text-purple-400" />
+                                  <div>
+                                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                      Pronóstico Mejor Jugador
+                                    </h3>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                                      ¿Quién será el mejor jugador del Mundial?
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                  <SearchSelector
+                                    placeholder="Buscar jugador..."
+                                    type="players"
+                                    competition={activeLeague?.competition || 'WC'}
+                                    value={
+                                      bestPlayerPrediction?.scorerPlayerName ? {
+                                        name: bestPlayerPrediction.scorerPlayerName,
+                                        team: bestPlayerPrediction.scorerTeamName || undefined,
+                                        flag: bestPlayerPrediction.scorerTeamFlag || undefined
+                                      } : null
+                                    }
+                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    onChange={(val) => {
+                                      setBestPlayerPrediction(val ? {
+                                        matchId: 'best_player',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        scorerPlayerName: val.name,
+                                        scorerTeamName: val.team,
+                                        scorerTeamFlag: val.flag
+                                      } : {
+                                        matchId: 'best_player',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        scorerPlayerName: null,
+                                        scorerTeamName: null,
+                                        scorerTeamFlag: null
+                                      });
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  />
+                                </div>
+
+                                {activeLeagueBestPlayerName && (
+                                  <div className="mt-4 p-4 border rounded-none bg-purple-500/5 border-purple-500/20 space-y-2 text-left animate-in fade-in">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black uppercase text-muted-foreground/85 tracking-wider">Mejor Jugador Oficial:</span>
+                                      {userMatchedBestPlayer ? (
+                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-lime/10 border-lime/20 text-lime">
+                                          +5 PTS (ACERTADO)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-red-500/5 border-red-500/15 text-red-400/80">
+                                          0 PTS
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {bestPlayerPrediction?.scorerTeamFlag && (
+                                        bestPlayerPrediction.scorerTeamFlag.startsWith('http') ? (
+                                          <img src={bestPlayerPrediction.scorerTeamFlag} alt="" className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <span className="text-sm">{bestPlayerPrediction.scorerTeamFlag}</span>
+                                        )
+                                      )}
+                                      <span className="text-xs font-black uppercase text-white">{activeLeagueBestPlayerName}</span>
+                                      {currentCompConfig?.actualBestPlayerTeam && (
+                                        <span className="text-[10px] text-muted-foreground uppercase">({currentCompConfig.actualBestPlayerTeam})</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Mejor Portero Box */}
+                            {activeLeague?.competition !== 'CL' && (
+                              <div className="bg-card border border-border overflow-visible rounded-none relative p-6 space-y-6 z-10 focus-within:z-20">
+                                <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500" />
+                                <div className="flex items-center gap-3">
+                                  <Shield className="w-5 h-5 text-blue-400" />
+                                  <div>
+                                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                      Pronóstico Mejor Portero
+                                    </h3>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                                      ¿Quién será el mejor portero del Mundial?
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                  <SearchSelector
+                                    placeholder="Buscar portero..."
+                                    type="players"
+                                    competition={activeLeague?.competition || 'WC'}
+                                    value={
+                                      bestGoalkeeperPrediction?.scorerPlayerName ? {
+                                        name: bestGoalkeeperPrediction.scorerPlayerName,
+                                        team: bestGoalkeeperPrediction.scorerTeamName || undefined,
+                                        flag: bestGoalkeeperPrediction.scorerTeamFlag || undefined
+                                      } : null
+                                    }
+                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    onChange={(val) => {
+                                      setBestGoalkeeperPrediction(val ? {
+                                        matchId: 'best_goalkeeper',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        scorerPlayerName: val.name,
+                                        scorerTeamName: val.team,
+                                        scorerTeamFlag: val.flag
+                                      } : {
+                                        matchId: 'best_goalkeeper',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        scorerPlayerName: null,
+                                        scorerTeamName: null,
+                                        scorerTeamFlag: null
+                                      });
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  />
+                                </div>
+
+                                {activeLeagueBestGoalkeeperName && (
+                                  <div className="mt-4 p-4 border rounded-none bg-blue-500/5 border-blue-500/20 space-y-2 text-left animate-in fade-in">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black uppercase text-muted-foreground/85 tracking-wider">Mejor Portero Oficial:</span>
+                                      {userMatchedBestGoalkeeper ? (
+                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-lime/10 border-lime/20 text-lime">
+                                          +5 PTS (ACERTADO)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-red-500/5 border-red-500/15 text-red-400/80">
+                                          0 PTS
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {bestGoalkeeperPrediction?.scorerTeamFlag && (
+                                        bestGoalkeeperPrediction.scorerTeamFlag.startsWith('http') ? (
+                                          <img src={bestGoalkeeperPrediction.scorerTeamFlag} alt="" className="w-4 h-4 object-contain" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <span className="text-sm">{bestGoalkeeperPrediction.scorerTeamFlag}</span>
+                                        )
+                                      )}
+                                      <span className="text-xs font-black uppercase text-white">{activeLeagueBestGoalkeeperName}</span>
+                                      {currentCompConfig?.actualBestGoalkeeperTeam && (
+                                        <span className="text-[10px] text-muted-foreground uppercase">({currentCompConfig.actualBestGoalkeeperTeam})</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <div className="text-[10px] text-muted-foreground/80 leading-relaxed font-semibold uppercase tracking-wider bg-white/5 p-4 border border-white/5">
-                            ⚠️ NOTA: Estos pronósticos se cerrarán al inicio de la jornada uno y los puntos se acreditarán al final del último partido cuando se sepan los resultados.
+                            ⚠️ NOTA: Estos pronósticos se cerrarán al inicio de la jornada dos y los puntos se acreditarán al final del último partido cuando se sepan los resultados.
                           </div>
                         </div>
                       );
@@ -4235,15 +4542,15 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             placeholder="NUEVO PARTICIPANTE"
                             value={newParticipantName}
                             onChange={(e) => {
-                              if (e.target.value.length <= 10) {
+                              if (e.target.value.length <= 8) {
                                 setNewParticipantName(e.target.value.toUpperCase());
                               }
                             }}
-                            maxLength={10}
+                            maxLength={8}
                             className="h-8 w-44 sm:w-60 text-[10px] font-black tracking-wider uppercase rounded-none border-border bg-background"
                           />
                           <span className="text-[7px] font-mono text-muted-foreground font-bold text-right sm:text-left pr-1">
-                            {newParticipantName.length}/10 CARACTERES
+                            {newParticipantName.length}/8 CARACTERES
                           </span>
                         </div>
                         <div className="flex gap-1.5 mt-1 sm:mt-0">
@@ -4316,10 +4623,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             }
                           }}
                         >
-                          <div className="flex items-center gap-1.5 sm:gap-3">
+                          <div className="flex items-center gap-2 sm:gap-4">
                             <img 
                               src={entry.photoURL || getAvatarForUser(entry.displayName || 'Anónimo')} 
-                              className="w-6 h-6 sm:w-8 sm:h-8 rounded-full border border-border bg-zinc-800 transition-all group-hover/cell:border-primary group-hover/cell:scale-105" 
+                              className="w-8 h-8 sm:w-11 sm:h-11 rounded-full border-2 border-border bg-zinc-800 transition-all group-hover/cell:border-primary group-hover/cell:scale-105 shadow-sm" 
                               referrerPolicy="no-referrer" 
                             />
                             <div className="flex flex-col min-w-0">
@@ -5549,7 +5856,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             {(() => {
               const targetId = activeParticipantId;
               const userPreds = participantsPredictions[targetId] || predictions || [];
-              const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds);
+              const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds, activeLeague?.competition);
               return (
                 <div className="bg-zinc-900 border border-border/40 p-4 space-y-2.5 rounded-none">
                   <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Desglose de Puntos</h4>
@@ -5581,8 +5888,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 <label className="text-[9px] uppercase font-black text-muted-foreground tracking-widest">Nombre del Participante</label>
                 <Input
                   value={modalProfileName}
-                  onChange={(e) => setModalProfileName(e.target.value.toUpperCase())}
-                  maxLength={10}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 8) {
+                      setModalProfileName(e.target.value.toUpperCase());
+                    }
+                  }}
+                  maxLength={8}
                   className="bg-background border-border text-xs rounded-none h-10 w-full uppercase font-bold px-3 focus-visible:ring-primary text-foreground"
                   placeholder="NOMBRE"
                 />
