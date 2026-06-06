@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
@@ -364,8 +364,32 @@ export default function App() {
   const [bestPlayerPrediction, setBestPlayerPrediction] = useState<Prediction | null>(null);
   const [bestGoalkeeperPrediction, setBestGoalkeeperPrediction] = useState<Prediction | null>(null);
 
+  // Backup references to safely revert to last clean database values on discard
+  const dbPredictionsRef = useRef<Prediction[]>([]);
+  const dbChampionPredictionRef = useRef<Prediction | null>(null);
+  const dbScorerPredictionRef = useRef<Prediction | null>(null);
+  const dbBestPlayerPredictionRef = useRef<Prediction | null>(null);
+  const dbBestGoalkeeperPredictionRef = useRef<Prediction | null>(null);
+
   const [participants, setParticipants] = useState<any[]>([]);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
+  const [clickedParticipants, setClickedParticipants] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem('wc_clicked_next_by_participant');
+      if (stored) return JSON.parse(stored);
+      
+      const oldSingle = localStorage.getItem('wc_clicked_next_matchday') === 'true';
+      if (oldSingle) {
+        return { 'guest': true };
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  });
+
+  const currentViewedId = activeParticipantId || (user ? user.uid : 'guest');
+  const hasClickedNextMatchday = !!clickedParticipants[currentViewedId];
   const [isAddingParticipant, setIsAddingParticipant] = useState(false);
   const [newParticipantName, setNewParticipantName] = useState('');
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
@@ -540,6 +564,15 @@ export default function App() {
     setActiveParticipantId(null);
     setPredictionsReadOnly(false);
   }, [activeLeagueId]);
+
+  // Scroll to top of the viewport when changing tabs or active participant profile
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    if (document.body) {
+      document.body.scrollTop = 0;
+    }
+  }, [activeTab, activeParticipantId]);
 
   // Whenever the user goes into predictions viewing/editing mode (or adding a participant), default matchday to 'PTS Extra' (day 0)
   useEffect(() => {
@@ -1549,21 +1582,33 @@ export default function App() {
     const targetLeagueId = user ? selectedLeagueId : guestLeagueId;
     if (!targetLeagueId) {
       // Not in any league, load blank predictions
-      setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
+      const blank = currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
+      setPredictions(blank);
+      dbPredictionsRef.current = blank;
       setChampionPrediction(null);
+      dbChampionPredictionRef.current = null;
       setScorerPrediction(null);
+      dbScorerPredictionRef.current = null;
       setBestPlayerPrediction(null);
+      dbBestPlayerPredictionRef.current = null;
       setBestGoalkeeperPrediction(null);
+      dbBestGoalkeeperPredictionRef.current = null;
       return;
     }
 
     const targetId = activeParticipantId || (user ? user.uid : null);
     if (!targetId) {
-      setPredictions(currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null })));
+      const blank = currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
+      setPredictions(blank);
+      dbPredictionsRef.current = blank;
       setChampionPrediction(null);
+      dbChampionPredictionRef.current = null;
       setScorerPrediction(null);
+      dbScorerPredictionRef.current = null;
       setBestPlayerPrediction(null);
+      dbBestPlayerPredictionRef.current = null;
       setBestGoalkeeperPrediction(null);
+      dbBestGoalkeeperPredictionRef.current = null;
       return;
     }
 
@@ -1577,44 +1622,56 @@ export default function App() {
         return found || { matchId: m.id, homeScore: null, awayScore: null };
       });
       setPredictions(fullPredictions);
+      dbPredictionsRef.current = fullPredictions;
 
       const champ = firestorePredictions.find(p => p.matchId === 'world_champion');
       const scorer = firestorePredictions.find(p => p.matchId === 'top_scorer');
       const bestPlayer = firestorePredictions.find(p => p.matchId === 'best_player');
       const bestGoalkeeper = firestorePredictions.find(p => p.matchId === 'best_goalkeeper');
 
-      setChampionPrediction(champ || {
+      const initialChamp = champ || {
         matchId: 'world_champion',
         homeScore: null,
         awayScore: null,
         championTeamId: null,
         championTeamName: null,
         championTeamFlag: null
-      });
-      setScorerPrediction(scorer || {
+      };
+      setChampionPrediction(initialChamp);
+      dbChampionPredictionRef.current = initialChamp;
+
+      const initialScorer = scorer || {
         matchId: 'top_scorer',
         homeScore: null,
         awayScore: null,
         scorerPlayerName: null,
         scorerTeamName: null,
         scorerTeamFlag: null
-      });
-      setBestPlayerPrediction(bestPlayer || {
+      };
+      setScorerPrediction(initialScorer);
+      dbScorerPredictionRef.current = initialScorer;
+
+      const initialBestPlayer = bestPlayer || {
         matchId: 'best_player',
         homeScore: null,
         awayScore: null,
         scorerPlayerName: null,
         scorerTeamName: null,
         scorerTeamFlag: null
-      });
-      setBestGoalkeeperPrediction(bestGoalkeeper || {
+      };
+      setBestPlayerPrediction(initialBestPlayer);
+      dbBestPlayerPredictionRef.current = initialBestPlayer;
+
+      const initialBestGoalkeeper = bestGoalkeeper || {
         matchId: 'best_goalkeeper',
         homeScore: null,
         awayScore: null,
         scorerPlayerName: null,
         scorerTeamName: null,
         scorerTeamFlag: null
-      });
+      };
+      setBestGoalkeeperPrediction(initialBestGoalkeeper);
+      dbBestGoalkeeperPredictionRef.current = initialBestGoalkeeper;
     }, (error) => {
       console.error('Error fetching predictions:', error);
     });
@@ -1955,24 +2012,25 @@ export default function App() {
     }
   };
 
-  const handleCancelNavigation = () => {
+  const handleKeepEditing = () => {
     setIsUnsavedChangesModalOpen(false);
     setPendingNavigation(null);
   };
 
-  const handleSaveAndNavigate = async () => {
-    try {
-      await handleSavePredictions();
-      if (pendingNavigation) {
-        pendingNavigation();
-      }
-    } catch (err) {
-      console.error("Error saving while navigating:", err);
-      toast.error("Error al guardar antes de salir");
-    } finally {
-      setIsUnsavedChangesModalOpen(false);
-      setPendingNavigation(null);
+  const handleDiscardAndNavigate = () => {
+    // Revert local state to the clean database backed up values
+    setPredictions(dbPredictionsRef.current);
+    setChampionPrediction(dbChampionPredictionRef.current);
+    setScorerPrediction(dbScorerPredictionRef.current);
+    setBestPlayerPrediction(dbBestPlayerPredictionRef.current);
+    setBestGoalkeeperPrediction(dbBestGoalkeeperPredictionRef.current);
+
+    setHasUnsavedChanges(false);
+    if (pendingNavigation) {
+      pendingNavigation();
     }
+    setIsUnsavedChangesModalOpen(false);
+    setPendingNavigation(null);
   };
 
   const handleAddParticipant = async () => {
@@ -2289,6 +2347,15 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     }
   }, [currentMatchday, predictionsEditMode]);
 
+  // Scroll to top of the viewport when changing matchdays
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    if (document.body) {
+      document.body.scrollTop = 0;
+    }
+  }, [viewingMatchday]);
+
   const allGroupStandings = useMemo(() => {
     return groups.map(group => {
       const groupTeams = currentTeams.filter(t => t.group === group);
@@ -2303,9 +2370,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   const getTimeUntilPhase = (day: number) => {
     if (day === 0) {
-      const firstMatch = currentMatches.find(m => m.matchday === 1);
-      if (!firstMatch) return "No disponible";
-      const earliestTime = new Date(firstMatch.date).getTime();
+      const targetMatch = currentMatches.find(m => m.matchday === 2) || currentMatches.find(m => m.matchday === 1);
+      if (!targetMatch) return "No disponible";
+      const earliestTime = new Date(targetMatch.date).getTime();
       const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
       const diffMs = earliestTime - nowTime;
       if (diffMs <= 0) return "Plazo Cerrado";
@@ -3641,12 +3708,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             setViewingMatchday(matchdays[currentIndex - 1]);
                           }
                         }}
-                        className="h-10 w-10 p-0 border-2 border-primary/80 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer"
+                        className="h-10 w-10 p-0 border-2 border-sky-500/80 bg-sky-500/10 text-sky-400 hover:bg-sky-600 hover:text-white shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer"
                       >
                         <ChevronLeft className="h-6 w-6" strokeWidth={3} />
                       </Button>
                       
-                      <span className="text-[10px] sm:text-[12px] font-black text-primary uppercase tracking-[0.2em] px-10 py-2 border-2 border-primary/40 bg-primary/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden rounded-md shadow-sm">
+                      <span className="text-[10px] sm:text-[12px] font-black text-sky-400 uppercase tracking-[0.2em] px-10 py-2 border-2 border-sky-500/40 bg-sky-500/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden rounded-md shadow-sm">
                         {getMatchdayLabel(viewingMatchday)}
                         {viewingMatchday === currentMatchday && (
                           <span className="absolute top-0 left-0 h-full flex items-center pl-4">
@@ -3664,8 +3731,22 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           if (currentIndex !== -1 && currentIndex < matchdays.length - 1) {
                             setViewingMatchday(matchdays[currentIndex + 1]);
                           }
+                          if (!hasClickedNextMatchday) {
+                            const newClicked = { ...clickedParticipants, [currentViewedId]: true };
+                            setClickedParticipants(newClicked);
+                            try {
+                              localStorage.setItem('wc_clicked_next_by_participant', JSON.stringify(newClicked));
+                            } catch (e) {
+                              console.error(e);
+                            }
+                          }
                         }}
-                        className="h-10 w-10 p-0 border-2 border-primary/80 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer"
+                        className={cn(
+                          "h-10 w-10 p-0 border-2 shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer",
+                          !hasClickedNextMatchday 
+                            ? "border-red-500 bg-transparent text-red-500 animate-pulse hover:bg-red-500/10" 
+                            : "border-2 border-sky-500/80 bg-sky-500/10 text-sky-400 hover:bg-sky-600 hover:text-white"
+                        )}
                       >
                         <ChevronRight className="h-6 w-6" strokeWidth={3} />
                       </Button>
@@ -3832,7 +3913,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                          Tiempo para iniciar fase: <span className="text-primary font-black text-[11px] ml-1">{getTimeUntilPhase(day)}</span>
+                          Cierre de fase: <span className="text-primary font-black text-[11px] ml-1">{getTimeUntilPhase(day)}</span>
                         </span>
                       </div>
                       {!predictionsReadOnly && (
@@ -4808,31 +4889,17 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   </p>
                 </div>
 
-                <div className="border border-border/40 p-4 bg-white/[0.01]">
+                <div className="border border-border/40 p-4 bg-white/[0.01] md:col-span-2">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-[#FFD700]">
-                      Campeón Mundial
+                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-400">
+                      Pronosticos Extras
                     </span>
-                    <span className="text-[12px] font-black uppercase tracking-wide text-[#FFD700] bg-[#FFD700]/10 px-2 py-0.5 border border-[#FFD700]/20">
+                    <span className="text-[12px] font-black uppercase tracking-wide text-amber-550 bg-amber-500/10 px-2 py-0.5 border border-amber-550/20 text-amber-400">
                       5 Puntos
                     </span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
-                    Se otorgan si tu predicción de Campeón coincide con el ganador final del torneo. Se acreditan automáticamente al término de la gran final.
-                  </p>
-                </div>
-
-                <div className="border border-border/40 p-4 bg-white/[0.01]">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-500">
-                      Máximo Goleador
-                    </span>
-                    <span className="text-[12px] font-black uppercase tracking-wide text-amber-500 bg-amber-500/10 px-2 py-0.5 border border-amber-500/25">
-                      5 Puntos
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
-                    Se otorgan si tu jugador seleccionado termina como el goleador oficial del torneo (incluye empates). Se acreditan al término de la gran final.
+                    Se otorgan 5 puntos por cada uno de tus pronósticos especiales que coincidan exactamente con la resolución oficial del torneo (Campeón del Torneo, Máximo Goleador, Mejor Jugador y Mejor Portero). Estos puntos se acreditan y se calculan automáticamente al término del torneo.
                   </p>
                 </div>
               </div>
@@ -5592,28 +5659,28 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             <div className="space-y-3">
               <h3 className="text-lg font-black uppercase tracking-tight text-red-500 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
-                ¿Guardar cambios pendientes?
+                ¿Descartar cambios pendientes?
               </h3>
               <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed">
-                No has guardado los cambios realizados en tu quiniela. Debes guardar los cambios realizados antes de salir o cancelar para seguir editando.
+                Tienes cambios sin guardar en tu quiniela. Elige "Omitir Cambios" para continuar navegando y descartar los cambios del formulario, o "Seguir Editando" para permanecer en la pantalla.
               </p>
             </div>
 
             <div className="flex items-center gap-3 pt-2">
               <Button
                 variant="outline"
-                onClick={handleCancelNavigation}
+                onClick={handleDiscardAndNavigate}
                 className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
                 id="btn-unsaved-changes-cancel"
               >
-                Cancelar
+                Omitir Cambios
               </Button>
               <Button
-                onClick={handleSaveAndNavigate}
+                onClick={handleKeepEditing}
                 className="flex-1 h-11 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md"
                 id="btn-unsaved-changes-save"
               >
-                Guardar
+                Seguir Editando
               </Button>
             </div>
           </motion.div>
