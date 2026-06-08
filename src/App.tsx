@@ -2323,6 +2323,15 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       : new Date(targetMatch.date) < new Date() || (targetMatch.status && !['SCHEDULED', 'TIMED'].includes(targetMatch.status));
   }, [currentMatches, isSimulationMode, simulatedDate]);
 
+  const isCensoredForActive = useMemo(() => {
+    if (!activeParticipantId) return false;
+    return !isApprovedAdmin && !unlockedParticipants[activeParticipantId];
+  }, [activeParticipantId, isApprovedAdmin, unlockedParticipants]);
+
+  const isJornada0Censored = useMemo(() => {
+    return isCensoredForActive && !isJornada0Locked;
+  }, [isCensoredForActive, isJornada0Locked]);
+
   const getMatchdayLabel = (day: number) => {
     if (day === 0) return 'PTS Extra';
     const comp = activeLeague?.competition || 'WC';
@@ -4115,37 +4124,44 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               </div>
 
                               <div className="space-y-4">
-                                <SearchSelector
-                                  placeholder="Buscar país..."
-                                  type="teams"
-                                  competition={activeLeague?.competition || 'WC'}
-                                  value={
-                                    championPrediction?.championTeamId ? {
-                                      id: championPrediction.championTeamId,
-                                      name: championPrediction.championTeamName || '',
-                                      flag: championPrediction.championTeamFlag || ''
-                                    } : null
-                                  }
-                                  disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
-                                  onChange={(val) => {
-                                    setChampionPrediction(val ? {
-                                      matchId: 'world_champion',
-                                      homeScore: null,
-                                      awayScore: null,
-                                      championTeamId: val.id,
-                                      championTeamName: val.name,
-                                      championTeamFlag: val.flag
-                                    } : {
-                                      matchId: 'world_champion',
-                                      homeScore: null,
-                                      awayScore: null,
-                                      championTeamId: null,
-                                      championTeamName: null,
-                                      championTeamFlag: null
-                                    });
-                                    setHasUnsavedChanges(true);
-                                  }}
-                                />
+                                {isJornada0Censored ? (
+                                  <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-xs font-black tracking-widest uppercase select-none w-full h-11 justify-center">
+                                    <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                    <span>Pronóstico Oculto</span>
+                                  </div>
+                                ) : (
+                                  <SearchSelector
+                                    placeholder="Buscar país..."
+                                    type="teams"
+                                    competition={activeLeague?.competition || 'WC'}
+                                    value={
+                                      championPrediction?.championTeamId ? {
+                                        id: championPrediction.championTeamId,
+                                        name: championPrediction.championTeamName || '',
+                                        flag: championPrediction.championTeamFlag || ''
+                                      } : null
+                                    }
+                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    onChange={(val) => {
+                                      setChampionPrediction(val ? {
+                                        matchId: 'world_champion',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        championTeamId: val.id,
+                                        championTeamName: val.name,
+                                        championTeamFlag: val.flag
+                                      } : {
+                                        matchId: 'world_champion',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        championTeamId: null,
+                                        championTeamName: null,
+                                        championTeamFlag: null
+                                      });
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  />
+                                )}
                               </div>
 
                               {isFinalFinished && (
@@ -4194,37 +4210,44 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               </div>
 
                               <div className="space-y-4">
-                                <SearchSelector
-                                  placeholder="Buscar jugador..."
-                                  type="players"
-                                  competition={activeLeague?.competition || 'WC'}
-                                  value={
-                                    scorerPrediction?.scorerPlayerName ? {
-                                      name: scorerPrediction.scorerPlayerName,
-                                      team: scorerPrediction.scorerTeamName || undefined,
-                                      flag: scorerPrediction.scorerTeamFlag || undefined
-                                    } : null
-                                  }
-                                  disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
-                                  onChange={(val) => {
-                                    setScorerPrediction(val ? {
-                                      matchId: 'top_scorer',
-                                      homeScore: null,
-                                      awayScore: null,
-                                      scorerPlayerName: val.name,
-                                      scorerTeamName: val.team,
-                                      scorerTeamFlag: val.flag
-                                    } : {
-                                      matchId: 'top_scorer',
-                                      homeScore: null,
-                                      awayScore: null,
-                                      scorerPlayerName: null,
-                                      scorerTeamName: null,
-                                      scorerTeamFlag: null
-                                    });
-                                    setHasUnsavedChanges(true);
-                                  }}
-                                />
+                                {isJornada0Censored ? (
+                                  <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-xs font-black tracking-widest uppercase select-none w-full h-11 justify-center">
+                                    <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                    <span>Pronóstico Oculto</span>
+                                  </div>
+                                ) : (
+                                  <SearchSelector
+                                    placeholder="Buscar jugador..."
+                                    type="players"
+                                    competition={activeLeague?.competition || 'WC'}
+                                    value={
+                                      scorerPrediction?.scorerPlayerName ? {
+                                        name: scorerPrediction.scorerPlayerName,
+                                        team: scorerPrediction.scorerTeamName || undefined,
+                                        flag: scorerPrediction.scorerTeamFlag || undefined
+                                      } : null
+                                    }
+                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    onChange={(val) => {
+                                      setScorerPrediction(val ? {
+                                        matchId: 'top_scorer',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        scorerPlayerName: val.name,
+                                        scorerTeamName: val.team,
+                                        scorerTeamFlag: val.flag
+                                      } : {
+                                        matchId: 'top_scorer',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        scorerPlayerName: null,
+                                        scorerTeamName: null,
+                                        scorerTeamFlag: null
+                                      });
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  />
+                                )}
                               </div>
 
                               {isFinalFinished && (
@@ -4282,37 +4305,44 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 </div>
 
                                 <div className="space-y-4">
-                                  <SearchSelector
-                                    placeholder="Buscar jugador..."
-                                    type="players"
-                                    competition={activeLeague?.competition || 'WC'}
-                                    value={
-                                      bestPlayerPrediction?.scorerPlayerName ? {
-                                        name: bestPlayerPrediction.scorerPlayerName,
-                                        team: bestPlayerPrediction.scorerTeamName || undefined,
-                                        flag: bestPlayerPrediction.scorerTeamFlag || undefined
-                                      } : null
-                                    }
-                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
-                                    onChange={(val) => {
-                                      setBestPlayerPrediction(val ? {
-                                        matchId: 'best_player',
-                                        homeScore: null,
-                                        awayScore: null,
-                                        scorerPlayerName: val.name,
-                                        scorerTeamName: val.team,
-                                        scorerTeamFlag: val.flag
-                                      } : {
-                                        matchId: 'best_player',
-                                        homeScore: null,
-                                        awayScore: null,
-                                        scorerPlayerName: null,
-                                        scorerTeamName: null,
-                                        scorerTeamFlag: null
-                                      });
-                                      setHasUnsavedChanges(true);
-                                    }}
-                                  />
+                                  {isJornada0Censored ? (
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-xs font-black tracking-widest uppercase select-none w-full h-11 justify-center">
+                                      <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                      <span>Pronóstico Oculto</span>
+                                    </div>
+                                  ) : (
+                                    <SearchSelector
+                                      placeholder="Buscar jugador..."
+                                      type="players"
+                                      competition={activeLeague?.competition || 'WC'}
+                                      value={
+                                        bestPlayerPrediction?.scorerPlayerName ? {
+                                          name: bestPlayerPrediction.scorerPlayerName,
+                                          team: bestPlayerPrediction.scorerTeamName || undefined,
+                                          flag: bestPlayerPrediction.scorerTeamFlag || undefined
+                                        } : null
+                                      }
+                                      disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                      onChange={(val) => {
+                                        setBestPlayerPrediction(val ? {
+                                          matchId: 'best_player',
+                                          homeScore: null,
+                                          awayScore: null,
+                                          scorerPlayerName: val.name,
+                                          scorerTeamName: val.team,
+                                          scorerTeamFlag: val.flag
+                                        } : {
+                                          matchId: 'best_player',
+                                          homeScore: null,
+                                          awayScore: null,
+                                          scorerPlayerName: null,
+                                          scorerTeamName: null,
+                                          scorerTeamFlag: null
+                                        });
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                    />
+                                  )}
                                 </div>
 
                                 {activeLeagueBestPlayerName && (
@@ -4364,37 +4394,44 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 </div>
 
                                 <div className="space-y-4">
-                                  <SearchSelector
-                                    placeholder="Buscar portero..."
-                                    type="players"
-                                    competition={activeLeague?.competition || 'WC'}
-                                    value={
-                                      bestGoalkeeperPrediction?.scorerPlayerName ? {
-                                        name: bestGoalkeeperPrediction.scorerPlayerName,
-                                        team: bestGoalkeeperPrediction.scorerTeamName || undefined,
-                                        flag: bestGoalkeeperPrediction.scorerTeamFlag || undefined
-                                      } : null
-                                    }
-                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
-                                    onChange={(val) => {
-                                      setBestGoalkeeperPrediction(val ? {
-                                        matchId: 'best_goalkeeper',
-                                        homeScore: null,
-                                        awayScore: null,
-                                        scorerPlayerName: val.name,
-                                        scorerTeamName: val.team,
-                                        scorerTeamFlag: val.flag
-                                      } : {
-                                        matchId: 'best_goalkeeper',
-                                        homeScore: null,
-                                        awayScore: null,
-                                        scorerPlayerName: null,
-                                        scorerTeamName: null,
-                                        scorerTeamFlag: null
-                                      });
-                                      setHasUnsavedChanges(true);
-                                    }}
-                                  />
+                                  {isJornada0Censored ? (
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-xs font-black tracking-widest uppercase select-none w-full h-11 justify-center">
+                                      <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                      <span>Pronóstico Oculto</span>
+                                    </div>
+                                  ) : (
+                                    <SearchSelector
+                                      placeholder="Buscar portero..."
+                                      type="players"
+                                      competition={activeLeague?.competition || 'WC'}
+                                      value={
+                                        bestGoalkeeperPrediction?.scorerPlayerName ? {
+                                          name: bestGoalkeeperPrediction.scorerPlayerName,
+                                          team: bestGoalkeeperPrediction.scorerTeamName || undefined,
+                                          flag: bestGoalkeeperPrediction.scorerTeamFlag || undefined
+                                        } : null
+                                      }
+                                      disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                      onChange={(val) => {
+                                        setBestGoalkeeperPrediction(val ? {
+                                          matchId: 'best_goalkeeper',
+                                          homeScore: null,
+                                          awayScore: null,
+                                          scorerPlayerName: val.name,
+                                          scorerTeamName: val.team,
+                                          scorerTeamFlag: val.flag
+                                        } : {
+                                          matchId: 'best_goalkeeper',
+                                          homeScore: null,
+                                          awayScore: null,
+                                          scorerPlayerName: null,
+                                          scorerTeamName: null,
+                                          scorerTeamFlag: null
+                                        });
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                    />
+                                  )}
                                 </div>
 
                                 {activeLeagueBestGoalkeeperName && (
@@ -4534,25 +4571,32 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
                                       {/* Score Inputs & Display of Prediction + Real Result */}
                                       <div className="flex flex-col items-center gap-2 shrink-0 min-w-[80px] sm:min-w-[120px]">
-                                        <div className="flex items-center gap-1 sm:gap-2">
-                                          <Input
-                                            type="number"
-                                            disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
-                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
-                                            value={prediction.homeScore ?? ''}
-                                            onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
-                                            placeholder="-"
-                                          />
-                                          <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
-                                          <Input
-                                            type="number"
-                                            disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
-                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
-                                            value={prediction.awayScore ?? ''}
-                                            onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
-                                            placeholder="-"
-                                          />
-                                        </div>
+                                        {isCensoredForActive && !isLocked ? (
+                                          <div className="flex items-center gap-1 sm:gap-1.5 px-2 py-1 h-8 sm:h-12 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-[10px] sm:text-xs font-semibold tracking-wider uppercase select-none w-full justify-center" title="Pronóstico oculto hasta el cierre de la jornada">
+                                            <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                            <span>Oculto</span>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-1 sm:gap-2">
+                                            <Input
+                                              type="number"
+                                              disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
+                                              className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
+                                              value={prediction.homeScore ?? ''}
+                                              onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
+                                              placeholder="-"
+                                            />
+                                            <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
+                                            <Input
+                                              type="number"
+                                              disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
+                                              className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
+                                              value={prediction.awayScore ?? ''}
+                                              onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
+                                              placeholder="-"
+                                            />
+                                          </div>
+                                        )}
 
                                         {shouldShowResult && (
                                           <div className="flex flex-col items-center gap-1">
