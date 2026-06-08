@@ -85,6 +85,76 @@ const getAvatarForUser = (name: string): string => {
   return AVATARS_LIST[index].url;
 };
 
+const TEAM_TRANSLATIONS: Record<string, string> = {
+  "Croatia": "Croacia",
+  "Germany": "Alemania",
+  "Spain": "España",
+  "France": "Francia",
+  "Brazil": "Brasil",
+  "Italy": "Italia",
+  "Japan": "Japón",
+  "Morocco": "Marruecos",
+  "Netherlands": "Países Bajos",
+  "Switzerland": "Suiza",
+  "Poland": "Polonia",
+  "Denmark": "Dinamarca",
+  "Belgium": "Bélgica",
+  "Portugal": "Portugal",
+  "Argentina": "Argentina",
+  "England": "Inglaterra",
+  "United States": "Estados Unidos",
+  "USA": "EE. UU.",
+  "Mexico": "México",
+  "Uruguay": "Uruguay",
+  "Saudi Arabia": "Arabia Saudita",
+  "Tunisia": "Túnez",
+  "Senegal": "Senegal",
+  "South Korea": "Corea del Sur",
+  "Ecuador": "Ecuador",
+  "Canada": "Canadá",
+  "Sweden": "Suecia",
+  "Czechia": "República Checa",
+  "Turkey": "Turquía",
+  "Colombia": "Colombia",
+  "Egypt": "Egipto",
+  "Norway": "Noruega",
+  "Scotland": "Escocia",
+  "Wales": "Gales",
+  "Iran": "Irán",
+  "Qatar": "Qatar",
+  "Australia": "Australia",
+  "Algeria": "Argelia",
+  "New Zealand": "Nueva Zelanda",
+  "South Africa": "Sudáfrica",
+  "Paraguay": "Paraguay",
+  "Ghana": "Ghana",
+  "Bosnia-Herzegovina": "Bosnia y Herzegovina",
+  "Panama": "Panamá",
+  "Cape Verde Islands": "Cabo Verde",
+  "Congo DR": "RD Congo",
+  "Ivory Coast": "Costa de Marfil",
+  "Jordan": "Jordania",
+  "Iraq": "Irak",
+  "Uzbekistan": "Uzbekistán",
+  "Austria": "Austria",
+  "Ukraine": "Ucrania",
+  "Slovakia": "Eslovaquia",
+  "Slovenia": "Eslovenia",
+  "Romania": "Rumania",
+  "Georgia": "Georgia",
+  "Albania": "Albania",
+  "Hungary": "Hungría",
+  "Serbia": "Serbia",
+  "Greece": "Grecia",
+  "Haiti": "Haití",
+  "Curaçao": "Curazao"
+};
+
+const translateTeamName = (name: string): string => {
+  if (!name) return name;
+  return TEAM_TRANSLATIONS[name] || TEAM_TRANSLATIONS[name.trim()] || name;
+};
+
 export default function App() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedDate, setSimulatedDate] = useState('2026-06-11T00:00:00Z');
@@ -167,9 +237,7 @@ export default function App() {
   const currentMatches = useMemo(() => {
     // Both modes now use 2026 data, but simulation uses local constants with mocked results
     const baseMatches = isSimulationMode ? MATCHES : (apiMatches.length > 0 ? apiMatches : MATCHES);
-    let processedMatches = baseMatches
-      .filter(m => m.group !== 'THIRD_PLACE' && (m as any).stage !== 'THIRD_PLACE' && (m as any).stage !== '3RD_PLACE')
-      .map(m => ({ ...m }));
+    let processedMatches = baseMatches.map(m => ({ ...m }));
     
     if (isSimulationMode) {
       // First, map simulated scores to make them actual results in simulator mode
@@ -298,20 +366,40 @@ export default function App() {
         m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
       });
 
-      // 5. Resolve Matchday 8 (FINAL)
+      // 5. Resolve Matchday 8 (FINAL and THIRD_PLACE)
       const finalMatches = processedMatches.filter(m => m.matchday === 8);
-      finalMatches.forEach((m, idx) => {
-        const matchA = semiMatches[idx * 2];
-        const matchB = semiMatches[idx * 2 + 1];
-        m.homeTeamId = ((matchA ? getWinnerId(matchA) : '') || null) as any;
-        m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
+      finalMatches.forEach((m) => {
+        const isThirdPlace = m.group === 'THIRD_PLACE' || m.id === 'm537389' || (m.group || '').toLowerCase().includes('tercer') || (m.group || '').toLowerCase().includes('third');
+        if (isThirdPlace) {
+          // Playoff for 3rd place: Losers from Semis
+          const matchA = semiMatches[0];
+          const matchB = semiMatches[1];
+          if (matchA && matchB) {
+            const winnerA = getWinnerId(matchA);
+            const winnerB = getWinnerId(matchB);
+            m.homeTeamId = (matchA.homeTeamId === winnerA ? matchA.awayTeamId : matchA.homeTeamId) as any;
+            m.awayTeamId = (matchB.homeTeamId === winnerB ? matchB.awayTeamId : matchB.homeTeamId) as any;
+          }
+        } else {
+          // Final: Winners from Semis
+          const matchA = semiMatches[0];
+          const matchB = semiMatches[1];
+          m.homeTeamId = ((matchA ? getWinnerId(matchA) : '') || null) as any;
+          m.awayTeamId = ((matchB ? getWinnerId(matchB) : '') || null) as any;
+        }
       });
     }
     
     return processedMatches.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [isSimulationMode, apiMatches, simulatedDate]);
 
-  const currentTeams = isSimulationMode ? TEAMS : (apiTeams.length > 0 ? apiTeams : TEAMS);
+  const currentTeams = useMemo(() => {
+    const raw = isSimulationMode ? TEAMS : (apiTeams.length > 0 ? apiTeams : TEAMS);
+    return raw.map(t => ({
+      ...t,
+      name: translateTeamName(t.name)
+    }));
+  }, [isSimulationMode, apiTeams]);
 
   const currentScorers = useMemo(() => {
     return isSimulationMode ? SCORERS_MOCK : apiScorers;
@@ -395,6 +483,8 @@ export default function App() {
     currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }))
   );
   const [championPrediction, setChampionPrediction] = useState<Prediction | null>(null);
+  const [runnerUpPrediction, setRunnerUpPrediction] = useState<Prediction | null>(null);
+  const [thirdPlacePrediction, setThirdPlacePrediction] = useState<Prediction | null>(null);
   const [scorerPrediction, setScorerPrediction] = useState<Prediction | null>(null);
   const [bestPlayerPrediction, setBestPlayerPrediction] = useState<Prediction | null>(null);
   const [bestGoalkeeperPrediction, setBestGoalkeeperPrediction] = useState<Prediction | null>(null);
@@ -402,6 +492,8 @@ export default function App() {
   // Backup references to safely revert to last clean database values on discard
   const dbPredictionsRef = useRef<Prediction[]>([]);
   const dbChampionPredictionRef = useRef<Prediction | null>(null);
+  const dbRunnerUpPredictionRef = useRef<Prediction | null>(null);
+  const dbThirdPlacePredictionRef = useRef<Prediction | null>(null);
   const dbScorerPredictionRef = useRef<Prediction | null>(null);
   const dbBestPlayerPredictionRef = useRef<Prediction | null>(null);
   const dbBestGoalkeeperPredictionRef = useRef<Prediction | null>(null);
@@ -581,6 +673,7 @@ export default function App() {
   const [pinModalTargetId, setPinModalTargetId] = useState<string | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [unlockedParticipants, setUnlockedParticipants] = useState<Record<string, boolean>>({});
+  const [isSaveWarningOpen, setIsSaveWarningOpen] = useState(false);
 
   // Code Editing for admin/user
   const [isEditingCode, setIsEditingCode] = useState(false);
@@ -611,11 +704,10 @@ export default function App() {
     }
   }, [activeTab, activeParticipantId]);
 
-  // Whenever the user goes into predictions viewing/editing mode (or adding a participant), default matchday to 'PTS Extra' (day 0)
+  // Whenever the user goes into predictions viewing/editing mode (or adding a participant), do NOT force-default to 'PTS Extra'.
+  // Let them start in Jornada 1 (or whatever current matchday is selected).
   useEffect(() => {
-    if (predictionsEditMode) {
-      setViewingMatchday(0);
-    }
+    // Left empty or removed to respect user's requested navigation order starting at Jornada 1
   }, [predictionsEditMode]);
 
   const [predictionsStats, setPredictionsStats] = useState<Record<string, { filled: number; total: number }>>({});
@@ -1386,7 +1478,7 @@ export default function App() {
       if (finalMatch.actualHomeScore !== null && finalMatch.actualAwayScore !== null) {
         if (finalMatch.actualHomeScore > finalMatch.actualAwayScore) {
           actualChampionId = finalMatch.homeTeamId || '';
-        } else if (finalMatch.actualAwayScore > finalMatch.actualAwayScore) {
+        } else if (finalMatch.actualAwayScore > finalMatch.actualHomeScore) {
           actualChampionId = finalMatch.awayTeamId || '';
         } else {
           // Deterministic tie-breaker
@@ -1395,6 +1487,43 @@ export default function App() {
             val += finalMatch.id.charCodeAt(i);
           }
           actualChampionId = (val % 2 === 0 ? finalMatch.homeTeamId : finalMatch.awayTeamId) || '';
+        }
+      }
+    }
+
+    let actualRunnerUpId = '';
+    if (isFinalFinished && finalMatch && actualChampionId) {
+      actualRunnerUpId = finalMatch.homeTeamId === actualChampionId
+        ? (finalMatch.awayTeamId || '')
+        : (finalMatch.homeTeamId || '');
+    }
+
+    const thirdPlaceMatch = currentMatches.find(m => 
+      (m.group || '').toLowerCase().includes('tercer') || 
+      (m.group || '').toLowerCase().includes('third') || 
+      m.id.endsWith('_m64') || 
+      m.id === 'm537389'
+    );
+    const isThirdFinished = thirdPlaceMatch ? (
+      isSimulationMode 
+        ? new Date(thirdPlaceMatch.date) < new Date(simulatedDate)
+        : (['FINISHED', 'FT', 'AWARDED'].includes(thirdPlaceMatch.status || '') || (apiMatches.length === 0 && new Date(thirdPlaceMatch.date) < new Date()))
+    ) : false;
+
+    let actualThirdPlaceId = '';
+    if (isThirdFinished && thirdPlaceMatch) {
+      if (thirdPlaceMatch.actualHomeScore !== null && thirdPlaceMatch.actualAwayScore !== null) {
+        if (thirdPlaceMatch.actualHomeScore > thirdPlaceMatch.actualAwayScore) {
+          actualThirdPlaceId = thirdPlaceMatch.homeTeamId || '';
+        } else if (thirdPlaceMatch.actualAwayScore > thirdPlaceMatch.actualHomeScore) {
+          actualThirdPlaceId = thirdPlaceMatch.awayTeamId || '';
+        } else {
+          // Deterministic tie-breaker
+          let val = 0;
+          for (let i = 0; i < thirdPlaceMatch.id.length; i++) {
+            val += thirdPlaceMatch.id.charCodeAt(i);
+          }
+          actualThirdPlaceId = (val % 2 === 0 ? thirdPlaceMatch.homeTeamId : thirdPlaceMatch.awayTeamId) || '';
         }
       }
     }
@@ -1414,6 +1543,12 @@ export default function App() {
     if (!allPredictions.some(p => p.matchId === 'world_champion') && championPrediction) {
       allPredictions.push(championPrediction);
     }
+    if (!allPredictions.some(p => p.matchId === 'runner_up') && runnerUpPrediction) {
+      allPredictions.push(runnerUpPrediction);
+    }
+    if (!allPredictions.some(p => p.matchId === 'third_place') && thirdPlacePrediction) {
+      allPredictions.push(thirdPlacePrediction);
+    }
     if (!allPredictions.some(p => p.matchId === 'top_scorer') && scorerPrediction) {
       allPredictions.push(scorerPrediction);
     }
@@ -1429,6 +1564,22 @@ export default function App() {
         if (actualChampionId && pred.championTeamId === actualChampionId) {
           totalPoints += 5; // +5 PTS extra
           extraPoints += 5;
+        }
+        return;
+      }
+
+      if (pred.matchId === 'runner_up') {
+        if (actualRunnerUpId && pred.championTeamId === actualRunnerUpId) {
+          totalPoints += 3; // +3 PTS extra
+          extraPoints += 3;
+        }
+        return;
+      }
+
+      if (pred.matchId === 'third_place') {
+        if (actualThirdPlaceId && pred.championTeamId === actualThirdPlaceId) {
+          totalPoints += 3; // +3 PTS extra
+          extraPoints += 3;
         }
         return;
       }
@@ -1625,6 +1776,10 @@ export default function App() {
       dbPredictionsRef.current = blank;
       setChampionPrediction(null);
       dbChampionPredictionRef.current = null;
+      setRunnerUpPrediction(null);
+      dbRunnerUpPredictionRef.current = null;
+      setThirdPlacePrediction(null);
+      dbThirdPlacePredictionRef.current = null;
       setScorerPrediction(null);
       dbScorerPredictionRef.current = null;
       setBestPlayerPrediction(null);
@@ -1641,6 +1796,10 @@ export default function App() {
       dbPredictionsRef.current = blank;
       setChampionPrediction(null);
       dbChampionPredictionRef.current = null;
+      setRunnerUpPrediction(null);
+      dbRunnerUpPredictionRef.current = null;
+      setThirdPlacePrediction(null);
+      dbThirdPlacePredictionRef.current = null;
       setScorerPrediction(null);
       dbScorerPredictionRef.current = null;
       setBestPlayerPrediction(null);
@@ -1663,6 +1822,8 @@ export default function App() {
       dbPredictionsRef.current = fullPredictions;
 
       const champ = firestorePredictions.find(p => p.matchId === 'world_champion');
+      const runnerUp = firestorePredictions.find(p => p.matchId === 'runner_up');
+      const thirdPlace = firestorePredictions.find(p => p.matchId === 'third_place');
       const scorer = firestorePredictions.find(p => p.matchId === 'top_scorer');
       const bestPlayer = firestorePredictions.find(p => p.matchId === 'best_player');
       const bestGoalkeeper = firestorePredictions.find(p => p.matchId === 'best_goalkeeper');
@@ -1677,6 +1838,28 @@ export default function App() {
       };
       setChampionPrediction(initialChamp);
       dbChampionPredictionRef.current = initialChamp;
+
+      const initialRunnerUp = runnerUp || {
+        matchId: 'runner_up',
+        homeScore: null,
+        awayScore: null,
+        championTeamId: null,
+        championTeamName: null,
+        championTeamFlag: null
+      };
+      setRunnerUpPrediction(initialRunnerUp);
+      dbRunnerUpPredictionRef.current = initialRunnerUp;
+
+      const initialThirdPlace = thirdPlace || {
+        matchId: 'third_place',
+        homeScore: null,
+        awayScore: null,
+        championTeamId: null,
+        championTeamName: null,
+        championTeamFlag: null
+      };
+      setThirdPlacePrediction(initialThirdPlace);
+      dbThirdPlacePredictionRef.current = initialThirdPlace;
 
       const initialScorer = scorer || {
         matchId: 'top_scorer',
@@ -1763,12 +1946,19 @@ export default function App() {
         const filledMatchesCount = predsList.filter(pred => 
           pred.matchId !== 'world_champion' && pred.matchId !== 'top_scorer' &&
           pred.matchId !== 'best_player' && pred.matchId !== 'best_goalkeeper' &&
+          pred.matchId !== 'runner_up' && pred.matchId !== 'third_place' &&
           pred.homeScore !== null && pred.homeScore !== undefined && 
           pred.awayScore !== null && pred.awayScore !== undefined
         ).length;
         
         const champPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'world_champion');
         const hasChampion = champPred && champPred.championTeamId !== null && champPred.championTeamId !== undefined;
+
+        const runnerUpPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'runner_up');
+        const hasRunnerUp = runnerUpPred && runnerUpPred.championTeamId !== null && runnerUpPred.championTeamId !== undefined;
+
+        const thirdPlacePred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'third_place');
+        const hasThirdPlace = thirdPlacePred && thirdPlacePred.championTeamId !== null && thirdPlacePred.championTeamId !== undefined;
         
         const scorerPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'top_scorer');
         const hasScorer = scorerPred && scorerPred.scorerPlayerName !== null && scorerPred.scorerPlayerName !== undefined && scorerPred.scorerPlayerName !== '';
@@ -1779,13 +1969,13 @@ export default function App() {
         const bestGoalkeeperPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'best_goalkeeper');
         const hasBestGoalkeeper = bestGoalkeeperPred && bestGoalkeeperPred.scorerPlayerName !== null && bestGoalkeeperPred.scorerPlayerName !== undefined && bestGoalkeeperPred.scorerPlayerName !== '';
 
-        const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasScorer ? 1 : 0) + (hasBestPlayer ? 1 : 0) + (hasBestGoalkeeper ? 1 : 0);
+        const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasRunnerUp ? 1 : 0) + (hasThirdPlace ? 1 : 0) + (hasScorer ? 1 : 0) + (hasBestPlayer ? 1 : 0) + (hasBestGoalkeeper ? 1 : 0);
         
         setPredictionsStats(prev => ({
           ...prev,
           [p.uid]: {
             filled: filledCount,
-            total: currentMatches.length + 4
+            total: currentMatches.length + 6
           }
         }));
 
@@ -1989,6 +2179,22 @@ export default function App() {
           }, { merge: true });
         }
 
+        if (runnerUpPrediction) {
+          const predictionRef = doc(db, 'users', targetId, 'predictions', 'runner_up');
+          batch.set(predictionRef, {
+            ...runnerUpPrediction,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+
+        if (thirdPlacePrediction) {
+          const predictionRef = doc(db, 'users', targetId, 'predictions', 'third_place');
+          batch.set(predictionRef, {
+            ...thirdPlacePrediction,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+
         if (scorerPrediction) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'top_scorer');
           batch.set(predictionRef, {
@@ -2028,6 +2234,8 @@ export default function App() {
       
       localStorage.setItem('wc_predictions', JSON.stringify(predictions));
       if (championPrediction) localStorage.setItem('wc_champion_prediction', JSON.stringify(championPrediction));
+      if (runnerUpPrediction) localStorage.setItem('wc_runner_up_prediction', JSON.stringify(runnerUpPrediction));
+      if (thirdPlacePrediction) localStorage.setItem('wc_third_place_prediction', JSON.stringify(thirdPlacePrediction));
       if (scorerPrediction) localStorage.setItem('wc_scorer_prediction', JSON.stringify(scorerPrediction));
       if (bestPlayerPrediction) localStorage.setItem('wc_best_player_prediction', JSON.stringify(bestPlayerPrediction));
       if (bestGoalkeeperPrediction) localStorage.setItem('wc_best_goalkeeper_prediction', JSON.stringify(bestGoalkeeperPrediction));
@@ -2059,6 +2267,8 @@ export default function App() {
     // Revert local state to the clean database backed up values
     setPredictions(dbPredictionsRef.current);
     setChampionPrediction(dbChampionPredictionRef.current);
+    setRunnerUpPrediction(dbRunnerUpPredictionRef.current);
+    setThirdPlacePrediction(dbThirdPlacePredictionRef.current);
     setScorerPrediction(dbScorerPredictionRef.current);
     setBestPlayerPrediction(dbBestPlayerPredictionRef.current);
     setBestGoalkeeperPrediction(dbBestGoalkeeperPredictionRef.current);
@@ -2177,6 +2387,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       setIsPinModalOpen(false);
       setPinInput('');
       toast.success("¡Acceso concedido! Ahora puedes editar tus pronósticos.");
+      
+      const hasSeenSaveWarn = localStorage.getItem(`has_seen_save_warn_${pinModalTargetId}`);
+      if (!hasSeenSaveWarn) {
+        setIsSaveWarningOpen(true);
+      }
     } else {
       toast.error("Clave de 5 dígitos incorrecta. Solicita tu clave al administrador.");
     }
@@ -2312,16 +2527,22 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   const matchdays = useMemo(() => {
     const days = Array.from(new Set<number>(currentMatches.map(m => m.matchday || 1))).sort((a, b) => a - b);
-    return [0, ...days];
-  }, [currentMatches]);
+    const comp = activeLeague?.competition || 'WC';
+    const splitIndex = comp === 'CL' ? 9 : 4; // knockout stage or playoff begins
+    const before = days.filter(d => d < splitIndex);
+    const after = days.filter(d => d >= splitIndex);
+    return [...before, 0, ...after];
+  }, [currentMatches, activeLeague?.competition]);
 
   const isJornada0Locked = useMemo(() => {
-    const targetMatch = currentMatches.find(m => m.matchday === 2) || currentMatches.find(m => m.matchday === 1);
+    const comp = activeLeague?.competition || 'WC';
+    const targetMatchday = comp === 'CL' ? 9 : 4;
+    const targetMatch = currentMatches.find(m => m.matchday === targetMatchday) || currentMatches.find(m => m.matchday === 1);
     if (!targetMatch) return false;
     return isSimulationMode
       ? new Date(targetMatch.date) < new Date(simulatedDate)
       : new Date(targetMatch.date) < new Date() || (targetMatch.status && !['SCHEDULED', 'TIMED'].includes(targetMatch.status));
-  }, [currentMatches, isSimulationMode, simulatedDate]);
+  }, [currentMatches, isSimulationMode, simulatedDate, activeLeague?.competition]);
 
   const isCensoredForActive = useMemo(() => {
     if (!activeParticipantId) return false;
@@ -2370,7 +2591,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       'FINAL': 'Gran Final',
       'LAST_32': 'Dieciseisavos de Final',
       'LAST_16': 'Octavos de Final',
-      'KNOCKOUT_STAGE_PLAY_OFFS': 'Play-offs'
+      'KNOCKOUT_STAGE_PLAY_OFFS': 'Play-offs',
+      'THIRD_PLACE': 'Partido por el Tercer Lugar',
+      'Tercer Lugar': 'Partido por el Tercer Lugar'
     };
     return translations[groupName] || groupName;
   };
@@ -2417,7 +2640,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   const getTimeUntilPhase = (day: number) => {
     if (day === 0) {
-      const targetMatch = currentMatches.find(m => m.matchday === 2) || currentMatches.find(m => m.matchday === 1);
+      const comp = activeLeague?.competition || 'WC';
+      const targetMatchday = comp === 'CL' ? 9 : 4;
+      const targetMatch = currentMatches.find(m => m.matchday === targetMatchday) || currentMatches.find(m => m.matchday === 1);
       if (!targetMatch) return "No disponible";
       const earliestTime = new Date(targetMatch.date).getTime();
       const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
@@ -4034,7 +4259,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                          Cierre de fase: <span className="text-primary font-black text-[11px] ml-1">{getTimeUntilPhase(day)}</span>
+                          Cierre de fase: <span className={`text-primary font-black text-[11px] ml-1 ${day === currentMatchday ? "animate-pulse" : ""}`}>{getTimeUntilPhase(day)}</span>
                         </span>
                       </div>
                       {!predictionsReadOnly && (
@@ -4073,7 +4298,45 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         }
                       }
 
+                      let actualRunnerUpId = '';
+                      if (isFinalFinished && finalMatch && actualChampionId) {
+                        actualRunnerUpId = finalMatch.homeTeamId === actualChampionId
+                          ? (finalMatch.awayTeamId || '')
+                          : (finalMatch.homeTeamId || '');
+                      }
+
+                      const thirdPlaceMatch = currentMatches.find(m => 
+                        (m.group || '').toLowerCase().includes('tercer') || 
+                        (m.group || '').toLowerCase().includes('third') || 
+                        m.id.endsWith('_m64') || 
+                        m.id === 'm537389'
+                      );
+                      const isThirdFinished = thirdPlaceMatch ? (
+                        isSimulationMode 
+                          ? new Date(thirdPlaceMatch.date) < new Date(simulatedDate)
+                          : (['FINISHED', 'FT', 'AWARDED'].includes(thirdPlaceMatch.status || '') || (apiMatches.length === 0 && new Date(thirdPlaceMatch.date) < new Date()))
+                      ) : false;
+
+                      let actualThirdPlaceId = '';
+                      if (isThirdFinished && thirdPlaceMatch) {
+                        if (thirdPlaceMatch.actualHomeScore !== null && thirdPlaceMatch.actualAwayScore !== null) {
+                          if (thirdPlaceMatch.actualHomeScore > thirdPlaceMatch.actualAwayScore) {
+                            actualThirdPlaceId = thirdPlaceMatch.homeTeamId || '';
+                          } else if (thirdPlaceMatch.actualAwayScore > thirdPlaceMatch.actualHomeScore) {
+                            actualThirdPlaceId = thirdPlaceMatch.awayTeamId || '';
+                          } else {
+                            let val = 0;
+                            for (let i = 0; i < thirdPlaceMatch.id.length; i++) {
+                              val += thirdPlaceMatch.id.charCodeAt(i);
+                            }
+                            actualThirdPlaceId = (val % 2 === 0 ? thirdPlaceMatch.homeTeamId : thirdPlaceMatch.awayTeamId) || '';
+                          }
+                        }
+                      }
+
                       const champTeam = actualChampionId ? currentTeams.find(t => t.id === actualChampionId) : null;
+                      const runnerUpTeam = actualRunnerUpId ? currentTeams.find(t => t.id === actualRunnerUpId) : null;
+                      const thirdPlaceTeam = actualThirdPlaceId ? currentTeams.find(t => t.id === actualThirdPlaceId) : null;
 
                       let actualTopScorers: string[] = [];
                       if (isFinalFinished && currentScorers && currentScorers.length > 0) {
@@ -4097,6 +4360,8 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       const activeLeagueBestGoalkeeperName = currentCompConfig?.actualBestGoalkeeperName;
 
                       const userMatchedChampion = championPrediction?.championTeamId && (championPrediction.championTeamId === actualChampionId);
+                      const userMatchedRunnerUp = runnerUpPrediction?.championTeamId && (runnerUpPrediction.championTeamId === actualRunnerUpId);
+                      const userMatchedThirdPlace = thirdPlacePrediction?.championTeamId && (thirdPlacePrediction.championTeamId === actualThirdPlaceId);
                       const userMatchedScorer = scorerPrediction?.scorerPlayerName && actualTopScorers.includes(scorerPrediction.scorerPlayerName.toLowerCase().trim());
                       const userMatchedBestPlayer = bestPlayerPrediction?.scorerPlayerName && 
                         activeLeagueBestPlayerName && 
@@ -4186,6 +4451,178 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                         <span className="text-xl">{champTeam.flag}</span>
                                       )}
                                       <span className="text-xs font-black uppercase text-white">{champTeam.name}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs font-black text-muted-foreground uppercase">Por definir</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Subcampeón Mundial (2do Lugar) Box */}
+                            <div className="bg-card border border-border overflow-visible rounded-none relative p-6 space-y-6 z-10 focus-within:z-20">
+                              <div className="absolute top-0 left-0 w-1.5 h-full bg-[#C0C0C0]" />
+                              <div className="flex items-center gap-3">
+                                <Trophy className="w-5 h-5 text-[#C0C0C0]" />
+                                <div>
+                                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                    Pronóstico Subcampeón (2do Lugar)
+                                  </h3>
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                                    ¿Quién quedará en segundo lugar del torneo?
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4">
+                                {isJornada0Censored ? (
+                                  <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-xs font-black tracking-widest uppercase select-none w-full h-11 justify-center">
+                                    <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                    <span>Pronóstico Oculto</span>
+                                  </div>
+                                ) : (
+                                  <SearchSelector
+                                    placeholder="Buscar país..."
+                                    type="teams"
+                                    competition={activeLeague?.competition || 'WC'}
+                                    value={
+                                      runnerUpPrediction?.championTeamId ? {
+                                        id: runnerUpPrediction.championTeamId,
+                                        name: runnerUpPrediction.championTeamName || '',
+                                        flag: runnerUpPrediction.championTeamFlag || ''
+                                      } : null
+                                    }
+                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    onChange={(val) => {
+                                      setRunnerUpPrediction(val ? {
+                                        matchId: 'runner_up',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        championTeamId: val.id,
+                                        championTeamName: val.name,
+                                        championTeamFlag: val.flag
+                                      } : {
+                                        matchId: 'runner_up',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        championTeamId: null,
+                                        championTeamName: null,
+                                        championTeamFlag: null
+                                      });
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  />
+                                )}
+                              </div>
+
+                              {isFinalFinished && (
+                                <div className="mt-4 p-4 border rounded-none bg-primary/10 border-primary/20 space-y-2 text-left animate-in fade-in">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase text-muted-foreground/80 tracking-wider">Subcampeón Oficial:</span>
+                                    {userMatchedRunnerUp ? (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-lime/10 border-lime/20 text-lime">
+                                        +3 PTS (ACERTADO)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-red-500/5 border-red-500/15 text-red-400/80">
+                                        0 PTS
+                                      </span>
+                                    )}
+                                  </div>
+                                  {runnerUpTeam ? (
+                                    <div className="flex items-center gap-2">
+                                      {runnerUpTeam.flag?.startsWith('http') ? (
+                                        <img src={runnerUpTeam.flag} alt="" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <span className="text-xl">{runnerUpTeam.flag}</span>
+                                      )}
+                                      <span className="text-xs font-black uppercase text-white">{runnerUpTeam.name}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs font-black text-muted-foreground uppercase">Por definir</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Tercer Lugar Box */}
+                            <div className="bg-card border border-border overflow-visible rounded-none relative p-6 space-y-6 z-10 focus-within:z-20">
+                              <div className="absolute top-0 left-0 w-1.5 h-full bg-[#CD7F32]" />
+                              <div className="flex items-center gap-3">
+                                <Trophy className="w-5 h-5 text-[#CD7F32]" />
+                                <div>
+                                  <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                    Pronóstico Tercer Lugar
+                                  </h3>
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                                    ¿Quién quedará en tercer lugar del torneo?
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4">
+                                {isJornada0Censored ? (
+                                  <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900/40 border border-dashed border-border text-muted-foreground/60 rounded-none text-xs font-black tracking-widest uppercase select-none w-full h-11 justify-center">
+                                    <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                                    <span>Pronóstico Oculto</span>
+                                  </div>
+                                ) : (
+                                  <SearchSelector
+                                    placeholder="Buscar país..."
+                                    type="teams"
+                                    competition={activeLeague?.competition || 'WC'}
+                                    value={
+                                      thirdPlacePrediction?.championTeamId ? {
+                                        id: thirdPlacePrediction.championTeamId,
+                                        name: thirdPlacePrediction.championTeamName || '',
+                                        flag: thirdPlacePrediction.championTeamFlag || ''
+                                      } : null
+                                    }
+                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    onChange={(val) => {
+                                      setThirdPlacePrediction(val ? {
+                                        matchId: 'third_place',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        championTeamId: val.id,
+                                        championTeamName: val.name,
+                                        championTeamFlag: val.flag
+                                      } : {
+                                        matchId: 'third_place',
+                                        homeScore: null,
+                                        awayScore: null,
+                                        championTeamId: null,
+                                        championTeamName: null,
+                                        championTeamFlag: null
+                                      });
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                  />
+                                )}
+                              </div>
+
+                              {isThirdFinished && (
+                                <div className="mt-4 p-4 border rounded-none bg-primary/10 border-primary/20 space-y-2 text-left animate-in fade-in">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase text-muted-foreground/80 tracking-wider">Tercer Lugar Oficial:</span>
+                                    {userMatchedThirdPlace ? (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-lime/10 border-lime/20 text-lime">
+                                        +3 PTS (ACERTADO)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-black px-2 py-0.5 rounded-none border uppercase tracking-wider bg-red-500/5 border-red-500/15 text-red-400/80">
+                                        0 PTS
+                                      </span>
+                                    )}
+                                  </div>
+                                  {thirdPlaceTeam ? (
+                                    <div className="flex items-center gap-2">
+                                      {thirdPlaceTeam.flag?.startsWith('http') ? (
+                                        <img src={thirdPlaceTeam.flag} alt="" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <span className="text-xl">{thirdPlaceTeam.flag}</span>
+                                      )}
+                                      <span className="text-xs font-black uppercase text-white">{thirdPlaceTeam.name}</span>
                                     </div>
                                   ) : (
                                     <span className="text-xs font-black text-muted-foreground uppercase">Por definir</span>
@@ -5051,11 +5488,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       Pronosticos Extras
                     </span>
                     <span className="text-[12px] font-black uppercase tracking-wide text-amber-550 bg-amber-500/10 px-2 py-0.5 border border-amber-550/20 text-amber-400">
-                      5 Puntos
+                      3 y 5 Puntos
                     </span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
-                    Se otorgan 5 puntos por cada uno de tus pronósticos especiales que coincidan exactamente con la resolución oficial del torneo (Campeón del Torneo, Máximo Goleador, Mejor Jugador y Mejor Portero). Estos puntos se acreditan y se calculan automáticamente al término del torneo.
+                    Se otorgan 5 puntos por Campeón, Goleador, Mejor Jugador y Mejor Portero. Se otorgan 3 puntos por Subcampeón (2do lugar) y Tercer Lugar (3er lugar). Estos puntos se acreditan y se calculan automáticamente al término del torneo.
                   </p>
                 </div>
               </div>
@@ -5628,7 +6065,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     <div className="flex flex-col items-center gap-4 mt-[90px]">
                       <Trophy className="w-12 h-12 text-primary animate-bounce mb-4" />
                       {(() => {
-                        const finalMatches = currentMatches.filter(m => m.matchday === 8);
+                        const finalMatches = currentMatches.filter(m => {
+                          const isThirdPlace = m.group === 'THIRD_PLACE' || m.id === 'm537389' || (m.group || '').toLowerCase().includes('tercer') || (m.group || '').toLowerCase().includes('third');
+                          return m.matchday === 8 && !isThirdPlace;
+                        });
                         
                         return finalMatches.map(m => {
                           const home = currentTeams.find(t => t.id === m.homeTeamId);
@@ -6052,6 +6492,49 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none cursor-pointer"
               >
                 Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Save Warning Modal for First-time PIN Login */}
+    <AnimatePresence>
+      {isSaveWarningOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-amber-500/55 p-6 sm:p-8 max-w-md w-full rounded-none space-y-6 shadow-2xl relative z-50 text-left"
+          >
+            <div className="space-y-3">
+              <h3 className="text-md sm:text-lg font-black uppercase tracking-tight text-amber-500 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 animate-pulse" /> ¡INFORMACIÓN IMPORTANTE!
+              </h3>
+              <p className="text-[11px] text-white uppercase font-black tracking-widest leading-relaxed">
+                LOS CAMBIOS <span className="text-amber-400 font-bold">NO SE GUARDAN</span> AUTOMÁTICAMENTE
+              </p>
+              <p className="text-[11px] text-muted-foreground uppercase font-black tracking-widest leading-normal">
+                Cada vez que modifiques marcadores o pronósticos rápidos, recuerda presionar el botón <span className="text-white">"GUARDAR"</span>.
+              </p>
+              <p className="text-[10px] text-primary/70 uppercase font-black tracking-widest leading-relaxed">
+                Si sales de la página o cambias de pestaña sin guardar, perderás tus últimos cambios.
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <Button
+                onClick={() => {
+                  if (activeParticipantId) {
+                    localStorage.setItem(`has_seen_save_warn_${activeParticipantId}`, 'true');
+                  }
+                  setIsSaveWarningOpen(false);
+                }}
+                className="w-full h-11 bg-amber-500 hover:bg-amber-600 text-black text-[10px] font-black uppercase tracking-widest rounded-none shadow-md cursor-pointer"
+              >
+                ENTENDIDO, GUARDARÉ MIS CAMBIOS
               </Button>
             </div>
           </motion.div>
