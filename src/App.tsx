@@ -97,6 +97,41 @@ export default function App() {
   const [guestLeagueId, setGuestLeagueId] = useState<string | null>(() => localStorage.getItem('guest_league_id'));
   const [guestLeague, setGuestLeague] = useState<League | null>(null);
 
+  interface RecentLeague {
+    id: string;
+    name: string;
+    accessedAt: number;
+  }
+
+  const [recentLeagues, setRecentLeagues] = useState<RecentLeague[]>(() => {
+    try {
+      const list = localStorage.getItem('recent_quinielas');
+      return list ? JSON.parse(list) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const addToRecentLeagues = (id: string, name: string) => {
+    setRecentLeagues(prev => {
+      const filtered = prev.filter(item => item.id !== id);
+      const updated = [
+        { id, name, accessedAt: Date.now() },
+        ...filtered
+      ].slice(0, 5);
+      localStorage.setItem('recent_quinielas', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const removeFromRecentLeagues = (id: string) => {
+    setRecentLeagues(prev => {
+      const updated = prev.filter(item => item.id !== id);
+      localStorage.setItem('recent_quinielas', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const [apiTeams, setApiTeams] = useState<Team[]>([]);
   const [apiMatches, setApiMatches] = useState<Match[]>([]);
   const [apiStandings, setApiStandings] = useState<any[]>([]);
@@ -482,7 +517,9 @@ export default function App() {
           const docRef = doc(db, 'leagues', guestLeagueId);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            setGuestLeague({ id: docSnap.id, ...docSnap.data() } as League);
+            const leagueData = { id: docSnap.id, ...docSnap.data() } as League;
+            setGuestLeague(leagueData);
+            addToRecentLeagues(leagueData.id, leagueData.name);
           } else {
             console.error("League not found");
             setGuestLeague(null);
@@ -839,7 +876,7 @@ export default function App() {
   const [guestInputCode, setGuestInputCode] = useState('');
 
   const handleJoinAsGuest = async () => {
-    const code = guestInputCode.trim();
+    const code = guestInputCode.trim().toUpperCase();
     if (!code) {
       toast.error('Por favor ingresa un código de quiniela');
       return;
@@ -855,6 +892,7 @@ export default function App() {
         setGuestLeague(leagueData);
         setGuestLeagueId(code);
         localStorage.setItem('guest_league_id', code);
+        addToRecentLeagues(code, leagueData.name);
         toast.success(`Quiniela "${leagueData.name}" cargada correctamente`);
       } else {
         toast.error('No se encontró ninguna quiniela con este código');
@@ -2734,36 +2772,110 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
         {!user && !guestLeagueId ? (
            <div className="py-20 text-center space-y-12 max-w-lg mx-auto">
-              <div className="inline-flex p-4 bg-primary/10 border border-primary/30 rounded-full mb-4 animate-bounce">
-                <Trophy className="w-12 h-12 text-primary" />
-              </div>
-              <div className="space-y-4">
-                <h2 className="text-3xl font-black uppercase tracking-tight">Ingresa el Código de tu Quiniela</h2>
-                <p className="text-muted-foreground uppercase text-[11px] font-bold tracking-widest leading-relaxed">
-                  Coloca el código provisto por tu Administrador para ingresar a ver tu ranking, clasificaciones, resultados en vivo y predicciones.
+              {recentLeagues.length > 0 ? (
+                // Layout with Recent Leagues First
+                <div className="space-y-8">
+                  <div className="inline-flex p-3.5 bg-primary/10 border border-primary/30 rounded-full mb-1 animate-pulse">
+                    <Trophy className="w-10 h-10 text-primary" />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <h2 className="text-2xl font-black uppercase tracking-tight text-center text-primary">Mis Quinielas</h2>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground text-center mb-6">
+                      Selecciona una de tus quinielas recientes para ingresar
+                    </p>
+                    
+                    <div className="flex flex-col gap-2.5 max-w-sm mx-auto text-left">
+                      {recentLeagues.map((league) => (
+                        <div key={league.id} className="flex items-center justify-between bg-zinc-950/40 border-2 border-zinc-700 hover:border-sky-500 p-2.5 pl-4 transition-all group animate-fade-in shadow-md">
+                          <button
+                            onClick={() => {
+                              setGuestLeagueId(league.id);
+                              localStorage.setItem('guest_league_id', league.id);
+                              toast.success(`Cargando quiniela: ${league.name}`);
+                            }}
+                            className="flex-1 text-left flex items-baseline justify-between pr-3 cursor-pointer min-w-0"
+                          >
+                            <span className="text-[15px] sm:text-[16px] font-black text-foreground group-hover:text-sky-450 transition-colors uppercase truncate mr-2">
+                              {league.name}
+                            </span>
+                            <span className="text-[15px] sm:text-[16px] text-sky-400 group-hover:text-sky-350 font-mono shrink-0 font-bold tracking-wider">
+                              {league.id}
+                            </span>
+                          </button>
+                          
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-red-400 hover:bg-white/5 rounded-none cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFromRecentLeagues(league.id);
+                            }}
+                            title="Eliminar de recientes"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Smaller, less important visual code entry section */}
+                  <div className="pt-8 border-t border-border/40 mt-8 space-y-4">
+                    <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-muted-foreground text-center">
+                      ¿Quieres ingresar a otra quiniela?
+                    </h3>
+                    
+                    <div className="flex gap-2 max-w-sm mx-auto mt-2">
+                      <Input
+                        type="text"
+                        placeholder="INGRESA CÓDIGO"
+                        value={guestInputCode}
+                        onChange={(e) => setGuestInputCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
+                        className="h-11 text-center text-xs font-black tracking-widest uppercase rounded-none border-border bg-black/10"
+                      />
+                      <Button onClick={handleJoinAsGuest} className="h-11 text-[11px] font-black uppercase tracking-widest px-6 bg-sky-600 hover:bg-sky-700 text-white shadow-md">
+                        Ingresar
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Original Layout (No Recent Leagues Map)
+                <div className="space-y-8">
+                  <div className="inline-flex p-4 bg-primary/10 border border-primary/30 rounded-full mb-4 animate-bounce">
+                    <Trophy className="w-12 h-12 text-primary" />
+                  </div>
+                  <div className="space-y-4">
+                    <h2 className="text-3xl font-black uppercase tracking-tight">Ingresa el Código de tu Quiniela</h2>
+                    <p className="text-muted-foreground uppercase text-[11px] font-bold tracking-widest leading-relaxed">
+                      Coloca el código provisto por tu Administrador para ingresar a ver tu ranking, clasificaciones, resultados en vivo y predicciones.
+                    </p>
+                    
+                    <div className="flex gap-2 mt-8">
+                      <Input
+                        type="text"
+                        placeholder="INGRESA CÓDIGO"
+                        value={guestInputCode}
+                        onChange={(e) => setGuestInputCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
+                        className="h-12 text-center text-sm font-black tracking-widest uppercase rounded-none border-border"
+                      />
+                      <Button onClick={handleJoinAsGuest} className="h-12 text-xs font-black uppercase tracking-widest px-8">
+                        Ingresar
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+                
+              <div className="pt-8 border-t border-border mt-12 flex flex-col items-center gap-4">
+                <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
+                  ¿Eres el organizador o administrador de la liga?
                 </p>
-                
-                <div className="flex gap-2 mt-8">
-                  <Input
-                    type="text"
-                    placeholder="INGRESA CÓDIGO"
-                    value={guestInputCode}
-                    onChange={(e) => setGuestInputCode(e.target.value.trim())}
-                    className="h-12 text-center text-sm font-black tracking-widest uppercase rounded-none border-border"
-                  />
-                  <Button onClick={handleJoinAsGuest} className="h-12 text-xs font-black uppercase tracking-widest px-8">
-                    Ingresar
-                  </Button>
-                </div>
-                
-                <div className="pt-8 border-t border-border mt-12 flex flex-col items-center gap-4">
-                  <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
-                    ¿Eres el organizador o administrador de la liga?
-                  </p>
-                  <Button onClick={handleLogin} variant="outline" size="sm" className="text-[9px] font-black uppercase tracking-widest h-9 border-primary/30 text-primary hover:bg-primary/10">
-                    Iniciar Sesión como Administrador
-                  </Button>
-                </div>
+                <Button onClick={handleLogin} variant="outline" size="sm" className="text-[9px] font-black uppercase tracking-widest h-9 border-primary/30 text-primary hover:bg-primary/10">
+                  Iniciar Sesión como Administrador
+                </Button>
               </div>
            </div>
         ) : !activeLeagueId ? (
@@ -3422,7 +3534,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             className="h-12 px-10 text-[10px] font-black uppercase tracking-widest bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg shadow-primary/20 flex items-center gap-2"
                           >
                             <Save className="w-4 h-4" />
-                            {isSavingExtraPoints ? 'GUARDANDO...' : 'GUARDAR CONFIGURACIÓN DE PUNTOS'}
+                            {isSavingExtraPoints ? 'GUARDANDO...' : 'GUARDAR'}
                           </Button>
                         </div>
                       </div>
@@ -3744,7 +3856,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         className={cn(
                           "h-10 w-10 p-0 border-2 shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer",
                           !hasClickedNextMatchday 
-                            ? "border-red-500 bg-transparent text-red-500 animate-pulse hover:bg-red-500/10" 
+                            ? "border-sky-500 bg-transparent text-sky-400 animate-pulse hover:bg-sky-500/10" 
                             : "border-2 border-sky-500/80 bg-sky-500/10 text-sky-400 hover:bg-sky-600 hover:text-white"
                         )}
                       >
