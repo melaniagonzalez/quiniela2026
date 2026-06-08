@@ -2833,7 +2833,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         placeholder="INGRESA CÓDIGO"
                         value={guestInputCode}
                         onChange={(e) => setGuestInputCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
-                        className="h-11 text-center text-xs font-black tracking-widest uppercase rounded-none border-border bg-black/10"
+                        className="h-11 text-center text-[16px] md:text-xs font-black tracking-widest uppercase rounded-none border-border bg-black/10"
                       />
                       <Button onClick={handleJoinAsGuest} className="h-11 text-[11px] font-black uppercase tracking-widest px-6 bg-sky-600 hover:bg-sky-700 text-white shadow-md">
                         Ingresar
@@ -2859,7 +2859,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         placeholder="INGRESA CÓDIGO"
                         value={guestInputCode}
                         onChange={(e) => setGuestInputCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
-                        className="h-12 text-center text-sm font-black tracking-widest uppercase rounded-none border-border"
+                        className="h-12 text-center text-[16px] md:text-sm font-black tracking-widest uppercase rounded-none border-border"
                       />
                       <Button onClick={handleJoinAsGuest} className="h-12 text-xs font-black uppercase tracking-widest px-8">
                         Ingresar
@@ -2987,7 +2987,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               onChange={(e) => setAdminFormEmail(e.target.value)}
                               disabled={true}
                               required
-                              className="bg-background border-border text-xs rounded-none h-10 uppercase font-bold opacity-65"
+                              className="bg-background border-border text-[16px] md:text-xs rounded-none h-10 uppercase font-bold opacity-65"
                             />
                           </div>
                           
@@ -2997,7 +2997,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               value={adminFormRole}
                               onChange={(e) => setAdminFormRole(e.target.value as any)}
                               disabled={isSavingAdmin || adminFormEmail.toLowerCase() === 'melaniagonzalez@gmail.com'}
-                              className="w-full bg-background border border-border h-10 px-3 text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none rounded-none uppercase font-bold"
+                              className="w-full bg-background border border-border h-10 px-3 text-[16px] md:text-xs text-foreground focus:ring-1 focus:ring-primary focus:outline-none rounded-none uppercase font-bold"
                             >
                               <option value="admin">Administrador Regular (Admin)</option>
                               {isSuperAdmin && (
@@ -3016,7 +3016,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               onChange={(e) => setAdminFormMaxLeagues(Number(e.target.value))}
                               disabled={isSavingAdmin}
                               required
-                              className="bg-background border-border text-xs rounded-none h-10 font-bold"
+                              className="bg-background border-border text-[16px] md:text-xs rounded-none h-10 font-bold"
                             />
                           </div>
 
@@ -3708,7 +3708,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   onClick={() => handleProtectedAction(handleGoBack)}
                   className="h-10 w-10 p-0 border-2 border-primary/50 text-primary bg-primary/10 hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all flex items-center justify-center shadow-md scale-105"
                 >
-                  <ChevronLeft className="w-7 h-7" strokeWidth={3.5} />
+                  <ChevronLeft className="size-7" strokeWidth={3.5} />
                 </Button>
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
@@ -3727,13 +3727,13 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     </button>
                     {activeTab === 'settings' && (
                       <>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <ChevronRight className="w-5 h-5 text-muted-foreground/80" strokeWidth={3} />
                         <span className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight text-primary">Configuración</span>
                       </>
                     )}
                     {predictionsEditMode && (
                       <>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <ChevronRight className="w-5 h-5 text-muted-foreground/80" strokeWidth={3} />
                         <span className="text-[14px] sm:text-[18px] font-black uppercase tracking-tight text-primary">
                           Perfil Usuario
                         </span>
@@ -3822,7 +3822,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         }}
                         className="h-10 w-10 p-0 border-2 border-sky-500/80 bg-sky-500/10 text-sky-400 hover:bg-sky-600 hover:text-white shadow-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-20 cursor-pointer"
                       >
-                        <ChevronLeft className="h-6 w-6" strokeWidth={3} />
+                        <ChevronLeft className="size-7" strokeWidth={3.5} />
                       </Button>
                       
                       <span className="text-[10px] sm:text-[12px] font-black text-sky-400 uppercase tracking-[0.2em] px-10 py-2 border-2 border-sky-500/40 bg-sky-500/5 min-w-[205px] sm:min-w-[230px] text-center block relative overflow-hidden rounded-md shadow-sm">
@@ -3860,7 +3860,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             : "border-2 border-sky-500/80 bg-sky-500/10 text-sky-400 hover:bg-sky-600 hover:text-white"
                         )}
                       >
-                        <ChevronRight className="h-6 w-6" strokeWidth={3} />
+                        <ChevronRight className="size-7" strokeWidth={3.5} />
                       </Button>
                     </div>
                   </div>
@@ -4538,7 +4538,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                           <Input
                                             type="number"
                                             disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
-                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
+                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                             value={prediction.homeScore ?? ''}
                                             onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
                                             placeholder="-"
@@ -4547,7 +4547,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                           <Input
                                             type="number"
                                             disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
-                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-sm sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
+                                            className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                             value={prediction.awayScore ?? ''}
                                             onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
                                             placeholder="-"
@@ -4740,7 +4740,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               }
                             }}
                             maxLength={8}
-                            className="h-8 w-44 sm:w-60 text-[10px] font-black tracking-wider uppercase rounded-none border-border bg-background"
+                            className="h-8 w-44 sm:w-60 text-[16px] md:text-[10px] font-black tracking-wider uppercase rounded-none border-border bg-background"
                           />
                           <span className="text-[7px] font-mono text-muted-foreground font-bold text-right sm:text-left pr-1">
                             {newParticipantName.length}/8 CARACTERES
@@ -5249,7 +5249,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         }
                       }}
                       maxLength={10}
-                      className="h-10 text-[13px] font-black uppercase tracking-tight w-full max-w-[180px] rounded-none border border-border bg-background focus:ring-1 focus:ring-primary focus:outline-none"
+                      className="h-10 text-[16px] md:text-[13px] font-black uppercase tracking-tight w-full max-w-[180px] rounded-none border border-border bg-background focus:ring-1 focus:ring-primary focus:outline-none"
                     />
                     <Button 
                       onClick={updateLeagueName}
@@ -6073,7 +6073,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     }
                   }}
                   maxLength={8}
-                  className="bg-background border-border text-xs rounded-none h-10 w-full uppercase font-bold px-3 focus-visible:ring-primary text-foreground"
+                  className="bg-background border-border text-[16px] md:text-xs rounded-none h-10 w-full uppercase font-bold px-3 focus-visible:ring-primary text-foreground"
                   placeholder="NOMBRE"
                 />
               </div>
@@ -6089,7 +6089,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     }
                   }}
                   maxLength={5}
-                  className="bg-background border-border text-xs rounded-none h-10 w-full uppercase font-bold px-3 font-mono tracking-widest focus-visible:ring-primary text-foreground"
+                  className="bg-background border-border text-[16px] md:text-xs rounded-none h-10 w-full uppercase font-bold px-3 font-mono tracking-widest focus-visible:ring-primary text-foreground"
                   placeholder="CLAVE"
                 />
               </div>
