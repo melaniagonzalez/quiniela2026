@@ -2528,7 +2528,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   const matchdays = useMemo(() => {
     const days = Array.from(new Set<number>(currentMatches.map(m => m.matchday || 1))).sort((a, b) => a - b);
     const comp = activeLeague?.competition || 'WC';
-    const splitIndex = comp === 'CL' ? 9 : 4; // knockout stage or playoff begins
+    const splitIndex = comp === 'CL' ? 11 : 5; // right before Round of 16 (Octavos)
     const before = days.filter(d => d < splitIndex);
     const after = days.filter(d => d >= splitIndex);
     return [...before, 0, ...after];
@@ -2536,8 +2536,8 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   const isJornada0Locked = useMemo(() => {
     const comp = activeLeague?.competition || 'WC';
-    const targetMatchday = comp === 'CL' ? 9 : 4;
-    const targetMatch = currentMatches.find(m => m.matchday === targetMatchday) || currentMatches.find(m => m.matchday === 1);
+    const targetMatchday = comp === 'CL' ? 11 : 5; // lock at start of Round of 16 (Octavos)
+    const targetMatch = currentMatches.find(m => m.matchday === targetMatchday) || MATCHES.find(m => m.matchday === targetMatchday);
     if (!targetMatch) return false;
     return isSimulationMode
       ? new Date(targetMatch.date) < new Date(simulatedDate)
@@ -2613,9 +2613,15 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   // Sync viewing matchday with current matchday on load or mode switch
   useEffect(() => {
     if (currentMatchday && !predictionsEditMode) {
-      setViewingMatchday(currentMatchday);
+      const comp = activeLeague?.competition || 'WC';
+      const targetMatchday = comp === 'CL' ? 11 : 5;
+      if (currentMatchday === targetMatchday && !isJornada0Locked) {
+        setViewingMatchday(0);
+      } else {
+        setViewingMatchday(currentMatchday);
+      }
     }
-  }, [currentMatchday, predictionsEditMode]);
+  }, [currentMatchday, predictionsEditMode, activeLeague?.competition, isJornada0Locked]);
 
   // Scroll to top of the viewport when changing matchdays
   useEffect(() => {
@@ -2641,7 +2647,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   const getTimeUntilPhase = (day: number) => {
     if (day === 0) {
       const comp = activeLeague?.competition || 'WC';
-      const targetMatchday = comp === 'CL' ? 9 : 4;
+      const targetMatchday = comp === 'CL' ? 11 : 5;
       const targetMatch = currentMatches.find(m => m.matchday === targetMatchday) || currentMatches.find(m => m.matchday === 1);
       if (!targetMatch) return "No disponible";
       const earliestTime = new Date(targetMatch.date).getTime();
@@ -4259,7 +4265,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                          Cierre de fase: <span className={`text-primary font-black text-[11px] ml-1 ${day === currentMatchday ? "animate-pulse" : ""}`}>{getTimeUntilPhase(day)}</span>
+                          Inicio de jornada: <span className={`text-primary font-black text-[11px] ml-1 ${day === currentMatchday ? "animate-pulse" : ""}`}>{getTimeUntilPhase(day)}</span>
                         </span>
                       </div>
                       {!predictionsReadOnly && (
@@ -4905,7 +4911,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           </div>
 
                           <div className="text-[10px] text-muted-foreground/80 leading-relaxed font-semibold uppercase tracking-wider bg-white/5 p-4 border border-white/5">
-                            ⚠️ NOTA: Estos pronósticos se cerrarán al inicio de la jornada dos y los puntos se acreditarán al final del último partido cuando se sepan los resultados.
+                            ⚠️ NOTA: Estos pronósticos se cerrarán al inicio de los octavos de final y los puntos se acreditarán al final del último partido cuando se sepan los resultados.
                           </div>
                         </div>
                       );
@@ -5017,7 +5023,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                           <div className="flex items-center gap-1 sm:gap-2">
                                             <Input
                                               type="number"
-                                              disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
+                                              disabled={isLocked || !canEditActive || predictionsReadOnly}
                                               className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                               value={prediction.homeScore ?? ''}
                                               onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
@@ -5026,7 +5032,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                             <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
                                             <Input
                                               type="number"
-                                              disabled={isTBD || isLocked || !canEditActive || predictionsReadOnly}
+                                              disabled={isLocked || !canEditActive || predictionsReadOnly}
                                               className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                               value={prediction.awayScore ?? ''}
                                               onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
@@ -5492,7 +5498,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     </span>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
-                    Se otorgan 5 puntos por Campeón, Goleador, Mejor Jugador y Mejor Portero. Se otorgan 3 puntos por Subcampeón (2do lugar) y Tercer Lugar (3er lugar). Estos puntos se acreditan y se calculan automáticamente al término del torneo.
+                    Se otorgan 5 puntos por Campeón, Goleador, Mejor Jugador y Mejor Portero. Se otorgan 3 puntos por Subcampeón (2do lugar) y Tercer Lugar (3er lugar). Estos puntos se acreditan y se calculan automáticamente al término del torneo, y deberán agregarse justo antes de iniciar los octavos de final.
                   </p>
                 </div>
               </div>
