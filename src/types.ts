@@ -39,6 +39,7 @@ export interface League {
   createdAt: string;
   isPrivate: boolean;
   competition: 'WC' | 'CL';
+  configType?: 'A' | 'B';
   actualBestPlayerName?: string;
   actualBestPlayerTeam?: string;
   actualBestPlayerFlag?: string;

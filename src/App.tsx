@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
@@ -470,14 +470,6 @@ export default function App() {
 
   const [adminSelectedCompetition, setAdminSelectedCompetition] = useState<'WC' | 'CL'>('WC');
 
-  const activeLeagueId = user ? selectedLeagueId : guestLeagueId;
-  const activeLeague = useMemo(() => {
-    if (user) {
-      return leagues.find(l => l.id === selectedLeagueId) || null;
-    }
-    return guestLeague;
-  }, [user, leagues, selectedLeagueId, guestLeague]);
-
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [predictions, setPredictions] = useState<Prediction[]>(() => 
     currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }))
@@ -579,6 +571,10 @@ export default function App() {
   const [isSuspendConfirmOpen, setIsSuspendConfirmOpen] = useState(false);
   const [isDeleteLeagueConfirmOpen, setIsDeleteLeagueConfirmOpen] = useState(false);
   const [leagueToDeleteAdmin, setLeagueToDeleteAdmin] = useState<{ id: string; name: string } | null>(null);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [configModalLeague, setConfigModalLeague] = useState<any | null>(null);
+  const [tempConfigType, setTempConfigType] = useState<'A' | 'B'>('A');
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isSettingsDeleteConfirmOpen, setIsSettingsDeleteConfirmOpen] = useState(false);
 
   const isSuperAdmin = user ? (
@@ -596,6 +592,21 @@ export default function App() {
 
   const maxLeaguesAllowed = isSuperAdmin ? 100 : (currentUserAdminConfig?.maxLeaguesAllowed ?? 1);
 
+  const activeLeagueId = user ? selectedLeagueId : guestLeagueId;
+  const activeLeague = useMemo(() => {
+    if (user) {
+      const found = leagues.find(l => l.id === selectedLeagueId);
+      if (found) return found;
+      // Fallback for Super Admin on any managed league
+      if (isSuperAdmin && allLeagues.length > 0) {
+        const adminFound = allLeagues.find((l: any) => l.id === selectedLeagueId);
+        if (adminFound) return adminFound as League;
+      }
+      return null;
+    }
+    return guestLeague;
+  }, [user, leagues, selectedLeagueId, guestLeague, isSuperAdmin, allLeagues]);
+
   // Clear news data when switching modes or when API data arrives
   useEffect(() => {
     setNewsData(null);
@@ -604,26 +615,23 @@ export default function App() {
   // Sync Guest League Document if viewer is in Guest Spectator mode
   useEffect(() => {
     if (!user && guestLeagueId) {
-      const getLeagueDoc = async () => {
-        try {
-          const docRef = doc(db, 'leagues', guestLeagueId);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const leagueData = { id: docSnap.id, ...docSnap.data() } as League;
-            setGuestLeague(leagueData);
-            addToRecentLeagues(leagueData.id, leagueData.name);
-          } else {
-            console.error("League not found");
-            setGuestLeague(null);
-            setGuestLeagueId(null);
-            localStorage.removeItem('guest_league_id');
-            toast.error('No se encontró ninguna quiniela con este código');
-          }
-        } catch (error) {
-          console.error("Error loading guest league doc:", error);
+      const docRef = doc(db, 'leagues', guestLeagueId);
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const leagueData = { id: docSnap.id, ...docSnap.data() } as League;
+          setGuestLeague(leagueData);
+          addToRecentLeagues(leagueData.id, leagueData.name);
+        } else {
+          console.error("League not found");
+          setGuestLeague(null);
+          setGuestLeagueId(null);
+          localStorage.removeItem('guest_league_id');
+          toast.error('No se encontró ninguna quiniela con este código');
         }
-      };
-      getLeagueDoc();
+      }, (error) => {
+        console.error("Error subscribing to guest league doc:", error);
+      });
+      return () => unsubscribe();
     } else if (user) {
       setGuestLeague(null);
       setGuestLeagueId(null);
@@ -1216,6 +1224,24 @@ export default function App() {
     } finally {
       setIsDeleteLeagueConfirmOpen(false);
       setLeagueToDeleteAdmin(null);
+    }
+  };
+
+  const handleSaveLeagueConfig = async () => {
+    if (!configModalLeague) return;
+    setIsSavingConfig(true);
+    try {
+      await updateDoc(doc(db, 'leagues', configModalLeague.id), {
+        configType: tempConfigType
+      });
+      toast.success(`Configuración actualizada a la Opción ${tempConfigType} para la quiniela "${configModalLeague.name}"`);
+      setIsConfigModalOpen(false);
+      setConfigModalLeague(null);
+    } catch (error) {
+      console.error("Error al actualizar la configuración de la quiniela:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `leagues/${configModalLeague.id}`);
+    } finally {
+      setIsSavingConfig(false);
     }
   };
 
@@ -2526,7 +2552,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   }, [currentTeams]);
 
   const matchdays = useMemo(() => {
-    const days = Array.from(new Set<number>(currentMatches.map(m => m.matchday || 1))).sort((a, b) => a - b);
+    const days = Array.from(new Set<number>(currentMatches.map(m => Number(m.matchday) || 1))).sort((a, b) => a - b);
     const comp = activeLeague?.competition || 'WC';
     const splitIndex = comp === 'CL' ? 11 : 5; // right before Round of 16 (Octavos)
     const before = days.filter(d => d < splitIndex);
@@ -2608,6 +2634,26 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     return unfinished?.matchday || matchdays[0];
   }, [currentMatches, isSimulationMode, simulatedDate, matchdays]);
 
+  const getIsMatchLocked = useCallback((match: any) => {
+    const defaultLock = isSimulationMode 
+      ? new Date(match.date) < new Date(simulatedDate)
+      : new Date(match.date) < new Date() || (match.status && !['SCHEDULED', 'TIMED'].includes(match.status));
+
+    const matchdayNum = Number(match.matchday);
+    if (activeLeague?.configType === 'B' && matchdayNum && [1, 2, 3].includes(matchdayNum)) {
+      const j1Matches = currentMatches.filter(m => Number(m.matchday) === 1);
+      if (j1Matches.length > 0) {
+        const j1Times = j1Matches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
+        const earliestJ1Time = j1Times.length > 0 ? Math.min(...j1Times) : 0;
+        const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+        if (earliestJ1Time && earliestJ1Time < nowTime) {
+          return true;
+        }
+      }
+    }
+    return defaultLock;
+  }, [activeLeague, isSimulationMode, simulatedDate, currentMatches, nowTimeState]);
+
   const [viewingMatchday, setViewingMatchday] = useState<number>(1);
 
   // Sync viewing matchday with current matchday on load or mode switch
@@ -2661,7 +2707,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       return `${diffDays}d ${diffHours % 24}h ${diffMin % 60}m`;
     }
 
-    const dayMatches = currentMatches.filter(m => m.matchday === day);
+    let targetDay = Number(day);
+    if (activeLeague?.configType === 'B' && [1, 2, 3].includes(targetDay)) {
+      targetDay = 1;
+    }
+
+    const dayMatches = currentMatches.filter(m => Number(m.matchday) === targetDay);
     if (dayMatches.length === 0) return "No disponible";
     
     const dates = dayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
@@ -2672,7 +2723,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     
     const diffMs = earliestTime - nowTime;
     if (diffMs <= 0) {
-      return "Fase Iniciada";
+      return activeLeague?.configType === 'B' && [1, 2, 3].includes(Number(day)) ? "Plazo Cerrado" : "Fase Iniciada";
     }
     
     const diffSec = Math.floor(diffMs / 1000);
@@ -3559,6 +3610,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Quiniela ID</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Nombre</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Competencia</TableHead>
+                                <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Cierre</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Creador (Dueño)</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3 text-center">Participantes</TableHead>
                                 <TableHead className="text-[10px] font-black uppercase tracking-wider text-muted-foreground py-3">Fecha Creación</TableHead>
@@ -3602,6 +3654,31 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                       )}>
                                         {isCL ? 'Champions League' : 'Mundial 2026'}
                                       </span>
+                                    </TableCell>
+                                    <TableCell className="py-4">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={cn(
+                                          "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-none border border-dashed select-none shrink-0",
+                                          league.configType === 'B' 
+                                            ? "bg-purple-500/10 border-purple-500/30 text-purple-400" 
+                                            : "bg-zinc-500/10 border-zinc-500/30 text-zinc-400"
+                                        )}>
+                                          Opción {league.configType || 'A'}
+                                        </span>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-primary rounded-none"
+                                          onClick={() => {
+                                            setConfigModalLeague(league);
+                                            setTempConfigType(league.configType || 'A');
+                                            setIsConfigModalOpen(true);
+                                          }}
+                                          title="Editar Configuración de Cierre"
+                                        >
+                                          <Settings className="w-3 w-3" />
+                                        </Button>
+                                      </div>
                                     </TableCell>
                                     <TableCell className="py-4 text-xs font-bold text-foreground">
                                       {creator ? (
@@ -4943,13 +5020,17 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 const isTBD = match.matchday >= 4 && (
                                   !isSimulationMode 
                                     ? ((!homeTeam && !(match as any).homeTeamName) || (!awayTeam && !(match as any).awayTeamName))
-                                    : (
-                                        (match.matchday === 4 && new Date(simulatedDate) < new Date('2026-06-28T00:00:00Z')) ||
-                                        (match.matchday === 5 && new Date(simulatedDate) < new Date('2026-07-04T00:00:00Z')) ||
-                                        (match.matchday === 6 && new Date(simulatedDate) < new Date('2026-07-09T00:00:00Z')) ||
-                                        (match.matchday === 7 && new Date(simulatedDate) < new Date('2026-07-14T00:00:00Z')) ||
-                                        (match.matchday === 8 && new Date(simulatedDate) < new Date('2026-07-18T00:00:00Z'))
-                                      )
+                                    : (() => {
+                                        const simDateObj = new Date(simulatedDate);
+                                        let predecessorMatches = [];
+                                        if (match.matchday === 4) {
+                                          predecessorMatches = currentMatches.filter(m => m.matchday && m.matchday <= 3);
+                                        } else if (match.matchday && match.matchday > 4) {
+                                          predecessorMatches = currentMatches.filter(m => m.matchday === match.matchday! - 1);
+                                        }
+                                        if (predecessorMatches.length === 0) return true;
+                                        return !predecessorMatches.every(m => new Date(m.date) < simDateObj);
+                                      })()
                                 );
 
                                 const displayHome = (isTBD || !homeTeam) ? { name: 'Por definir', flag: '🏳️' } : homeTeam;
@@ -4957,9 +5038,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
                                 const prediction = predictions.find(p => p.matchId === match.id) || { matchId: match.id, homeScore: null, awayScore: null };
 
-                                const isLocked = isSimulationMode 
-                                  ? new Date(match.date) < new Date(simulatedDate)
-                                  : new Date(match.date) < new Date() || (match.status && !['SCHEDULED', 'TIMED'].includes(match.status));
+                                const isLocked = getIsMatchLocked(match);
 
                                 const shouldShowResult = isSimulationMode
                                   ? isLocked
@@ -6237,6 +6316,104 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 onClick={() => {
                   setIsDeleteLeagueConfirmOpen(false);
                   setLeagueToDeleteAdmin(null);
+                }}
+                className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Configuración de Cierre Modal */}
+    <AnimatePresence>
+      {isConfigModalOpen && configModalLeague && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-zinc-950 border-2 border-primary/45 p-6 sm:p-8 max-w-lg w-full rounded-none space-y-6 shadow-2xl relative z-50 overflow-y-auto max-h-[90vh]"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-primary">
+                <Settings className="w-5 h-5 shrink-0" />
+                <h3 className="text-base sm:text-lg font-black uppercase tracking-tight">Tipo de Cierre de Predicciones</h3>
+              </div>
+              <p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-widest leading-relaxed">
+                Estás configurando los plazos de cierre para la quiniela: <span className="text-foreground font-black">"{configModalLeague.name}"</span>. Por favor escoge la opción de cierre que prefieras.
+              </p>
+            </div>
+
+            <div className="space-y-4 text-left">
+              {/* Opción A card */}
+              <div 
+                onClick={() => setTempConfigType('A')}
+                className={cn(
+                  "border-2 p-4 cursor-pointer transition-all rounded-none relative select-none",
+                  tempConfigType === 'A' 
+                    ? "border-primary bg-primary/5 shadow-[0_0_15px_rgba(13,148,136,0.1)]" 
+                    : "border-border hover:border-zinc-700 bg-zinc-900/20"
+                )}
+              >
+                {tempConfigType === 'A' && (
+                  <div className="absolute top-3 right-3 bg-primary text-black rounded-full p-0.5">
+                    <Check className="w-3.5 h-3.5 font-bold" />
+                  </div>
+                )}
+                <div className="font-black text-xs uppercase tracking-wider text-white mb-1.5 flex items-center gap-1.5">
+                  <span className="bg-zinc-800 text-zinc-400 text-[9px] px-1.5 py-0.5 font-sans">A</span>
+                  Configuración A (Por Defecto)
+                </div>
+                <ul className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed space-y-1 list-disc pl-4">
+                  <li>Las predicciones cierran de forma independiente por cada jornada.</li>
+                  <li>Cada jornada se bloquea individualmente al iniciar el primer partido de dicha jornada.</li>
+                  <li>Permite a los usuarios ajustar sus pronósticos de jornadas futuras hasta el último momento.</li>
+                </ul>
+              </div>
+
+              {/* Opción B card */}
+              <div 
+                onClick={() => setTempConfigType('B')}
+                className={cn(
+                  "border-2 p-4 cursor-pointer transition-all rounded-none relative select-none",
+                  tempConfigType === 'B' 
+                    ? "border-purple-500 bg-purple-500/5 shadow-[0_0_15px_rgba(168,85,247,0.1)]" 
+                    : "border-border hover:border-zinc-700 bg-zinc-900/20"
+                )}
+              >
+                {tempConfigType === 'B' && (
+                  <div className="absolute top-3 right-3 bg-purple-500 text-white rounded-full p-0.5">
+                    <Check className="w-3.5 h-3.5 font-bold" />
+                  </div>
+                )}
+                <div className="font-black text-xs uppercase tracking-wider text-purple-400 mb-1.5 flex items-center gap-1.5">
+                  <span className="bg-purple-950/40 text-purple-400 border border-purple-800/30 text-[9px] px-1.5 py-0.5 font-sans">B</span>
+                  Configuración B (Cierre Unificado de Grupos)
+                </div>
+                <ul className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed space-y-1 list-disc pl-4">
+                  <li>Las jornadas de la fase de grupos (<span className="text-white">Jornadas 1, 2 y 3</span>) cierran al mismo tiempo.</li>
+                  <li>Todas se bloquean juntas tan pronto inicia el primer partido de la <span className="text-white">Jornada 1</span>.</li>
+                  <li>Las jornadas de elminación directa (Octavos en adelante) cierran igual que en la opción A (al inicio del primer partido de cada fase).</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={handleSaveLeagueConfig}
+                disabled={isSavingConfig}
+                className="flex-1 h-11 bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-black uppercase tracking-widest rounded-none shadow-md disabled:opacity-50"
+              >
+                {isSavingConfig ? 'Guardando...' : 'Guardar Configuración'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsConfigModalOpen(false);
+                  setConfigModalLeague(null);
                 }}
                 className="flex-1 h-11 border-border text-[10px] font-black uppercase tracking-widest hover:bg-white/5 rounded-none"
               >
