@@ -96,6 +96,10 @@ app.get("/api/db-status", (req, res) => {
   }
 });
 
+app.get("/api/time", (req, res) => {
+  res.json({ serverTime: new Date().toISOString() });
+});
+
 app.get("/api/sync/:competition", async (req, res) => {
   const competition = (req.params.competition || "WC").toUpperCase();
   const now = Date.now();

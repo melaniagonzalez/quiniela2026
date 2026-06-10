@@ -2185,11 +2185,86 @@ export default function App() {
     
     setIsSyncing(true);
     try {
+      let verifiedServerTime = Date.now();
+      if (!isSimulationMode) {
+        try {
+          const timeRes = await fetch('/api/time');
+          if (timeRes.ok) {
+            const timeData = await timeRes.json();
+            if (timeData?.serverTime) {
+              verifiedServerTime = new Date(timeData.serverTime).getTime();
+            }
+          }
+        } catch (e) {
+          console.warn("Could not fetch server time, using local clock as fallback:", e);
+        }
+      } else {
+        verifiedServerTime = new Date(simulatedDate).getTime();
+      }
+
+      const matchedMap = new Map(currentMatches.map(m => [m.id, m]));
+      const updatedPredictions = [...predictions];
+      const skippedMatches: string[] = [];
+
+      predictions.forEach((p, index) => {
+        const match = matchedMap.get(p.matchId) as any;
+        if (match) {
+          const isCurrentlyLocked = getIsMatchLocked(match, verifiedServerTime);
+          if (isCurrentlyLocked) {
+            const original = dbPredictionsRef.current.find(orig => orig.matchId === p.matchId);
+            const hasBeenModified = !original || original.homeScore !== p.homeScore || original.awayScore !== p.awayScore;
+            
+            if (hasBeenModified) {
+              updatedPredictions[index] = original || { matchId: p.matchId, homeScore: null, awayScore: null };
+              skippedMatches.push(`${match.homeTeamName} vs ${match.awayTeamName}`);
+            }
+          }
+        }
+      });
+
+      const isJornada0LockedReal = (() => {
+        const comp = activeLeague?.competition || 'WC';
+        const targetMatchday = comp === 'CL' ? 11 : 5;
+        const targetMatch = currentMatches.find(m => m.matchday === targetMatchday) || MATCHES.find(m => m.matchday === targetMatchday);
+        if (!targetMatch) return false;
+        return isSimulationMode
+          ? new Date(targetMatch.date) < new Date(simulatedDate)
+          : new Date(targetMatch.date).getTime() < verifiedServerTime;
+      })();
+
+      let finalChampion = championPrediction;
+      let finalRunnerUp = runnerUpPrediction;
+      let finalThirdPlace = thirdPlacePrediction;
+      let finalScorer = scorerPrediction;
+      let finalBestPlayer = bestPlayerPrediction;
+      let finalBestGoalkeeper = bestGoalkeeperPrediction;
+      let extraPredictionsSkipped = false;
+
+      if (isJornada0LockedReal) {
+        const champModified = JSON.stringify(championPrediction) !== JSON.stringify(dbChampionPredictionRef.current);
+        const runnerModified = JSON.stringify(runnerUpPrediction) !== JSON.stringify(dbRunnerUpPredictionRef.current);
+        const thirdModified = JSON.stringify(thirdPlacePrediction) !== JSON.stringify(dbThirdPlacePredictionRef.current);
+        const scorerModified = JSON.stringify(scorerPrediction) !== JSON.stringify(dbScorerPredictionRef.current);
+        const playerModified = JSON.stringify(bestPlayerPrediction) !== JSON.stringify(dbBestPlayerPredictionRef.current);
+        const goalkeeperModified = JSON.stringify(bestGoalkeeperPrediction) !== JSON.stringify(dbBestGoalkeeperPredictionRef.current);
+
+        if (champModified || runnerModified || thirdModified || scorerModified || playerModified || goalkeeperModified) {
+          finalChampion = dbChampionPredictionRef.current;
+          finalRunnerUp = dbRunnerUpPredictionRef.current;
+          finalThirdPlace = dbThirdPlacePredictionRef.current;
+          finalScorer = dbScorerPredictionRef.current;
+          finalBestPlayer = dbBestPlayerPredictionRef.current;
+          finalBestGoalkeeper = dbBestGoalkeeperPredictionRef.current;
+          extraPredictionsSkipped = true;
+        }
+      }
+
       if (user || (activeParticipantId && unlockedParticipants[activeParticipantId])) {
         const targetId = activeParticipantId || (user ? user.uid : null);
         if (!targetId) return;
         const batch = writeBatch(db);
-        predictions.forEach(p => {
+
+        updatedPredictions.forEach(p => {
           const predictionRef = doc(db, 'users', targetId, 'predictions', p.matchId);
           batch.set(predictionRef, {
             ...p,
@@ -2197,55 +2272,55 @@ export default function App() {
           }, { merge: true });
         });
 
-        if (championPrediction) {
+        if (finalChampion) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'world_champion');
           batch.set(predictionRef, {
-            ...championPrediction,
+            ...finalChampion,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
 
-        if (runnerUpPrediction) {
+        if (finalRunnerUp) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'runner_up');
           batch.set(predictionRef, {
-            ...runnerUpPrediction,
+            ...finalRunnerUp,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
 
-        if (thirdPlacePrediction) {
+        if (finalThirdPlace) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'third_place');
           batch.set(predictionRef, {
-            ...thirdPlacePrediction,
+            ...finalThirdPlace,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
 
-        if (scorerPrediction) {
+        if (finalScorer) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'top_scorer');
           batch.set(predictionRef, {
-            ...scorerPrediction,
+            ...finalScorer,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
 
-        if (bestPlayerPrediction) {
+        if (finalBestPlayer) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'best_player');
           batch.set(predictionRef, {
-            ...bestPlayerPrediction,
+            ...finalBestPlayer,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
 
-        if (bestGoalkeeperPrediction) {
+        if (finalBestGoalkeeper) {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'best_goalkeeper');
           batch.set(predictionRef, {
-            ...bestGoalkeeperPrediction,
+            ...finalBestGoalkeeper,
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
 
-        const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(predictions, activeLeague?.competition);
+        const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(updatedPredictions, activeLeague?.competition);
         const userRef = doc(db, 'users', targetId);
         batch.update(userRef, {
           totalPoints,
@@ -2258,15 +2333,50 @@ export default function App() {
         await batch.commit();
       }
       
-      localStorage.setItem('wc_predictions', JSON.stringify(predictions));
-      if (championPrediction) localStorage.setItem('wc_champion_prediction', JSON.stringify(championPrediction));
-      if (runnerUpPrediction) localStorage.setItem('wc_runner_up_prediction', JSON.stringify(runnerUpPrediction));
-      if (thirdPlacePrediction) localStorage.setItem('wc_third_place_prediction', JSON.stringify(thirdPlacePrediction));
-      if (scorerPrediction) localStorage.setItem('wc_scorer_prediction', JSON.stringify(scorerPrediction));
-      if (bestPlayerPrediction) localStorage.setItem('wc_best_player_prediction', JSON.stringify(bestPlayerPrediction));
-      if (bestGoalkeeperPrediction) localStorage.setItem('wc_best_goalkeeper_prediction', JSON.stringify(bestGoalkeeperPrediction));
+      setPredictions(updatedPredictions);
+      setChampionPrediction(finalChampion);
+      setRunnerUpPrediction(finalRunnerUp);
+      setThirdPlacePrediction(finalThirdPlace);
+      setScorerPrediction(finalScorer);
+      setBestPlayerPrediction(finalBestPlayer);
+      setBestGoalkeeperPrediction(finalBestGoalkeeper);
+
+      dbPredictionsRef.current = updatedPredictions;
+      dbChampionPredictionRef.current = finalChampion;
+      dbRunnerUpPredictionRef.current = finalRunnerUp;
+      dbThirdPlacePredictionRef.current = finalThirdPlace;
+      dbScorerPredictionRef.current = finalScorer;
+      dbBestPlayerPredictionRef.current = finalBestPlayer;
+      dbBestGoalkeeperPredictionRef.current = finalBestGoalkeeper;
+
+      localStorage.setItem('wc_predictions', JSON.stringify(updatedPredictions));
+      if (finalChampion) localStorage.setItem('wc_champion_prediction', JSON.stringify(finalChampion));
+      if (finalRunnerUp) localStorage.setItem('wc_runner_up_prediction', JSON.stringify(finalRunnerUp));
+      if (finalThirdPlace) localStorage.setItem('wc_third_place_prediction', JSON.stringify(finalThirdPlace));
+      if (finalScorer) localStorage.setItem('wc_scorer_prediction', JSON.stringify(finalScorer));
+      if (finalBestPlayer) localStorage.setItem('wc_best_player_prediction', JSON.stringify(finalBestPlayer));
+      if (finalBestGoalkeeper) localStorage.setItem('wc_best_goalkeeper_prediction', JSON.stringify(finalBestGoalkeeper));
+      
       setHasUnsavedChanges(false);
-      toast.success('Cambios guardados correctamente');
+
+      if (skippedMatches.length > 0 || extraPredictionsSkipped) {
+        let warningMsg = "Algunos cambios no se guardaron debido a que el plazo ya cerró para:";
+        if (skippedMatches.length > 0) {
+          warningMsg += `\n• Partidos ya iniciados: ${skippedMatches.join(", ")}`;
+        }
+        if (extraPredictionsSkipped) {
+          warningMsg += `\n• Predicciones de Puntos Extra (Eliminación directa iniciada)`;
+        }
+        toast.error(
+          <div className="text-left space-y-1">
+            <span className="font-bold block">{warningMsg}</span>
+            <span className="text-[10px] opacity-80 block">Los demás pronósticos fueron guardados exitosamente.</span>
+          </div>,
+          { duration: 8000 }
+        );
+      } else {
+        toast.success('Cambios guardados correctamente');
+      }
     } catch (error) {
       console.error("Error saving predictions:", error);
       toast.error('Error al guardar las predicciones');
@@ -2634,10 +2744,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     return unfinished?.matchday || matchdays[0];
   }, [currentMatches, isSimulationMode, simulatedDate, matchdays]);
 
-  const getIsMatchLocked = useCallback((match: any) => {
+  const getIsMatchLocked = useCallback((match: any, customTime?: number) => {
     const defaultLock = isSimulationMode 
       ? new Date(match.date) < new Date(simulatedDate)
-      : new Date(match.date) < new Date() || (match.status && !['SCHEDULED', 'TIMED'].includes(match.status));
+      : (customTime !== undefined 
+          ? new Date(match.date) < new Date(customTime)
+          : new Date(match.date) < new Date()) || (match.status && !['SCHEDULED', 'TIMED'].includes(match.status));
 
     const matchdayNum = Number(match.matchday);
 
@@ -2651,7 +2763,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         if (j1Matches.length > 0) {
           const j1Times = j1Matches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
           const earliestJ1Time = j1Times.length > 0 ? Math.min(...j1Times) : 0;
-          const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+          const nowTime = customTime !== undefined 
+            ? customTime 
+            : (isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState);
           if (earliestJ1Time && earliestJ1Time < nowTime) {
             return true;
           }
@@ -2661,7 +2775,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         if (matchdayMatches.length > 0) {
           const mTimes = matchdayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
           const earliestTime = mTimes.length > 0 ? Math.min(...mTimes) : 0;
-          const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+          const nowTime = customTime !== undefined 
+            ? customTime 
+            : (isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState);
           if (earliestTime && earliestTime < nowTime) {
             return true;
           }
@@ -2676,7 +2792,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       if (matchdayMatches.length > 0) {
         const mTimes = matchdayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
         const earliestTime = mTimes.length > 0 ? Math.min(...mTimes) : 0;
-        const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+        const nowTime = customTime !== undefined 
+          ? customTime 
+          : (isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState);
         if (earliestTime && earliestTime < nowTime) {
           return true;
         }
@@ -5646,6 +5764,50 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 </span>
               </div>
             </div>
+
+            {/* Configuración de Cierre de esta Quiniela */}
+            <div className="max-w-4xl mx-auto bg-card border border-border p-6 sm:p-8 mt-6">
+              <div className="flex items-center gap-2.5 mb-6 border-b border-border pb-4">
+                <div className="w-2 h-4 bg-sky-500" />
+                <h3 className="text-[12px] font-black uppercase tracking-wider text-white">
+                  Plazos de Cierre y Bloqueo de Predicciones
+                </h3>
+              </div>
+              
+              <div className="border border-border/40 p-5 bg-white/[0.01]">
+                {activeLeague?.configType === 'C' ? (
+                  <div>
+                    <div className="font-black text-[11px] text-sky-450 uppercase tracking-wider mb-2 flex items-center gap-2 text-sky-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                      Bloqueo Individual por Partido Exacto
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                      Las predicciones cierran de forma independiente para cada partido de manera exacta. Cada partido se bloquea justo en su minuto de inicio (kick-off). El cierre de una jornada o de otros partidos no afecta los partidos restantes; puedes pronosticar cada partido hasta su silbatazo inicial.
+                    </p>
+                  </div>
+                ) : activeLeague?.configType === 'B' ? (
+                  <div>
+                    <div className="font-black text-[11px] text-purple-450 uppercase tracking-wider mb-2 flex items-center gap-2 text-purple-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      Bloqueo de Jornadas de Fase de Grupos
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                      Las primeras 3 jornadas (Fase de Grupos entera) se cierran por completo al iniciar el primer partido de la Primera Jornada (J1). Una vez iniciado el primer encuentro del torneo, no podrás modificar ninguna predicción de la fase de grupos. A partir de Dieciseisavos de Final, el bloqueo vuelve a ser por cada jornada individualmente al inicio de su primer partido.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="font-black text-[11px] text-zinc-450 uppercase tracking-wider mb-2 flex items-center gap-2 text-zinc-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                      Bloqueo Individual de Jornada Completa (Opción Estándar)
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed uppercase font-medium">
+                      Cada jornada o fase (por ejemplo, Jornada 1, Jornada 2, Octavos de Final, etc.) se bloquea por completo de forma individual al iniciar el primer partido de dicha jornada. Esto te permite ajustar tus pronósticos para las jornadas futuras hasta el último segundo antes de que empiece el primer partido de la jornada correspondiente.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ) : activeTab === 'noticias' ? (
       <div className="space-y-12 max-w-5xl mx-auto w-full pt-4">
@@ -6455,7 +6617,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 <ul className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed space-y-1 list-disc pl-4">
                   <li>Las jornadas de la fase de grupos (<span className="text-white">Jornadas 1, 2 y 3</span>) cierran al mismo tiempo.</li>
                   <li>Todas se bloquean juntas tan pronto inicia el primer partido de la <span className="text-white">Jornada 1</span>.</li>
-                  <li>Las jornadas de elminación directa (Octavos en adelante) cierran igual que en la opción A (al inicio del primer partido de cada fase).</li>
+                  <li>Las jornadas de elminación directa (Dieciseisavos en adelante) cierran igual que en la opción A (al inicio del primer partido de cada fase).</li>
                 </ul>
               </div>
 
@@ -7221,9 +7383,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     </AnimatePresence>
 
       {/* Footer */}
-      <footer className="px-6 lg:px-16 py-12 border-t border-border flex flex-col sm:flex-row justify-center items-center gap-6">
+      <footer className="px-6 lg:px-16 py-12 border-t border-border flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left">
         <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
           © 2026 Quiniela Mundial
+        </div>
+        <div className="text-[10px] sm:text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-w-md">
+          ¿Te interesa una página como esta o para tu negocio? Escríbenos a: <a href="mailto:info@pgsimple.com" className="text-primary hover:underline font-bold">info@pgsimple.com</a>
         </div>
       </footer>
     </div>
