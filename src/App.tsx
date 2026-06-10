@@ -2640,17 +2640,49 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       : new Date(match.date) < new Date() || (match.status && !['SCHEDULED', 'TIMED'].includes(match.status));
 
     const matchdayNum = Number(match.matchday);
-    if (activeLeague?.configType === 'B' && matchdayNum && [1, 2, 3].includes(matchdayNum)) {
-      const j1Matches = currentMatches.filter(m => Number(m.matchday) === 1);
-      if (j1Matches.length > 0) {
-        const j1Times = j1Matches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
-        const earliestJ1Time = j1Times.length > 0 ? Math.min(...j1Times) : 0;
+
+    if (activeLeague?.configType === 'C') {
+      return defaultLock;
+    }
+
+    if (activeLeague?.configType === 'B') {
+      if (matchdayNum && [1, 2, 3].includes(matchdayNum)) {
+        const j1Matches = currentMatches.filter(m => Number(m.matchday) === 1);
+        if (j1Matches.length > 0) {
+          const j1Times = j1Matches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
+          const earliestJ1Time = j1Times.length > 0 ? Math.min(...j1Times) : 0;
+          const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+          if (earliestJ1Time && earliestJ1Time < nowTime) {
+            return true;
+          }
+        }
+      } else if (matchdayNum) {
+        const matchdayMatches = currentMatches.filter(m => Number(m.matchday) === matchdayNum);
+        if (matchdayMatches.length > 0) {
+          const mTimes = matchdayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
+          const earliestTime = mTimes.length > 0 ? Math.min(...mTimes) : 0;
+          const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+          if (earliestTime && earliestTime < nowTime) {
+            return true;
+          }
+        }
+      }
+      return defaultLock;
+    }
+
+    // Default or Option A (locks matchday by earliest match of that matchday):
+    if (matchdayNum) {
+      const matchdayMatches = currentMatches.filter(m => Number(m.matchday) === matchdayNum);
+      if (matchdayMatches.length > 0) {
+        const mTimes = matchdayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
+        const earliestTime = mTimes.length > 0 ? Math.min(...mTimes) : 0;
         const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
-        if (earliestJ1Time && earliestJ1Time < nowTime) {
+        if (earliestTime && earliestTime < nowTime) {
           return true;
         }
       }
     }
+
     return defaultLock;
   }, [activeLeague, isSimulationMode, simulatedDate, currentMatches, nowTimeState]);
 
@@ -2718,9 +2750,34 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     const dates = dayMatches.map(m => new Date(m.date).getTime()).filter(t => !isNaN(t));
     if (dates.length === 0) return "No disponible";
     
-    const earliestTime = Math.min(...dates);
     const nowTime = isSimulationMode ? new Date(simulatedDate).getTime() : nowTimeState;
+
+    if (activeLeague?.configType === 'C') {
+      const upcomingDates = dates.filter(t => t > nowTime);
+      if (upcomingDates.length === 0) {
+        return "Fase Iniciada";
+      }
+      const earliestTime = Math.min(...upcomingDates);
+      const diffMs = earliestTime - nowTime;
+      
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHours = Math.floor(diffMin / 60);
+      const diffDays = Math.floor(diffHours / 24);
+      
+      const remainingHours = diffHours % 24;
+      const remainingMinutes = diffMin % 60;
+      
+      if (diffDays > 0) {
+        return `${diffDays}D ${remainingHours}H ${remainingMinutes}M`;
+      } else if (remainingHours > 0) {
+        return `${remainingHours}H ${remainingMinutes}M`;
+      } else {
+        return `${remainingMinutes}M`;
+      }
+    }
     
+    const earliestTime = Math.min(...dates);
     const diffMs = earliestTime - nowTime;
     if (diffMs <= 0) {
       return activeLeague?.configType === 'B' && [1, 2, 3].includes(Number(day)) ? "Plazo Cerrado" : "Fase Iniciada";
@@ -3659,7 +3716,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                       <div className="flex items-center gap-1.5">
                                         <span className={cn(
                                           "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-none border border-dashed select-none shrink-0",
-                                          league.configType === 'B' 
+                                          league.configType === 'C'
+                                             ? "bg-sky-500/10 border-sky-500/30 text-sky-400"
+                                             : league.configType === 'B' 
                                             ? "bg-purple-500/10 border-purple-500/30 text-purple-400" 
                                             : "bg-zinc-500/10 border-zinc-500/30 text-zinc-400"
                                         )}>
@@ -4342,7 +4401,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     <div className="flex items-center justify-between pt-[5px] pb-0 bg-transparent">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                          Inicio de jornada: <span className={`text-primary font-black text-[11px] ml-1 ${day === currentMatchday ? "animate-pulse" : ""}`}>{getTimeUntilPhase(day)}</span>
+                          {activeLeague?.configType === 'C' ? 'Próximo cierre de partido:' : 'Inicio de jornada:'} <span className={`text-primary font-black text-[11px] ml-1 ${day === currentMatchday ? "animate-pulse" : ""}`}>{getTimeUntilPhase(day)}</span>
                         </span>
                       </div>
                       {!predictionsReadOnly && (
@@ -6397,6 +6456,32 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <li>Las jornadas de la fase de grupos (<span className="text-white">Jornadas 1, 2 y 3</span>) cierran al mismo tiempo.</li>
                   <li>Todas se bloquean juntas tan pronto inicia el primer partido de la <span className="text-white">Jornada 1</span>.</li>
                   <li>Las jornadas de elminación directa (Octavos en adelante) cierran igual que en la opción A (al inicio del primer partido de cada fase).</li>
+                </ul>
+              </div>
+
+              {/* Opción C card */}
+              <div 
+                onClick={() => setTempConfigType('C')}
+                className={cn(
+                  "border-2 p-4 cursor-pointer transition-all rounded-none relative select-none",
+                  tempConfigType === 'C' 
+                    ? "border-sky-500 bg-sky-500/5 shadow-[0_0_15px_rgba(14,165,233,0.1)]" 
+                    : "border-border hover:border-zinc-700 bg-zinc-900/20"
+                )}
+              >
+                {tempConfigType === 'C' && (
+                  <div className="absolute top-3 right-3 bg-sky-500 text-white rounded-full p-0.5">
+                    <Check className="w-3.5 h-3.5 font-bold" />
+                  </div>
+                )}
+                <div className="font-black text-xs uppercase tracking-wider text-sky-400 mb-1.5 flex items-center gap-1.5">
+                  <span className="bg-sky-950/40 text-sky-400 border border-sky-800/30 text-[9px] px-1.5 py-0.5 font-sans">C</span>
+                  Configuración C (Cierre por Partido Exacto)
+                </div>
+                <ul className="text-[10px] text-muted-foreground uppercase font-black tracking-widest leading-relaxed space-y-1 list-disc pl-4">
+                  <li>Las predicciones cierran de forma independiente para cada partido de manera exacta.</li>
+                  <li>Cada partido se bloquea justo en su minuto de inicio (kick-off).</li>
+                  <li>El cierre de una jornada o de otros partidos no afecta los partidos restantes; puedes pronosticar cada partido hasta su silbatazo inicial.</li>
                 </ul>
               </div>
             </div>
