@@ -3,6 +3,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -100,9 +101,33 @@ app.get("/api/time", (req, res) => {
   res.json({ serverTime: new Date().toISOString() });
 });
 
-const serverStartTime = new Date().getTime().toString();
+// Generate a unique, static version ID based on the production build output.
+// Since the built assets (under /dist) are identical on all server replicas spawned from the same deployment image,
+// this hash is guaranteed to remain perfectly uniform across concurrent active instances.
+let appVersion = "1.0.0";
+try {
+  const distIndexPath = path.join(process.cwd(), "dist/index.html");
+  if (fs.existsSync(distIndexPath)) {
+    const fileBuffer = fs.readFileSync(distIndexPath);
+    const hashSum = crypto.createHash('sha256');
+    hashSum.update(fileBuffer);
+    appVersion = hashSum.digest('hex').substring(0, 16);
+  } else {
+    // Fallback for local development environment
+    const devPath = path.join(process.cwd(), "src/App.tsx");
+    if (fs.existsSync(devPath)) {
+      const fileBuffer = fs.readFileSync(devPath);
+      const hashSum = crypto.createHash('sha256');
+      hashSum.update(fileBuffer);
+      appVersion = "dev-" + hashSum.digest('hex').substring(0, 12);
+    }
+  }
+} catch (e) {
+  console.warn("Failed to generate deployment-based version hash:", e);
+}
+
 app.get("/api/version", (req, res) => {
-  res.json({ version: serverStartTime });
+  res.json({ version: appVersion });
 });
 
 app.get("/api/sync/:competition", async (req, res) => {
