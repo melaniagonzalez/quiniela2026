@@ -106,20 +106,25 @@ app.get("/api/time", (req, res) => {
 // this hash is guaranteed to remain perfectly uniform across concurrent active instances.
 let appVersion = "1.0.0";
 try {
-  const distIndexPath = path.join(process.cwd(), "dist/index.html");
-  if (fs.existsSync(distIndexPath)) {
-    const fileBuffer = fs.readFileSync(distIndexPath);
-    const hashSum = crypto.createHash('sha256');
-    hashSum.update(fileBuffer);
-    appVersion = hashSum.digest('hex').substring(0, 16);
+  const versionPath = path.join(process.cwd(), "dist/version.txt");
+  if (fs.existsSync(versionPath)) {
+    appVersion = fs.readFileSync(versionPath, "utf-8").trim();
   } else {
-    // Fallback for local development environment
-    const devPath = path.join(process.cwd(), "src/App.tsx");
-    if (fs.existsSync(devPath)) {
-      const fileBuffer = fs.readFileSync(devPath);
+    const distIndexPath = path.join(process.cwd(), "dist/index.html");
+    if (fs.existsSync(distIndexPath)) {
+      const fileBuffer = fs.readFileSync(distIndexPath);
       const hashSum = crypto.createHash('sha256');
       hashSum.update(fileBuffer);
-      appVersion = "dev-" + hashSum.digest('hex').substring(0, 12);
+      appVersion = hashSum.digest('hex').substring(0, 16);
+    } else {
+      // Fallback for local development environment
+      const devPath = path.join(process.cwd(), "src/App.tsx");
+      if (fs.existsSync(devPath)) {
+        const fileBuffer = fs.readFileSync(devPath);
+        const hashSum = crypto.createHash('sha256');
+        hashSum.update(fileBuffer);
+        appVersion = "dev-" + hashSum.digest('hex').substring(0, 12);
+      }
     }
   }
 } catch (e) {

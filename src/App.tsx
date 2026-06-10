@@ -695,10 +695,10 @@ export default function App() {
 
   // Version checker to solve client side caching & ensure they run the latest layout
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
-  const clientVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
     let intervalId: any;
+    const currentClientVersion = (import.meta as any).env.VITE_APP_VERSION || 'dev';
 
     const checkVersion = async () => {
       try {
@@ -706,9 +706,8 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (data && data.version) {
-            if (!clientVersionRef.current) {
-              clientVersionRef.current = data.version;
-            } else if (clientVersionRef.current !== data.version) {
+            // Mark a new version as available if the deployed server version differs from this active bundle's version
+            if (currentClientVersion !== 'dev' && data.version !== 'dev' && currentClientVersion !== data.version) {
               setNewVersionAvailable(true);
             }
           }
