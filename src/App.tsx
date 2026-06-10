@@ -725,7 +725,7 @@ export default function App() {
 
     if (!isDev) {
       checkVersion();
-      intervalId = setInterval(checkVersion, 1000 * 60 * 5); // check every 5 minutes
+      intervalId = setInterval(checkVersion, 1000 * 60 * 1); // check every 1 minute
 
       const handleVisibility = () => {
         if (document.visibilityState === 'visible') {
@@ -3119,19 +3119,34 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
-      {newVersionAvailable && !hasUnsavedChanges && (
-        <div className="bg-amber-600/95 text-white font-black uppercase text-center py-2.5 px-4 shadow-xl text-[10px] sm:text-[11px] tracking-wider relative flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 border-b border-amber-500 z-[9999]">
-          <div className="flex items-center gap-1.5 justify-center">
-            <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
-            <span>🚨 ¡Actualización importante de la aplicación disponible!</span>
+      {newVersionAvailable && (
+        <div className="fixed inset-0 bg-background/95 backdrop-blur-md z-[99999] flex items-center justify-center p-4 select-none">
+          <div className="bg-card border border-border max-w-md w-full p-8 shadow-2xl rounded-none text-center flex flex-col items-center gap-6 animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative">
+              <span className="absolute top-0 right-0 w-3 h-3 rounded-full bg-primary animate-ping" />
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary text-3xl">
+                🚀
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-xl font-black uppercase tracking-tight text-foreground">
+                Nueva versión disponible
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Hemos publicado cambios importantes y mejoras en la aplicación para asegurar que tu experiencia sea óptima. Por favor, actualiza para continuar.
+              </p>
+            </div>
+
+            <div className="w-full pt-2">
+              <Button
+                onClick={() => window.location.reload()}
+                className="w-full h-11 bg-primary hover:bg-primary/95 text-primary-foreground font-black text-xs uppercase tracking-widest rounded-none shadow-md transition-all flex items-center justify-center gap-2"
+              >
+                Actualizar ahora
+              </Button>
+            </div>
           </div>
-          <Button
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="h-7 bg-white text-amber-950 hover:bg-neutral-100 font-black text-[9px] uppercase tracking-widest px-3 py-1 rounded-none border border-transparent shadow-sm shrink-0"
-          >
-            Actualizar ahora
-          </Button>
         </div>
       )}
       {/* Header */}
