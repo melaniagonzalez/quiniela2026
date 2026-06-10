@@ -21,6 +21,16 @@ export default defineConfig(({mode}) => {
     console.warn('Failed to pre-create and write version.txt to dist:', err);
   }
 
+  // Also write the buildVersion to src/version.ts so that the server (which might be bundled serverlessly) can import it statically
+  try {
+    const srcDir = path.resolve(__dirname, 'src');
+    if (fs.existsSync(srcDir)) {
+      fs.writeFileSync(path.join(srcDir, 'version.ts'), `export const APP_VERSION = ${JSON.stringify(buildVersion)};\n`, 'utf-8');
+    }
+  } catch (err) {
+    console.warn('Failed to write version.ts to src:', err);
+  }
+
   return {
     plugins: [react(), tailwindcss()],
     define: {

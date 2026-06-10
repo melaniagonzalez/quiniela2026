@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { APP_VERSION } from "./src/version";
 
 dotenv.config();
 
@@ -104,31 +105,33 @@ app.get("/api/time", (req, res) => {
 // Generate a unique, static version ID based on the production build output.
 // Since the built assets (under /dist) are identical on all server replicas spawned from the same deployment image,
 // this hash is guaranteed to remain perfectly uniform across concurrent active instances.
-let appVersion = "1.0.0";
-try {
-  const versionPath = path.join(process.cwd(), "dist/version.txt");
-  if (fs.existsSync(versionPath)) {
-    appVersion = fs.readFileSync(versionPath, "utf-8").trim();
-  } else {
-    const distIndexPath = path.join(process.cwd(), "dist/index.html");
-    if (fs.existsSync(distIndexPath)) {
-      const fileBuffer = fs.readFileSync(distIndexPath);
-      const hashSum = crypto.createHash('sha256');
-      hashSum.update(fileBuffer);
-      appVersion = hashSum.digest('hex').substring(0, 16);
+let appVersion = APP_VERSION;
+if (appVersion === "dev" || !appVersion) {
+  try {
+    const versionPath = path.join(process.cwd(), "dist/version.txt");
+    if (fs.existsSync(versionPath)) {
+      appVersion = fs.readFileSync(versionPath, "utf-8").trim();
     } else {
-      // Fallback for local development environment
-      const devPath = path.join(process.cwd(), "src/App.tsx");
-      if (fs.existsSync(devPath)) {
-        const fileBuffer = fs.readFileSync(devPath);
+      const distIndexPath = path.join(process.cwd(), "dist/index.html");
+      if (fs.existsSync(distIndexPath)) {
+        const fileBuffer = fs.readFileSync(distIndexPath);
         const hashSum = crypto.createHash('sha256');
         hashSum.update(fileBuffer);
-        appVersion = "dev-" + hashSum.digest('hex').substring(0, 12);
+        appVersion = hashSum.digest('hex').substring(0, 16);
+      } else {
+        // Fallback for local development environment
+        const devPath = path.join(process.cwd(), "src/App.tsx");
+        if (fs.existsSync(devPath)) {
+          const fileBuffer = fs.readFileSync(devPath);
+          const hashSum = crypto.createHash('sha256');
+          hashSum.update(fileBuffer);
+          appVersion = "dev-" + hashSum.digest('hex').substring(0, 12);
+        }
       }
     }
+  } catch (e) {
+    console.warn("Failed to generate deployment-based version hash:", e);
   }
-} catch (e) {
-  console.warn("Failed to generate deployment-based version hash:", e);
 }
 
 app.get("/api/version", (req, res) => {

@@ -700,7 +700,13 @@ export default function App() {
     let intervalId: any;
     const currentClientVersion = (import.meta as any).env.VITE_APP_VERSION || 'dev';
 
+    // Disable checking and popups during local development or AI Studio simulation to avoid interrupting coding edits
+    const isDev = (import.meta as any).env.DEV || 
+                  window.location.hostname === 'localhost' || 
+                  window.location.hostname.includes('ais-dev');
+
     const checkVersion = async () => {
+      if (isDev) return;
       try {
         const res = await fetch('/api/version');
         if (res.ok) {
@@ -717,20 +723,22 @@ export default function App() {
       }
     };
 
-    checkVersion();
-    intervalId = setInterval(checkVersion, 1000 * 60 * 5); // check every 5 minutes
+    if (!isDev) {
+      checkVersion();
+      intervalId = setInterval(checkVersion, 1000 * 60 * 5); // check every 5 minutes
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        checkVersion();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
+      const handleVisibility = () => {
+        if (document.visibilityState === 'visible') {
+          checkVersion();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
 
-    return () => {
-      clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
+      return () => {
+        clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      };
+    }
   }, []);
 
   const canEditActive = !!(user || (activeParticipantId && unlockedParticipants[activeParticipantId]));
