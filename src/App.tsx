@@ -220,7 +220,7 @@ export default function App() {
   useEffect(() => {
     const fetchDbStatus = async () => {
       try {
-        const res = await fetch('/api/db-status');
+        const res = await apiFetch('/api/db-status');
         if (res.ok) {
           const data = await res.json();
           if (data.lastUpdated) {
@@ -649,7 +649,7 @@ export default function App() {
   const syncCompetitionData = async (comp: string) => {
     setIsSyncing(true);
     try {
-      const response = await fetch(`/api/sync/${comp}`);
+      const response = await apiFetch(`/api/sync/${comp}`);
       if (!response.ok) throw new Error('Sync failed');
       const data = await response.json();
       if (data.teams && data.matches) {
@@ -695,6 +695,41 @@ export default function App() {
 
   // Version checker to solve client side caching & ensure they run the latest layout
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
+
+  const apiFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const currentVersion = (import.meta as any).env.VITE_APP_VERSION || 'dev';
+    const isDev = (import.meta as any).env.DEV || 
+                  window.location.hostname === 'localhost' || 
+                  window.location.hostname.includes('ais-dev');
+
+    const headers = new Headers(init?.headers);
+    if (!isDev) {
+      headers.set('X-App-Version', currentVersion);
+    }
+
+    try {
+      const response = await fetch(input, {
+        ...init,
+        headers
+      });
+
+      if (!isDev && response.status === 426) {
+        setNewVersionAvailable(true);
+      } else if (!isDev) {
+        try {
+          const cloned = response.clone();
+          const json = await cloned.json();
+          if (json && (json.error === 'outdated_version' || json.updateRequired)) {
+            setNewVersionAvailable(true);
+          }
+        } catch (_) {}
+      }
+
+      return response;
+    } catch (err) {
+      throw err;
+    }
+  };
 
   useEffect(() => {
     let intervalId: any;
@@ -2196,7 +2231,7 @@ export default function App() {
         return;
       }
       const competition = activeLeague?.competition || 'WC';
-      const response = await fetch(`/api/results/${competition}`);
+      const response = await apiFetch(`/api/results/${competition}`);
       if (response.ok) {
         const data = await response.json();
         setNewsData(data);
@@ -2236,7 +2271,7 @@ export default function App() {
       let verifiedServerTime = Date.now();
       if (!isSimulationMode) {
         try {
-          const timeRes = await fetch('/api/time');
+          const timeRes = await apiFetch('/api/time');
           if (timeRes.ok) {
             const timeData = await timeRes.json();
             if (timeData?.serverTime) {

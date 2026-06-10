@@ -134,6 +134,29 @@ if (appVersion === "dev" || !appVersion) {
   }
 }
 
+// Middleware to validate client's version on API requests
+app.use((req, res, next) => {
+  // We only check paths starting with /api, and exclude /api/version to prevent loop.
+  // Also exclude /api/db-status to allow the app to initialize its baseline states peacefully.
+  if (req.path.startsWith("/api") && req.path !== "/api/version" && req.path !== "/api/db-status") {
+    const skipVersionCheck = process.env.NODE_ENV !== "production" || appVersion === "dev" || !appVersion || appVersion.startsWith("dev-");
+    
+    if (!skipVersionCheck) {
+      const clientVersion = req.headers["x-app-version"];
+      if (!clientVersion || clientVersion !== appVersion) {
+        console.warn(`Version validation failed: Client (${clientVersion || 'none'}) vs Server (${appVersion}). Rejecting request.`);
+        return res.status(426).json({
+          error: "outdated_version",
+          updateRequired: true,
+          serverVersion: appVersion,
+          message: "A new version of the app is available. Please reload the page."
+        });
+      }
+    }
+  }
+  next();
+});
+
 app.get("/api/version", (req, res) => {
   res.json({ version: appVersion });
 });
