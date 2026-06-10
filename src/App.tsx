@@ -7444,7 +7444,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
           © 2026 Quiniela Mundial
         </div>
         <div className="text-[10px] sm:text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-w-md">
-          ¿Te interesa una página como esta o para tu negocio? Escríbenos a: <a href="mailto:info@pgsimple.com" className="text-primary hover:underline font-bold">info@pgsimple.com</a>
+          ¿Te interesa una página como esta o para tu negocio? Contáctanos a: <a href="mailto:info@pgsimple.com" className="text-primary hover:underline font-bold">info@pgsimple.com</a>
         </div>
       </footer>
     </div>
