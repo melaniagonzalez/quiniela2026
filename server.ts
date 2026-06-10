@@ -101,10 +101,19 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    // Serve static assets but disable default index.html serving to prevent caching
+    app.use(express.static(distPath, { index: false }));
+    
+    const sendIndexWithNoCache = (req: express.Request, res: express.Response) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
-    });
+    };
+
+    app.get("/", sendIndexWithNoCache);
+    app.get("/index.html", sendIndexWithNoCache);
+    app.get("*", sendIndexWithNoCache);
   }
 
   app.listen(PORT, "0.0.0.0", () => {
