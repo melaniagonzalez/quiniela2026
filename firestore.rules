@@ -53,6 +53,10 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function hasCurrentVersion(data) {
+      return data.get('appVersion', '') == '1781135614197';
+    }
+
     // Rules for User profiles (which now represent both Admins and Participant profiles managed by Admins)
     match /users/{userId} {
       allow read: if true;
@@ -60,15 +64,22 @@ service cloud.firestore {
       allow create: if isSignedIn() && userId == request.auth.uid && isValidId(userId) && (
         request.resource.data.isAdmin == false &&
         (!('adminRole' in request.resource.data) || request.resource.data.adminRole == 'none') &&
-        (!('adminRequestStatus' in request.resource.data) || request.resource.data.adminRequestStatus == 'none' || request.resource.data.adminRequestStatus == 'pending')
+        (!('adminRequestStatus' in request.resource.data) || request.resource.data.adminRequestStatus == 'none' || request.resource.data.adminRequestStatus == 'pending') &&
+        hasCurrentVersion(request.resource.data)
       );
       allow update: if isValidId(userId) && (
-        (isSignedIn() && userId == request.auth.uid && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus'])
-        )) ||
-        ((userId.matches('^p_.*') || resource.data.get('isParticipant', false) == true) && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'isParticipant', 'leagueId', 'email', 'searchEmail'])
-        ))
+        isAdmin() ||
+        (
+          hasCurrentVersion(request.resource.data) &&
+          (
+            (isSignedIn() && userId == request.auth.uid && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus'])
+            )) ||
+            ((userId.matches('^p_.*') || resource.data.get('isParticipant', false) == true) && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'isParticipant', 'leagueId', 'email', 'searchEmail'])
+            ))
+          )
+        )
       );
       
       // Predictions subcollection
@@ -76,10 +87,14 @@ service cloud.firestore {
         allow read: if true;
         allow write: if (
           isAdmin() || 
-          (isSignedIn() && userId == request.auth.uid) || 
-          userId.matches('^p_.*') || 
-          (exists(/databases/$(database)/documents/users/$(userId)) && 
-           get(/databases/$(database)/documents/users/$(userId)).data.get('isParticipant', false) == true)
+          (
+            (
+              (isSignedIn() && userId == request.auth.uid) || 
+              userId.matches('^p_.*') || 
+              (exists(/databases/$(database)/documents/users/$(userId)) && 
+               get(/databases/$(database)/documents/users/$(userId)).data.get('isParticipant', false) == true)
+            ) && hasCurrentVersion(request.resource.data)
+          )
         ) && isValidId(matchId);
       }
     }

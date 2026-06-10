@@ -29,6 +29,7 @@ import { Skeleton } from './components/ui/skeleton';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, onSnapshot, query, orderBy, limit, writeBatch, where, addDoc, updateDoc, arrayUnion, arrayRemove, deleteDoc, getDocs } from 'firebase/firestore';
+import { APP_VERSION } from './version';
 
 const ADMIN_EMAILS = ['melaniagonzalez@gmail.com'];
 const DYNAMIC_ADMIN_EMAILS = [...ADMIN_EMAILS];
@@ -1851,7 +1852,8 @@ export default function App() {
             photoURL: currentUser.photoURL || '',
             isAdmin: isReallyAdmin,
             adminRequestStatus: requestStatus,
-            adminRole: adminRole
+            adminRole: adminRole,
+            appVersion: APP_VERSION
           };
           
           if (!userDoc.exists()) {
@@ -2351,7 +2353,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', p.matchId);
           batch.set(predictionRef, {
             ...p,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         });
 
@@ -2359,7 +2362,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'world_champion');
           batch.set(predictionRef, {
             ...finalChampion,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         }
 
@@ -2367,7 +2371,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'runner_up');
           batch.set(predictionRef, {
             ...finalRunnerUp,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         }
 
@@ -2375,7 +2380,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'third_place');
           batch.set(predictionRef, {
             ...finalThirdPlace,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         }
 
@@ -2383,7 +2389,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'top_scorer');
           batch.set(predictionRef, {
             ...finalScorer,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         }
 
@@ -2391,7 +2398,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'best_player');
           batch.set(predictionRef, {
             ...finalBestPlayer,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         }
 
@@ -2399,7 +2407,8 @@ export default function App() {
           const predictionRef = doc(db, 'users', targetId, 'predictions', 'best_goalkeeper');
           batch.set(predictionRef, {
             ...finalBestGoalkeeper,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            appVersion: APP_VERSION
           }, { merge: true });
         }
 
@@ -2410,7 +2419,8 @@ export default function App() {
           correctResults,
           correctWinners,
           extraPoints,
-          lastUpdatedAt: new Date().toISOString()
+          lastUpdatedAt: new Date().toISOString(),
+          appVersion: APP_VERSION
         });
 
         await batch.commit();
@@ -2529,7 +2539,8 @@ export default function App() {
         correctWinners: 0,
         leagueId: selectedLeagueId,
         isParticipant: true,
-        accessCode: Math.floor(10000 + Math.random() * 90000).toString()
+        accessCode: Math.floor(10000 + Math.random() * 90000).toString(),
+        appVersion: APP_VERSION
       });
 
       // Agregar a memberUids de la liga/quiniela
@@ -2555,7 +2566,8 @@ export default function App() {
       code = Math.floor(10000 + Math.random() * 90000).toString();
       try {
         await updateDoc(doc(db, 'users', participant.uid), {
-          accessCode: code
+          accessCode: code,
+          appVersion: APP_VERSION
         });
       } catch (error) {
         console.error("Error generating/saving code dynamically:", error);
@@ -2617,15 +2629,20 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   };
 
   const handleSaveNewCode = async (targetUid: string) => {
-    const trimmedVal = editingCodeValue.trim().toUpperCase();
+    const trimmedVal = editingCodeValue.trim();
     if (trimmedVal.length !== 5) {
-      toast.error("La clave debe tener exactamente 5 caracteres");
+      toast.error("La clave debe tener exactamente 5 dígitos");
+      return;
+    }
+    if (!/^\d+$/.test(trimmedVal)) {
+      toast.error("La clave de seguridad debe contener solo números");
       return;
     }
 
     try {
       await updateDoc(doc(db, 'users', targetUid), {
-        accessCode: trimmedVal
+        accessCode: trimmedVal,
+        appVersion: APP_VERSION
       });
       setUnlockedParticipants(prev => ({
         ...prev,
@@ -2644,7 +2661,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
   const handleSaveProfileChanges = async () => {
     if (!activeParticipantId) return;
     const nameVal = modalProfileName.trim().toUpperCase();
-    const codeVal = modalProfileCode.trim().toUpperCase();
+    const codeVal = modalProfileCode.trim();
 
     if (!nameVal) {
       toast.error("El nombre no puede estar vacío");
@@ -2655,14 +2672,19 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       return;
     }
     if (codeVal.length !== 5) {
-      toast.error("La clave de seguridad debe tener exactamente 5 caracteres");
+      toast.error("La clave de seguridad debe tener exactamente 5 dígitos");
+      return;
+    }
+    if (!/^\d+$/.test(codeVal)) {
+      toast.error("La clave de seguridad debe contener solo números");
       return;
     }
 
     try {
       await updateDoc(doc(db, 'users', activeParticipantId), {
         displayName: nameVal,
-        accessCode: codeVal
+        accessCode: codeVal,
+        appVersion: APP_VERSION
       });
       setUnlockedParticipants(prev => ({
         ...prev,
@@ -4602,7 +4624,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               onClick={async () => {
                                 try {
                                   const pRef = doc(db, 'users', activeParticipantId);
-                                  await updateDoc(pRef, { photoURL: avUrl });
+                                  await updateDoc(pRef, { photoURL: avUrl, appVersion: APP_VERSION });
                                   toast.success('¡Avatar actualizado!');
                                 } catch (error) {
                                   console.error("Error al actualizar el avatar:", error);
@@ -7149,11 +7171,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[9px] uppercase font-black text-muted-foreground tracking-widest">Clave de Seguridad (5 caracteres)</label>
+                <label className="text-[9px] uppercase font-black text-muted-foreground tracking-widest">Clave de Seguridad (5 dígitos)</label>
                 <Input
                   value={modalProfileCode}
                   onChange={(e) => {
-                    const val = e.target.value.replace(/\s+/g, '').toUpperCase();
+                    const val = e.target.value.replace(/\D/g, '');
                     if (val.length <= 5) {
                       setModalProfileCode(val);
                     }
