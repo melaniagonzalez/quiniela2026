@@ -100,6 +100,11 @@ app.get("/api/time", (req, res) => {
   res.json({ serverTime: new Date().toISOString() });
 });
 
+const serverStartTime = new Date().getTime().toString();
+app.get("/api/version", (req, res) => {
+  res.json({ version: serverStartTime });
+});
+
 app.get("/api/sync/:competition", async (req, res) => {
   const competition = (req.params.competition || "WC").toUpperCase();
   const now = Date.now();

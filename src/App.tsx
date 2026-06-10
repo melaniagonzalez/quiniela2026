@@ -693,6 +693,47 @@ export default function App() {
   const [modalProfileName, setModalProfileName] = useState('');
   const [modalProfileCode, setModalProfileCode] = useState('');
 
+  // Version checker to solve client side caching & ensure they run the latest layout
+  const [newVersionAvailable, setNewVersionAvailable] = useState(false);
+  const clientVersionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let intervalId: any;
+
+    const checkVersion = async () => {
+      try {
+        const res = await fetch('/api/version');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.version) {
+            if (!clientVersionRef.current) {
+              clientVersionRef.current = data.version;
+            } else if (clientVersionRef.current !== data.version) {
+              setNewVersionAvailable(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Version check failed:", err);
+      }
+    };
+
+    checkVersion();
+    intervalId = setInterval(checkVersion, 1000 * 60 * 5); // check every 5 minutes
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkVersion();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
   const canEditActive = !!(user || (activeParticipantId && unlockedParticipants[activeParticipantId]));
 
   // Reset navigation and edit states when entering or leaving a pool
@@ -3071,6 +3112,21 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
+      {newVersionAvailable && !hasUnsavedChanges && (
+        <div className="bg-amber-600/95 text-white font-black uppercase text-center py-2.5 px-4 shadow-xl text-[10px] sm:text-[11px] tracking-wider relative flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 border-b border-amber-500 z-[9999]">
+          <div className="flex items-center gap-1.5 justify-center">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+            <span>🚨 ¡Actualización importante de la aplicación disponible!</span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => window.location.reload()}
+            className="h-7 bg-white text-amber-950 hover:bg-neutral-100 font-black text-[9px] uppercase tracking-widest px-3 py-1 rounded-none border border-transparent shadow-sm shrink-0"
+          >
+            Actualizar ahora
+          </Button>
+        </div>
+      )}
       {/* Header */}
       <header className="px-4 lg:px-16 py-3 sm:py-6 border-b border-border flex flex-row justify-between items-center gap-4 bg-gradient-to-br from-purple/10 via-background to-primary/10 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex flex-col">
