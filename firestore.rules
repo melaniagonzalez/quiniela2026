@@ -54,7 +54,9 @@ service cloud.firestore {
     }
 
     function hasCurrentVersion(data) {
-      return data.get('appVersion', '') == '1781135614197';
+      return !exists(/databases/$(database)/documents/configurations/app_meta) || 
+             data.get('appVersion', '') == get(/databases/$(database)/documents/configurations/app_meta).data.get('currentVersion', '') ||
+             data.get('appVersion', '') == 'dev';
     }
 
     // Rules for User profiles (which now represent both Admins and Participant profiles managed by Admins)
@@ -108,7 +110,7 @@ service cloud.firestore {
     // Rules for General Configurations (Extra Points by Competition)
     match /configurations/{configId} {
       allow read: if true;
-      allow write: if isSuperAdmin() && isValidId(configId);
+      allow write: if isAdmin() && isValidId(configId);
     }
 
     // Rules for Admins Configuration

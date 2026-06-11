@@ -585,6 +585,28 @@ export default function App() {
   
   const isApprovedAdmin = isSuperAdmin || (currentUserAdminConfig !== null);
   
+  // Synchronize dynamic app version with Firestore configurations
+  useEffect(() => {
+    if (!user || !isApprovedAdmin) return;
+    const syncVersion = async () => {
+      try {
+        const metaRef = doc(db, 'configurations', 'app_meta');
+        const metaDoc = await getDoc(metaRef);
+        if (!metaDoc.exists() || metaDoc.data()?.currentVersion !== APP_VERSION) {
+          await setDoc(metaRef, {
+            currentVersion: APP_VERSION,
+            updatedBy: user.email || user.uid,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          console.log("Firestore app_meta currentVersion synchronized with", APP_VERSION);
+        }
+      } catch (err) {
+        console.error("Failed to sync app_meta to Firestore:", err);
+      }
+    };
+    syncVersion();
+  }, [user, isApprovedAdmin]);
+  
   // Decide if there is a restricted session active
   const isRestrictedSession = user ? (
     !isApprovedAdmin || 
