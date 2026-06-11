@@ -2443,14 +2443,14 @@ export default function App() {
 
         const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(updatedPredictions, activeLeague?.competition);
         const userRef = doc(db, 'users', targetId);
-        batch.update(userRef, {
+        batch.set(userRef, {
           totalPoints,
           correctResults,
           correctWinners,
           extraPoints,
           lastUpdatedAt: new Date().toISOString(),
           appVersion: APP_VERSION
-        });
+        }, { merge: true });
 
         await batch.commit();
       }
@@ -2499,9 +2499,10 @@ export default function App() {
       } else {
         toast.success('Cambios guardados correctamente');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving predictions:", error);
-      toast.error('Error al guardar las predicciones');
+      const errMsg = error && error.message ? error.message : String(error);
+      toast.error('Error al guardar las predicciones: ' + errMsg, { duration: 6000 });
     } finally {
       setIsSyncing(false);
     }
