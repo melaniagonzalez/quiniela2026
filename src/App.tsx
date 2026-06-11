@@ -7686,10 +7686,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            className="w-full max-w-lg bg-slate-900 border border-emerald-500/20 rounded-xl p-6 sm:p-8 shadow-2xl relative overflow-hidden"
+            className="w-full max-w-lg bg-slate-900 border border-[#00F5D4]/20 rounded-xl p-6 sm:p-8 shadow-2xl relative overflow-hidden"
           >
             {/* Subtle design accents */}
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 pointer-events-none" />
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#00F5D4] via-teal-400 to-[#00F5D4] pointer-events-none" />
             <button
               onClick={() => setIsContactModalOpen(false)}
               className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors duration-200"
@@ -7721,14 +7721,14 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   {/* Nombre */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                      Nombre Completo <span className="text-emerald-500">*</span>
+                      Nombre Completo <span className="text-[#00F5D4]">*</span>
                     </label>
                     <input
                       type="text"
                       value={contactName}
                       onChange={(e) => setContactName(e.target.value)}
                       placeholder="Ej. Melania González"
-                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-[#00F5D4] focus:ring-1 focus:ring-[#00F5D4]/50 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
                       maxLength={100}
                       required
                     />
@@ -7737,14 +7737,14 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   {/* Correo */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                      Correo Electrónico <span className="text-emerald-500">*</span>
+                      Correo Electrónico <span className="text-[#00F5D4]">*</span>
                     </label>
                     <input
                       type="email"
                       value={contactEmail}
                       onChange={(e) => setContactEmail(e.target.value)}
                       placeholder="Ej. correo@ejemplo.com"
-                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-[#00F5D4] focus:ring-1 focus:ring-[#00F5D4]/50 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
                       maxLength={100}
                       required
                     />
@@ -7753,14 +7753,14 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   {/* Teléfono */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
-                      Número de Teléfono <span className="text-emerald-500">*</span>
+                      Número de Teléfono <span className="text-[#00F5D4]">*</span>
                     </label>
                     <input
                       type="tel"
                       value={contactPhone}
                       onChange={(e) => setContactPhone(e.target.value)}
                       placeholder="Ej. +56 9 1234 5678"
-                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-[#00F5D4] focus:ring-1 focus:ring-[#00F5D4]/50 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
                       maxLength={30}
                       required
                     />
@@ -7775,7 +7775,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       value={contactMessage}
                       onChange={(e) => setContactMessage(e.target.value)}
                       placeholder="Cuéntanos un poco sobre tu idea de proyecto web..."
-                      className="w-full h-24 bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300 resize-none"
+                      className="w-full h-24 bg-slate-950/60 border border-slate-800 focus:border-[#00F5D4] focus:ring-1 focus:ring-[#00F5D4]/50 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300 resize-none"
                       maxLength={1000}
                     />
                   </div>
@@ -7792,11 +7792,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <button
                     type="submit"
                     disabled={contactLoading}
-                    className="w-full sm:w-2/3 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-950/30 transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
+                    className="w-full sm:w-2/3 py-3 rounded-lg bg-[#00F5D4] hover:bg-[#00E0C2] text-zinc-950 text-xs font-black uppercase tracking-wider shadow-lg shadow-[#00F5D4]/10 transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
                   >
                     {contactLoading ? (
                       <>
-                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-4 w-4 text-zinc-950" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 12 12z" />
                         </svg>
@@ -7810,7 +7810,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               </form>
             ) : (
               <div className="space-y-6 text-center py-6">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 text-emerald-500">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#00F5D4]/10 border-2 border-[#00F5D4] text-[#00F5D4]">
                   <svg className="w-8 h-8 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
                   </svg>
@@ -7826,7 +7826,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 <button
                   type="button"
                   onClick={() => setIsContactModalOpen(false)}
-                  className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg transition-colors duration-300 cursor-pointer"
+                  className="px-8 py-3 bg-[#00F5D4] hover:bg-[#00E0C2] text-zinc-950 text-xs font-black uppercase tracking-widest rounded-lg transition-colors duration-300 cursor-pointer"
                 >
                   Cerrar
                 </button>
@@ -7848,28 +7848,13 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
           className="flex flex-col md:flex-row justify-between items-center gap-6 w-full"
         >
           {/* Left side: pgsimple branding banner card replacing the old text */}
-          <div className="w-full md:max-w-md flex items-center justify-center">
+          <div className="w-full md:max-w-md flex items-center justify-start">
             <img 
-              src="/images/banner.png" 
+              src="https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg" 
               alt="pgsimple banner" 
               className="w-full h-auto rounded-xl border border-zinc-800 shadow-[0_4px_30px_rgba(0,0,0,0.4)] object-contain"
               onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                const parent = e.currentTarget.parentElement;
-                if (parent && !parent.querySelector('.banner-fallback')) {
-                  const fallback = document.createElement('div');
-                  fallback.className = 'banner-fallback w-full px-6 py-4 bg-[#0c0c0c] border border-dashed border-zinc-700/60 rounded-xl flex flex-col justify-center select-none';
-                  fallback.innerHTML = `
-                    <div class="flex items-center gap-1.5 mb-1 select-none">
-                      <span class="text-[17px] font-black text-white tracking-tight">pg</span>
-                      <span class="text-[17px] font-black text-[#a855f7] tracking-tight">simple</span>
-                    </div>
-                    <div class="text-[10px] text-zinc-400 font-mono tracking-wide">
-                      [ Sube tu imagen 'banner.png' en public/images/ ]
-                    </div>
-                  `;
-                  parent.appendChild(fallback);
-                }
+                e.currentTarget.src = "/images/banner.png"; // Local fallback if network fails
               }}
             />
           </div>
@@ -7885,7 +7870,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               }}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all duration-300 rounded-md shadow-md border border-emerald-500/20 hover:border-emerald-500/30 group/btn cursor-pointer whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-[#00F5D4] hover:bg-[#00E0C2] text-zinc-950 text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all duration-300 rounded-md shadow-md shadow-[#00F5D4]/10 border border-[#00F5D4]/20 hover:border-[#00F5D4]/30 group/btn cursor-pointer whitespace-nowrap"
             >
               Contactar
               <svg 
@@ -7901,12 +7886,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         </motion.div>
 
         {/* Footer Core Info Row */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left pt-6 border-t border-border/40 w-full">
-          <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest shrink-0">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left pt-6 border-t border-border/40 w-full mb-2">
+          <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest shrink-0 mx-auto md:mx-0">
             © 2026 Quiniela Mundial
-          </div>
-          <div className="text-[10px] sm:text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-w-md">
-            ¿Te interesa una página como esta o para tu negocio? Contáctanos a: <a href="mailto:info@pgsimple.com" className="text-primary hover:underline font-bold lowercase">info@pgsimple.com</a>
           </div>
         </div>
       </footer>
