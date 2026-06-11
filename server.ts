@@ -84,11 +84,32 @@ export const MATCHES: Match[] = ${JSON.stringify(formattedMatches, null, 2)};
   }
 }
 
+async function downloadBanner() {
+  const imageUrl = "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg";
+  const publicImagesDir = path.join(process.cwd(), "public", "images");
+  
+  try {
+    if (!fs.existsSync(publicImagesDir)) {
+      fs.mkdirSync(publicImagesDir, { recursive: true });
+    }
+
+    const destPath = path.join(publicImagesDir, "pgsimplebanner.jpeg");
+    console.log(`[Banner Downloader] Attempting to fetch banner from ${imageUrl}...`);
+    const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+    fs.writeFileSync(destPath, Buffer.from(response.data));
+    console.log(`[Banner Downloader] Banner saved successfully to ${destPath}`);
+  } catch (err: any) {
+    console.error(`[Banner Downloader] Failed to download banner:`, err.message);
+  }
+}
+
 async function startServer() {
   const PORT = 3000;
 
   // Run initial synchronization of local constants on server startup
   cronUpdateLocalConstants();
+  // Download the banner to local assets on startup
+  downloadBanner();
   // Set up hourly background task to keep the file synced with real-time data from the official API
   setInterval(cronUpdateLocalConstants, 1000 * 60 * 60);
 

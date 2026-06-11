@@ -2577,8 +2577,7 @@ export default function App() {
           createdAt: new Date().toISOString()
         });
       } catch (dbErr) {
-        console.error('Firestore contact save failed:', dbErr);
-        // We continue to progress because server-side endpoints might succeed
+        handleFirestoreError(dbErr, OperationType.CREATE, `contactRequests/${requestId}`);
       }
 
       // 2. Enviar al backend vía HTTP POST (que simula el correo de forma real con logs y backup JSON)
@@ -7850,11 +7849,14 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
           {/* Left side: pgsimple branding banner card replacing the old text */}
           <div className="w-full md:max-w-md flex items-center justify-start">
             <img 
-              src="https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg" 
+              src="/images/pgsimplebanner.jpeg" 
               alt="pgsimple banner" 
               className="w-full h-auto rounded-xl border border-zinc-800 shadow-[0_4px_30px_rgba(0,0,0,0.4)] object-contain"
               onError={(e) => {
-                e.currentTarget.src = "/images/banner.png"; // Local fallback if network fails
+                const target = e.currentTarget;
+                if (target.src !== "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg") {
+                  target.src = "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg";
+                }
               }}
             />
           </div>
