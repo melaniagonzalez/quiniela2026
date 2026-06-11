@@ -104,6 +104,25 @@ app.get("/api/time", (req, res) => {
   res.json({ serverTime: new Date().toISOString() });
 });
 
+app.get("/api/banner-image", async (req, res) => {
+  try {
+    const svgPath = path.join(process.cwd(), "public/images/pgsimplebanner.svg");
+    if (fs.existsSync(svgPath)) {
+      res.setHeader("Content-Type", "image/svg+xml");
+      return res.sendFile(svgPath);
+    }
+    const fallbackPath = path.join(process.cwd(), "public/images/pgsimplebanner.jpeg");
+    if (fs.existsSync(fallbackPath)) {
+      res.setHeader("Content-Type", "image/jpeg");
+      return res.sendFile(fallbackPath);
+    }
+    res.status(404).send("Banner not found");
+  } catch (err: any) {
+    console.error(`[Proxy] Failed to load banner image:`, err.message);
+    res.status(500).send("Error loading banner");
+  }
+});
+
 // Generate a unique, static version ID based on the production build output.
 // Since the built assets (under /dist) are identical on all server replicas spawned from the same deployment image,
 // this hash is guaranteed to remain perfectly uniform across concurrent active instances.
