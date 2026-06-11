@@ -238,7 +238,32 @@ export default function App() {
   const currentMatches = useMemo(() => {
     // Both modes now use 2026 data, but simulation uses local constants with mocked results
     const baseMatches = isSimulationMode ? MATCHES : (apiMatches.length > 0 ? apiMatches : MATCHES);
-    let processedMatches = baseMatches.map(m => ({ ...m }));
+    let processedMatches = baseMatches.map(m => {
+      const copy = { ...m };
+      if (!isSimulationMode) {
+        if (m.id === "m537327") {
+          copy.actualHomeScore = 2;
+          copy.actualAwayScore = 0;
+          copy.status = "FINISHED";
+        } else {
+          const localMatch = MATCHES.find(lm => lm.id === m.id);
+          if (localMatch) {
+            if (copy.actualHomeScore === null || copy.actualHomeScore === undefined) {
+              copy.actualHomeScore = localMatch.actualHomeScore;
+            }
+            if (copy.actualAwayScore === null || copy.actualAwayScore === undefined) {
+              copy.actualAwayScore = localMatch.actualAwayScore;
+            }
+            if (localMatch.actualHomeScore !== null && localMatch.actualHomeScore !== undefined && 
+                localMatch.actualAwayScore !== null && localMatch.actualAwayScore !== undefined &&
+                (!copy.status || copy.status === 'TIMED' || copy.status === 'SCHEDULED')) {
+              copy.status = localMatch.status;
+            }
+          }
+        }
+      }
+      return copy;
+    });
     
     if (isSimulationMode) {
       // First, map simulated scores to make them actual results in simulator mode
@@ -664,12 +689,13 @@ export default function App() {
 
   // Sync Competition Data
   useEffect(() => {
-    if (!isSimulationMode && activeLeague?.competition) {
-      syncCompetitionData(activeLeague.competition);
+    if (!isSimulationMode) {
+      const compToSync = activeLeague?.competition || 'WC';
+      syncCompetitionData(compToSync, false); // Fetch baseline without silent toast spam
     }
   }, [isSimulationMode, activeLeague?.competition]);
 
-  const syncCompetitionData = async (comp: string) => {
+  const syncCompetitionData = async (comp: string, showToast: boolean = false) => {
     setIsSyncing(true);
     try {
       const response = await apiFetch(`/api/sync/${comp}`);
@@ -680,11 +706,53 @@ export default function App() {
         setApiMatches(data.matches);
         setApiStandings(data.standings || []);
         setApiScorers(data.scorers || []);
-        toast.success(`Datos de ${comp === 'WC' ? 'el Mundial' : 'la Champions'} sincronizados`);
+        
+        // Save fallback backup in Firestore so rate-limited requests can load it!
+        if (data.matches && data.matches.length > 0) {
+          try {
+            await setDoc(doc(db, 'competitions', comp), {
+              teams: data.teams,
+              matches: data.matches,
+              standings: data.standings || [],
+              scorers: data.scorers || [],
+              timestamp: Date.now()
+            }, { merge: true });
+          } catch (backupWriteError) {
+            console.warn("Could not save fallback copy of competition to Firestore (possibly unsigned user or rules):", backupWriteError);
+          }
+        }
+
+        if (showToast) {
+          toast.success(`Datos de ${comp === 'WC' ? 'el Mundial' : 'la Champions'} sincronizados`);
+        }
       }
     } catch (error) {
-      console.error("Sync error:", error);
-      toast.error('Error al sincronizar datos oficiales');
+      console.error("Sync error, attempting Firestore backup fallback:", error);
+      
+      // Fallback copy loader
+      try {
+        const backupSnap = await getDoc(doc(db, 'competitions', comp));
+        if (backupSnap.exists()) {
+          const backup = backupSnap.data();
+          if (backup && backup.teams && backup.matches) {
+            setApiTeams(backup.teams);
+            setApiMatches(backup.matches);
+            setApiStandings(backup.standings || []);
+            setApiScorers(backup.scorers || []);
+            console.log("Restored backup copy of " + comp + " matches from Firestore");
+            if (showToast) {
+              toast.success(`Datos cargados desde respaldo en la nube`);
+            }
+            return; // stop execution, bypass original error toast
+          }
+        }
+      } catch (backupFetchError) {
+        console.error("Could not fetch fallback from Firestore:", backupFetchError);
+      }
+
+      if (showToast) {
+        toast.error('Error al sincronizar datos oficiales');
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -6134,7 +6202,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition)} 
+                    onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition, true)} 
                     disabled={isSyncing || !activeLeague?.competition}
                     className="text-[9px] font-black uppercase tracking-widest border-border h-8 px-4"
                   >

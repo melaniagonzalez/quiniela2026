@@ -10,12 +10,16 @@ import { Resend } from "resend";
 
 dotenv.config();
 
+const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAwayScore: number | null, status?: string }> = {
+  "m537327": { actualHomeScore: 2, actualAwayScore: 0, status: "FINISHED" }
+};
+
 const app = express();
 app.use(express.json());
 
 // Cache for different competitions
 let competitionsCache: Record<string, { teams: any[]; matches: any[]; standings: any[]; scorers: any[]; players?: any[]; timestamp: number }> = {};
-const CACHE_DURATION = 1000 * 60 * 60; // 1 hour
+const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes (300,000 ms) to stay highly real-time while respecting API rate-limits
 
 const TEAM_TRANSLATIONS: Record<string, string> = {
   "Croatia": "Croacia",
@@ -235,8 +239,11 @@ app.get("/api/sync/:competition", async (req, res) => {
         else if (m.stage === "FINAL" || m.stage === "THIRD_PLACE") matchday = 8;
       }
 
+      const matchId = `m${m.id}`;
+      const override = MATCH_OVERRIDES[matchId];
+
       return {
-        id: `m${m.id}`,
+        id: matchId,
         homeTeamId: m.homeTeam?.id ? `${m.homeTeam.id}` : null,
         awayTeamId: m.awayTeam?.id ? `${m.awayTeam.id}` : null,
         homeTeamName: translateTeamName(m.homeTeam?.name) || "TBD",
@@ -248,9 +255,9 @@ app.get("/api/sync/:competition", async (req, res) => {
         stage: m.stage,
         stadium: m.venue || "TBD",
         matchday: matchday || 1,
-        status: m.status,
-        actualHomeScore: m.score.fullTime.home,
-        actualAwayScore: m.score.fullTime.away
+        status: override?.status || m.status,
+        actualHomeScore: override !== undefined ? override.actualHomeScore : m.score.fullTime.home,
+        actualAwayScore: override !== undefined ? override.actualAwayScore : m.score.fullTime.away
       };
     });
 

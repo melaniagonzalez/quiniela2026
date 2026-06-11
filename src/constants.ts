@@ -1,5 +1,5 @@
 import { Team, Match } from './types';
-
+ 
 export const TEAMS: Team[] = [
   {
     "id": "758",
@@ -290,7 +290,7 @@ export const TEAMS: Team[] = [
     "group": "E"
   }
 ];
-
+ 
 export const MATCHES: Match[] = [
   {
     "id": "m537327",
@@ -300,9 +300,9 @@ export const MATCHES: Match[] = [
     "group": "A",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 0
   },
   {
     "id": "m537328",
@@ -420,7 +420,7 @@ export const MATCHES: Match[] = [
     "group": "E",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "SCHEDULED",
+    "status": "TIMED",
     "actualHomeScore": null,
     "actualAwayScore": null
   },

@@ -103,9 +103,26 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Fecha de contacto" }
       },
       "required": ["id", "name", "email", "phone"]
+    },
+    "CompetitionCache": {
+      "title": "CompetitionCache",
+      "description": "Copia de seguridad en la nube de los datos de la competición",
+      "type": "object",
+      "properties": {
+        "teams": { "type": "array", "description": "Lista de equipos de la competición" },
+        "matches": { "type": "array", "description": "Lista de partidos con resultados oficiales" },
+        "standings": { "type": "array", "description": "Tabla de posiciones" },
+        "scorers": { "type": "array", "description": "Goleadores" },
+        "timestamp": { "type": "number", "description": "Fecha y hora del último guardado" }
+      },
+      "required": ["teams", "matches"]
     }
   },
   "firestore": {
+    "/competitions/{compId}": {
+      "schema": "CompetitionCache",
+      "description": "Cache de respaldo de la competición nacional o internacional a través de Firestore"
+    },
     "/contactRequests/{requestId}": {
       "schema": "ContactRequest",
       "description": "Formularios de contacto de clientes para PGSimple"

@@ -9,6 +9,10 @@ import app from "./server-app";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAwayScore: number | null, status?: string }> = {
+  "m537327": { actualHomeScore: 2, actualAwayScore: 0, status: "FINISHED" }
+};
+
 async function cronUpdateLocalConstants() {
   const apiKey = process.env.FOOTBALL_DATA_KEY;
   if (!apiKey || apiKey === "MY_API_KEY") {
@@ -53,17 +57,20 @@ async function cronUpdateLocalConstants() {
       else if (m.stage === "SEMI_FINALS") matchday = 7;
       else if (m.stage === "FINAL" || m.stage === "THIRD_PLACE") matchday = 8;
 
+      const matchId = `m${m.id}`;
+      const override = MATCH_OVERRIDES[matchId];
+
       return {
-        id: `m${m.id}`,
+        id: matchId,
         homeTeamId: m.homeTeam?.id ? `${m.homeTeam.id}` : null,
         awayTeamId: m.awayTeam?.id ? `${m.awayTeam.id}` : null,
         date: m.utcDate,
         group: group,
         stadium: m.venue || "TBD",
         matchday: matchday || 1,
-        status: m.status,
-        actualHomeScore: m.score.fullTime.home,
-        actualAwayScore: m.score.fullTime.away
+        status: override?.status || m.status,
+        actualHomeScore: override !== undefined ? override.actualHomeScore : m.score.fullTime.home,
+        actualAwayScore: override !== undefined ? override.actualAwayScore : m.score.fullTime.away
       };
     });
 
