@@ -719,6 +719,16 @@ export default function App() {
   // Version checker to solve client side caching & ensure they run the latest layout
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
 
+  // PGSimple Contact Modal States
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactSuccess, setContactSuccess] = useState(false);
+  const [contactErrorMsg, setContactErrorMsg] = useState('');
+
   const apiFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const currentVersion = APP_VERSION;
     const isDev = (import.meta as any).env.DEV || 
@@ -2324,7 +2334,7 @@ export default function App() {
         const match = matchedMap.get(p.matchId) as any;
         if (match) {
           const isCurrentlyLocked = getIsMatchLocked(match, verifiedServerTime);
-          if (isCurrentlyLocked) {
+          if (isCurrentlyLocked && !isSuperAdmin) {
             const original = dbPredictionsRef.current.find(orig => orig.matchId === p.matchId);
             const hasBeenModified = !original || original.homeScore !== p.homeScore || original.awayScore !== p.awayScore;
             
@@ -2354,7 +2364,7 @@ export default function App() {
       let finalBestGoalkeeper = bestGoalkeeperPrediction;
       let extraPredictionsSkipped = false;
 
-      if (isJornada0LockedReal) {
+      if (isJornada0LockedReal && !isSuperAdmin) {
         const champModified = JSON.stringify(championPrediction) !== JSON.stringify(dbChampionPredictionRef.current);
         const runnerModified = JSON.stringify(runnerUpPrediction) !== JSON.stringify(dbRunnerUpPredictionRef.current);
         const thirdModified = JSON.stringify(thirdPlacePrediction) !== JSON.stringify(dbThirdPlacePredictionRef.current);
@@ -2530,6 +2540,82 @@ export default function App() {
       console.warn("Verify latest version check failed:", err);
     }
     return true;
+  };
+
+  const handleContactSubmit = async (e: any) => {
+    e.preventDefault();
+    setContactErrorMsg('');
+    
+    // Client-side validations
+    if (!contactName.trim()) {
+      setContactErrorMsg('Por favor ingresa tu nombre.');
+      return;
+    }
+    if (!contactEmail.trim() || !contactEmail.includes('@') || !contactEmail.includes('.')) {
+      setContactErrorMsg('Por favor ingresa un correo electrónico válido.');
+      return;
+    }
+    if (!contactPhone.trim()) {
+      setContactErrorMsg('Por favor ingresa tu número de teléfono.');
+      return;
+    }
+
+    setContactLoading(true);
+
+    try {
+      // 1. Guardar de forma robusta en la base de datos Firestore (Cloud Backup)
+      const randomPart = Math.random().toString(36).substring(2, 8);
+      const requestId = 'cr_' + Date.now().toString() + '_' + randomPart;
+
+      try {
+        await setDoc(doc(db, 'contactRequests', requestId), {
+          id: requestId,
+          name: contactName.trim(),
+          email: contactEmail.trim(),
+          phone: contactPhone.trim(),
+          message: contactMessage.trim(),
+          createdAt: new Date().toISOString()
+        });
+      } catch (dbErr) {
+        console.error('Firestore contact save failed:', dbErr);
+        // We continue to progress because server-side endpoints might succeed
+      }
+
+      // 2. Enviar al backend vía HTTP POST (que simula el correo de forma real con logs y backup JSON)
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: contactName.trim(),
+          email: contactEmail.trim(),
+          phone: contactPhone.trim(),
+          message: contactMessage.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Error de procesamiento en el servidor.');
+      }
+
+      // Éxito total
+      setContactSuccess(true);
+      toast.success('¡Solicitud de contacto enviada con éxito!');
+      
+      // Limpiar campos
+      setContactName('');
+      setContactEmail('');
+      setContactPhone('');
+      setContactMessage('');
+    } catch (err: any) {
+      console.error('Error submitting contact form:', err);
+      setContactErrorMsg(err?.message || 'Hubo un problema al procesar tu solicitud. Por favor intenta de nuevo.');
+      toast.error('Error al enviar la solicitud de contacto.');
+    } finally {
+      setContactLoading(false);
+    }
   };
 
   const handleProtectedAction = async (action: () => void) => {
@@ -4871,7 +4957,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                         flag: championPrediction.championTeamFlag || ''
                                       } : null
                                     }
-                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    disabled={(isJornada0Locked && !isSuperAdmin) || predictionsReadOnly || !canEditActive}
                                     onChange={(val) => {
                                       setChampionPrediction(val ? {
                                         matchId: 'world_champion',
@@ -4957,7 +5043,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                         flag: runnerUpPrediction.championTeamFlag || ''
                                       } : null
                                     }
-                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    disabled={(isJornada0Locked && !isSuperAdmin) || predictionsReadOnly || !canEditActive}
                                     onChange={(val) => {
                                       setRunnerUpPrediction(val ? {
                                         matchId: 'runner_up',
@@ -5043,7 +5129,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                         flag: thirdPlacePrediction.championTeamFlag || ''
                                       } : null
                                     }
-                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    disabled={(isJornada0Locked && !isSuperAdmin) || predictionsReadOnly || !canEditActive}
                                     onChange={(val) => {
                                       setThirdPlacePrediction(val ? {
                                         matchId: 'third_place',
@@ -5129,7 +5215,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                         flag: scorerPrediction.scorerTeamFlag || undefined
                                       } : null
                                     }
-                                    disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                    disabled={(isJornada0Locked && !isSuperAdmin) || predictionsReadOnly || !canEditActive}
                                     onChange={(val) => {
                                       setScorerPrediction(val ? {
                                         matchId: 'top_scorer',
@@ -5224,7 +5310,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                           flag: bestPlayerPrediction.scorerTeamFlag || undefined
                                         } : null
                                       }
-                                      disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                      disabled={(isJornada0Locked && !isSuperAdmin) || predictionsReadOnly || !canEditActive}
                                       onChange={(val) => {
                                         setBestPlayerPrediction(val ? {
                                           matchId: 'best_player',
@@ -5313,7 +5399,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                           flag: bestGoalkeeperPrediction.scorerTeamFlag || undefined
                                         } : null
                                       }
-                                      disabled={isJornada0Locked || predictionsReadOnly || !canEditActive}
+                                      disabled={(isJornada0Locked && !isSuperAdmin) || predictionsReadOnly || !canEditActive}
                                       onChange={(val) => {
                                         setBestGoalkeeperPrediction(val ? {
                                           matchId: 'best_goalkeeper',
@@ -5456,8 +5542,13 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                               Finalizado
                                             </div>
                                           ) : isLocked ? (
-                                            <div className="bg-muted text-muted-foreground text-[8px] font-black px-2 py-0.5 uppercase tracking-widest">
-                                              Cerrado
+                                            <div className={cn(
+                                              isSuperAdmin 
+                                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" 
+                                                : "bg-muted text-muted-foreground",
+                                              "text-[8px] font-black px-2 py-0.5 uppercase tracking-widest"
+                                            )}>
+                                              {isSuperAdmin ? "Cerrado (Editar Admin)" : "Cerrado"}
                                             </div>
                                           ) : null
                                         )}
@@ -5484,7 +5575,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                           <div className="flex items-center gap-1 sm:gap-2">
                                             <Input
                                               type="number"
-                                              disabled={isLocked || !canEditActive || predictionsReadOnly}
+                                              disabled={(isLocked && !isSuperAdmin) || !canEditActive || predictionsReadOnly}
                                               className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                               value={prediction.homeScore ?? ''}
                                               onChange={(e) => handleScoreChange(match.id, 'home', e.target.value)}
@@ -5493,7 +5584,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                             <span className="text-muted-foreground font-bold text-[10px] sm:text-xs">X</span>
                                             <Input
                                               type="number"
-                                              disabled={isLocked || !canEditActive || predictionsReadOnly}
+                                              disabled={(isLocked && !isSuperAdmin) || !canEditActive || predictionsReadOnly}
                                               className="w-8 h-8 sm:w-12 sm:h-12 bg-background border-border text-center text-[16px] sm:text-xl font-black focus-visible:ring-primary focus-visible:border-primary p-0 disabled:opacity-75 disabled:text-foreground/90 disabled:bg-white/5"
                                               value={prediction.awayScore ?? ''}
                                               onChange={(e) => handleScoreChange(match.id, 'away', e.target.value)}
@@ -7587,13 +7678,236 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       )}
     </AnimatePresence>
 
-      {/* Footer */}
-      <footer className="px-6 lg:px-16 py-12 border-t border-border flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left">
-        <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-          © 2026 Quiniela Mundial
+    {/* PGSimple Contact Modal Overlay */}
+    <AnimatePresence>
+      {isContactModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="w-full max-w-lg bg-slate-900 border border-emerald-500/20 rounded-xl p-6 sm:p-8 shadow-2xl relative overflow-hidden"
+          >
+            {/* Subtle design accents */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 pointer-events-none" />
+            <button
+              onClick={() => setIsContactModalOpen(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors duration-200"
+              aria-label="Cerrar modal de contacto"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {!contactSuccess ? (
+              <form onSubmit={handleContactSubmit} className="space-y-5">
+                <div className="space-y-2">
+                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white pt-1">
+                    Hagamos tu web realidad
+                  </h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Déjanos tus datos y nos pondremos en contacto.
+                  </p>
+                </div>
+
+                {contactErrorMsg && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 text-xs font-semibold rounded">
+                    ⚠️ {contactErrorMsg}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {/* Nombre */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                      Nombre Completo <span className="text-emerald-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      placeholder="Ej. Melania González"
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
+                      maxLength={100}
+                      required
+                    />
+                  </div>
+
+                  {/* Correo */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                      Correo Electrónico <span className="text-emerald-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      placeholder="Ej. correo@ejemplo.com"
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
+                      maxLength={100}
+                      required
+                    />
+                  </div>
+
+                  {/* Teléfono */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                      Número de Teléfono <span className="text-emerald-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                      placeholder="Ej. +56 9 1234 5678"
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300"
+                      maxLength={30}
+                      required
+                    />
+                  </div>
+
+                  {/* Mensaje */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-300">
+                      Mensaje / Comentarios
+                    </label>
+                    <textarea
+                      value={contactMessage}
+                      onChange={(e) => setContactMessage(e.target.value)}
+                      placeholder="Cuéntanos un poco sobre tu idea de proyecto web..."
+                      className="w-full h-24 bg-slate-950/60 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-xs text-white placeholder-slate-600 px-4 py-3 rounded-lg outline-none transition-all duration-300 resize-none"
+                      maxLength={1000}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsContactModalOpen(false)}
+                    className="w-full sm:w-1/3 py-3 rounded-lg border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-bold uppercase tracking-wider transition-colors duration-300 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={contactLoading}
+                    className="w-full sm:w-2/3 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-950/30 transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
+                  >
+                    {contactLoading ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 12 12z" />
+                        </svg>
+                        <span>Enviando...</span>
+                      </>
+                    ) : (
+                      <span>Enviar Solicitud</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-6 text-center py-6">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 text-emerald-500">
+                  <svg className="w-8 h-8 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
+                    ¡Solicitud Recibida!
+                  </h3>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 p-4 rounded text-xs text-muted-foreground uppercase tracking-widest font-bold max-w-sm mx-auto">
+                  Te contactaremos a la brevedad. ¡Gracias!
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsContactModalOpen(false)}
+                  className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-widest rounded-lg transition-colors duration-300 cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+            )}
+          </motion.div>
         </div>
-        <div className="text-[10px] sm:text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-w-md">
-          ¿Te interesa una página como esta o para tu negocio? Escríbenos a: <a href="mailto:info@pgsimple.com" className="text-primary hover:underline font-bold">info@pgsimple.com</a>
+      )}
+    </AnimatePresence>
+
+      {/* Footer */}
+      <footer className="px-6 lg:px-16 py-12 border-t border-border flex flex-col gap-8">
+        {/* Banner PGSimple */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="flex flex-col md:flex-row justify-between items-center gap-6 w-full"
+        >
+          {/* Left side: pgsimple branding banner card replacing the old text */}
+          <div className="w-full md:max-w-md flex items-center justify-center">
+            <img 
+              src="/images/banner.png" 
+              alt="pgsimple banner" 
+              className="w-full h-auto rounded-xl border border-zinc-800 shadow-[0_4px_30px_rgba(0,0,0,0.4)] object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const parent = e.currentTarget.parentElement;
+                if (parent && !parent.querySelector('.banner-fallback')) {
+                  const fallback = document.createElement('div');
+                  fallback.className = 'banner-fallback w-full px-6 py-4 bg-[#0c0c0c] border border-dashed border-zinc-700/60 rounded-xl flex flex-col justify-center select-none';
+                  fallback.innerHTML = `
+                    <div class="flex items-center gap-1.5 mb-1 select-none">
+                      <span class="text-[17px] font-black text-white tracking-tight">pg</span>
+                      <span class="text-[17px] font-black text-[#a855f7] tracking-tight">simple</span>
+                    </div>
+                    <div class="text-[10px] text-zinc-400 font-mono tracking-wide">
+                      [ Sube tu imagen 'banner.png' en public/images/ ]
+                    </div>
+                  `;
+                  parent.appendChild(fallback);
+                }
+              }}
+            />
+          </div>
+
+          {/* Right side: Contact Button */}
+          <div className="flex-shrink-0">
+            <motion.button
+              type="button"
+              onClick={() => {
+                setContactSuccess(false);
+                setContactErrorMsg('');
+                setIsContactModalOpen(true);
+              }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all duration-300 rounded-md shadow-md border border-emerald-500/20 hover:border-emerald-500/30 group/btn cursor-pointer whitespace-nowrap"
+            >
+              Contactar
+              <svg 
+                className="w-3.5 h-3.5 transform transition-transform duration-300 group-hover/btn:translate-x-0.5" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {/* Footer Core Info Row */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left pt-6 border-t border-border/40 w-full">
+          <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest shrink-0">
+            © 2026 Quiniela Mundial
+          </div>
+          <div className="text-[10px] sm:text-[11px] font-medium text-muted-foreground uppercase tracking-wider max-w-md">
+            ¿Te interesa una página como esta o para tu negocio? Contáctanos a: <a href="mailto:info@pgsimple.com" className="text-primary hover:underline font-bold lowercase">info@pgsimple.com</a>
+          </div>
         </div>
       </footer>
     </div>

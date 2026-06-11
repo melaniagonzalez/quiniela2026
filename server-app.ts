@@ -5,6 +5,8 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { APP_VERSION } from "./src/version";
+import { Resend } from "resend";
+
 
 dotenv.config();
 
@@ -1144,6 +1146,133 @@ app.get("/api/teams/search", (req, res) => {
   );
 
   res.json(results);
+});
+
+// Endpoint to process contact request submissions
+app.post("/api/contact", async (req, res) => {
+  try {
+    const { name, email, phone, message } = req.body;
+
+    // Server-side validation
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ success: false, error: "El nombre es obligatorio." });
+    }
+    if (!email || typeof email !== "string" || email.trim().length === 0) {
+      return res.status(400).json({ success: false, error: "El correo electrónico es obligatorio." });
+    }
+    if (!phone || typeof phone !== "string" || phone.trim().length === 0) {
+      return res.status(400).json({ success: false, error: "El número de teléfono es obligatorio." });
+    }
+
+    const timestamp = new Date().toISOString();
+
+    // 1. Almacenar el registro de forma permanente en un archivo JSON local en el servidor
+    const backupPath = path.join(process.cwd(), "contact_submissions.json");
+    let submissions: any[] = [];
+    if (fs.existsSync(backupPath)) {
+      try {
+        submissions = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+      } catch (err) {
+        console.error("Error reading contact_submissions.json:", err);
+      }
+    }
+
+    submissions.push({
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      message: message ? message.trim() : "",
+      timestamp
+    });
+
+    fs.writeFileSync(backupPath, JSON.stringify(submissions, null, 2), "utf8");
+
+    // 2. Dispatch real email if RESEND_API_KEY is configured
+    let emailSent = false;
+    let emailWarning = null;
+
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        // By default, if the user hasn't verified their custom domain in Resend,
+        // they MUST send FROM onboarding@resend.dev, and can only send TO their own registered email.
+        // Once they verify their domain (e.g. pgsimple.com), they can send FROM info@pgsimple.com or anything@pgsimple.com.
+        const fromAddress = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+        const toAddress = process.env.RESEND_TO_EMAIL || "info@pgsimple.com";
+
+        await resend.emails.send({
+          from: `Pagina Web <${fromAddress}>`,
+          to: [toAddress],
+          replyTo: email.trim(),
+          subject: `NUEVA SOLICITUD DE CONTACTO - ${name.trim()}`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+              <h2 style="color: #059669; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Nueva Solicitud de Contacto</h2>
+              <table style="width: 100%; margin-top: 15px; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 6px 0; font-weight: bold; width: 150px;">Nombre:</td>
+                  <td style="padding: 6px 0;">${name.trim()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; font-weight: bold;">Correo:</td>
+                  <td style="padding: 6px 0;"><a href="mailto:${email.trim()}">${email.trim()}</a></td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; font-weight: bold;">Teléfono:</td>
+                  <td style="padding: 6px 0;">${phone.trim()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; font-weight: bold;">Fecha:</td>
+                  <td style="padding: 6px 0; color: #64748b; font-size: 13px;">${timestamp}</td>
+                </tr>
+              </table>
+              <div style="margin-top: 20px; padding: 15px; background-color: #f8fafc; border-left: 4px solid #10b981; border-radius: 4px;">
+                <p style="margin: 0; font-weight: bold; color: #475569; margin-bottom: 8px;">Mensaje del cliente:</p>
+                <p style="margin: 0; white-space: pre-wrap; font-size: 14px; color: #1e293b; line-height: 1.5;">
+                  ${message ? message.trim() : "El cliente no dejó un mensaje adicional."}
+                </p>
+              </div>
+            </div>
+          `
+        });
+        emailSent = true;
+        console.log(`✅ [PGSimple] Correo enviado de forma REAL vía Resend a ${toAddress}`);
+      } catch (resendError: any) {
+        console.error("❌ Error al enviar correo de contacto vía Resend API:", resendError);
+        emailWarning = resendError.message || "No se pudo despachar el correo (verifica el estado o dominio en Resend).";
+      }
+    } else {
+      console.log(`⚠️ [PGSimple] RESEND_API_KEY no configurada. Formulario guardado localmente e insertado en db.`);
+    }
+
+    // 3. Simular el envío del correo electrónico con logs formateados en el servidor
+    console.log(`
+================================================================================
+📧 [PGSimple] REGISTRO DE FORMULARIO DE CONTACTO
+================================================================================
+De: ${name.trim()} <${email.trim()}>
+Teléfono: ${phone.trim()}
+Fecha/Hora: ${timestamp}
+Estado de Resend: ${emailSent ? "ENVIADO CON ÉXITO" : "SIMULADO / NO CONFIGURADO"}
+${emailWarning ? `Aviso de Envío: ${emailWarning}` : ""}
+
+Mensaje:
+--------------------------------------------------------------------------------
+${message ? message.trim() : "El cliente no dejó un mensaje adicional."}
+--------------------------------------------------------------------------------
+================================================================================
+    `);
+
+    return res.json({ 
+      success: true, 
+      message: "Solicitud de contacto recibida y procesada correctamente",
+      emailSent,
+      emailWarning
+    });
+  } catch (err: any) {
+    console.error("Error in POST /api/contact:", err);
+    return res.status(500).json({ success: false, error: "Ocurrió un error al procesar el contacto." });
+  }
 });
 
 export default app;

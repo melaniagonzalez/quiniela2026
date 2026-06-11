@@ -89,9 +89,27 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "status"]
+    },
+    "ContactRequest": {
+      "title": "ContactRequest",
+      "description": "Formularios de contacto recibidos en la plataforma",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID del formulario" },
+        "name": { "type": "string", "description": "Nombre del cliente" },
+        "email": { "type": "string", "description": "Correo electrónico del cliente" },
+        "phone": { "type": "string", "description": "Teléfono de contacto del cliente" },
+        "message": { "type": "string", "description": "Mensaje o comentarios" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Fecha de contacto" }
+      },
+      "required": ["id", "name", "email", "phone"]
     }
   },
   "firestore": {
+    "/contactRequests/{requestId}": {
+      "schema": "ContactRequest",
+      "description": "Formularios de contacto de clientes para PGSimple"
+    },
     "/adminRequests/{requestId}": {
       "schema": "AdminRequest",
       "description": "Solicitudes de acceso de nuevos administradores"
