@@ -3778,7 +3778,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               </div>
 
               {/* Sub-navegación del Panel Súper Admin */}
-              <div className="grid grid-cols-2 md:grid-cols-5 border-b border-border w-full !mt-0 gap-1 md:gap-0">
+              <div className="flex flex-nowrap overflow-x-auto md:grid md:grid-cols-5 border-b border-border w-full !mt-0 gap-0 scrollbar-none">
                 <button
                   type="button"
                   onClick={() => {
@@ -3786,7 +3786,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     setEditingAdminId(null);
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
+                    "flex items-center justify-center gap-0 sm:gap-2 px-4 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none shrink-0 md:shrink w-auto md:w-full",
                     superAdminTab === 'admins' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
@@ -3799,7 +3799,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   type="button"
                   onClick={() => setSuperAdminTab('requests')}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none relative w-full",
+                    "flex items-center justify-center gap-0 sm:gap-2 px-4 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none relative shrink-0 md:shrink w-auto md:w-full",
                     superAdminTab === 'requests' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
@@ -3820,7 +3820,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     setEditingAdminId(null);
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
+                    "flex items-center justify-center gap-0 sm:gap-2 px-4 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none shrink-0 md:shrink w-auto md:w-full",
                     superAdminTab === 'leagues' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
@@ -3839,7 +3839,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     }
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
+                    "flex items-center justify-center gap-0 sm:gap-2 px-4 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none shrink-0 md:shrink w-auto md:w-full",
                     superAdminTab === 'puntos_extras' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
@@ -3855,7 +3855,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     setEditingAdminId(null);
                   }}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
+                    "flex items-center justify-center gap-0 sm:gap-2 px-4 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none shrink-0 md:shrink w-auto md:w-full",
                     superAdminTab === 'api_query' 
                       ? "border-primary text-primary bg-primary/5 font-black" 
                       : "border-transparent text-muted-foreground hover:text-foreground"
