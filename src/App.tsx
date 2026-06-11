@@ -720,7 +720,7 @@ export default function App() {
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
 
   const apiFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const currentVersion = (import.meta as any).env.VITE_APP_VERSION || 'dev';
+    const currentVersion = APP_VERSION;
     const isDev = (import.meta as any).env.DEV || 
                   window.location.hostname === 'localhost' || 
                   window.location.hostname.includes('ais-dev');
@@ -756,7 +756,7 @@ export default function App() {
 
   useEffect(() => {
     let intervalId: any;
-    const currentClientVersion = (import.meta as any).env.VITE_APP_VERSION || 'dev';
+    const currentClientVersion = APP_VERSION as string;
 
     // Disable checking and popups during local development or AI Studio simulation to avoid interrupting coding edits
     const isDev = (import.meta as any).env.DEV || 
@@ -2292,6 +2292,13 @@ export default function App() {
     
     setIsSyncing(true);
     try {
+      // First verify if the user is running the latest version
+      const isUpToDate = await verifyLatestVersion();
+      if (!isUpToDate) {
+        setIsSyncing(false);
+        return;
+      }
+
       let verifiedServerTime = Date.now();
       if (!isSimulationMode) {
         try {
@@ -2500,7 +2507,34 @@ export default function App() {
     }
   };
 
-  const handleProtectedAction = (action: () => void) => {
+  const verifyLatestVersion = async (): Promise<boolean> => {
+    const isDev = (import.meta as any).env.DEV || 
+                  window.location.hostname === 'localhost' || 
+                  window.location.hostname.includes('ais-dev');
+    if (isDev) return true;
+
+    try {
+      const currentClientVersion = APP_VERSION as string;
+      const res = await fetch('/api/version');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.version) {
+          if (currentClientVersion !== 'dev' && data.version !== 'dev' && currentClientVersion !== data.version) {
+            setNewVersionAvailable(true);
+            return false;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Verify latest version check failed:", err);
+    }
+    return true;
+  };
+
+  const handleProtectedAction = async (action: () => void) => {
+    const isUpToDate = await verifyLatestVersion();
+    if (!isUpToDate) return;
+
     if (hasUnsavedChanges) {
       setPendingNavigation(() => action);
       setIsUnsavedChangesModalOpen(true);
@@ -4415,7 +4449,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             {!predictionsEditMode && activeTab !== 'settings' && (
               <div className="grid grid-cols-3 border-b border-border w-full">
                 <button
-                  onClick={() => setActiveTab('leaderboard')}
+                  onClick={async () => {
+                    const isUpToDate = await verifyLatestVersion();
+                    if (isUpToDate) setActiveTab('leaderboard');
+                  }}
                   className={cn(
                     "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
                     activeTab === 'leaderboard' 
@@ -4427,7 +4464,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Ranking</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('noticias')}
+                  onClick={async () => {
+                    const isUpToDate = await verifyLatestVersion();
+                    if (isUpToDate) setActiveTab('noticias');
+                  }}
                   className={cn(
                     "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
                     activeTab === 'noticias' 
@@ -4439,7 +4479,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Noticias</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('resultados')}
+                  onClick={async () => {
+                    const isUpToDate = await verifyLatestVersion();
+                    if (isUpToDate) setActiveTab('resultados');
+                  }}
                   className={cn(
                     "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
                     activeTab === 'resultados' 
@@ -4465,7 +4508,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         variant="outline" 
                         size="sm" 
                         disabled={matchdays.indexOf(viewingMatchday) <= 0}
-                        onClick={() => {
+                        onClick={async () => {
+                          const isUpToDate = await verifyLatestVersion();
+                          if (!isUpToDate) return;
                           const currentIndex = matchdays.indexOf(viewingMatchday);
                           if (currentIndex > 0) {
                             setViewingMatchday(matchdays[currentIndex - 1]);
@@ -4489,7 +4534,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         variant="outline" 
                         size="sm" 
                         disabled={matchdays.indexOf(viewingMatchday) === -1 || matchdays.indexOf(viewingMatchday) >= matchdays.length - 1}
-                        onClick={() => {
+                        onClick={async () => {
+                          const isUpToDate = await verifyLatestVersion();
+                          if (!isUpToDate) return;
                           const currentIndex = matchdays.indexOf(viewingMatchday);
                           if (currentIndex !== -1 && currentIndex < matchdays.length - 1) {
                             setViewingMatchday(matchdays[currentIndex + 1]);
