@@ -77,7 +77,15 @@ service cloud.firestore {
             )) ||
             ((userId.matches('^p_.*') || resource.data.get('isParticipant', false) == true) && (
               !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'isParticipant', 'leagueId', 'email', 'searchEmail'])
-            ))
+            )) ||
+            (
+              // Allow the creator/administrator of the league to update participant scores and stats
+              isSignedIn() &&
+              'leagueId' in resource.data &&
+              exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
+              get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.creatorId == request.auth.uid &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalPoints', 'correctResults', 'correctWinners', 'extraPoints', 'lastUpdatedAt', 'appVersion'])
+            )
           )
         )
       );

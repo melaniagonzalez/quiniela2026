@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -543,7 +543,13 @@ export default function App() {
   const [dbAdmins, setDbAdmins] = useState<any[]>([]);
   const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
-  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'puntos_extras'>('admins');
+  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'puntos_extras' | 'api_query'>('admins');
+
+  // Super Admin API Query States
+  const [apiConsoleEndpoint, setApiConsoleEndpoint] = useState('competitions/WC/matches');
+  const [apiConsoleLoading, setApiConsoleLoading] = useState(false);
+  const [apiConsoleResult, setApiConsoleResult] = useState<any | null>(null);
+  const [apiConsoleError, setApiConsoleError] = useState<string | null>(null);
   const [adminSelectedLeagueId, setAdminSelectedLeagueId] = useState<string>('');
   const [adminBestPlayer, setAdminBestPlayer] = useState<any | null>(null);
   const [adminBestGoalkeeper, setAdminBestGoalkeeper] = useState<any | null>(null);
@@ -695,10 +701,11 @@ export default function App() {
     }
   }, [isSimulationMode, activeLeague?.competition]);
 
-  const syncCompetitionData = async (comp: string, showToast: boolean = false) => {
+  const syncCompetitionData = async (comp: string, showToast: boolean = false, force: boolean = false) => {
     setIsSyncing(true);
     try {
-      const response = await apiFetch(`/api/sync/${comp}`);
+      const url = force ? `/api/sync/${comp}?bypassCache=true` : `/api/sync/${comp}`;
+      const response = await apiFetch(url);
       if (!response.ok) throw new Error('Sync failed');
       const data = await response.json();
       if (data.teams && data.matches) {
@@ -757,6 +764,31 @@ export default function App() {
       setIsSyncing(false);
     }
   };
+
+  const handleApiConsoleSubmit = async (endpointToQuery?: string) => {
+    const targetEndpoint = endpointToQuery || apiConsoleEndpoint;
+    if (!targetEndpoint.trim()) {
+      setApiConsoleError("Por favor ingresa un endpoint válido");
+      return;
+    }
+    setApiConsoleLoading(true);
+    setApiConsoleError(null);
+    setApiConsoleResult(null);
+    try {
+      const response = await apiFetch(`/api/admin/football-data-query?endpoint=${encodeURIComponent(targetEndpoint.trim())}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || data.error || `Error del servidor (código ${response.status})`);
+      }
+      setApiConsoleResult(data);
+    } catch (e: any) {
+      console.error("API Console query failed:", e);
+      setApiConsoleError(e.message || "Error al realizar la consulta");
+    } finally {
+      setApiConsoleLoading(false);
+    }
+  };
+
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [newsData, setNewsData] = useState<any>(null);
   const [loadingNews, setLoadingNews] = useState(false);
@@ -2140,6 +2172,50 @@ export default function App() {
     const sorted = recalculated.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
     setLeaderboard(sorted);
   }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate, compConfigs, activeLeague]);
+
+  // Auto-sync computed leaderboard points back to Firestore to avoid stale points in list on first load
+  useEffect(() => {
+    if (!user || leaderboard.length === 0) return;
+    
+    leaderboard.forEach(async (p) => {
+      // Find the raw version of this participant in the `participants` state to see if data differs from Firestore
+      const original = participants.find(op => op.uid === p.uid);
+      if (!original) return;
+      
+      const hasChanged = 
+        p.totalPoints !== (original.totalPoints ?? 0) ||
+        p.correctResults !== (original.correctResults ?? 0) ||
+        p.correctWinners !== (original.correctWinners ?? 0) ||
+        p.extraPoints !== (original.extraPoints ?? 0);
+        
+      if (hasChanged) {
+        const isSelf = p.uid === user.uid;
+        const isVirtual = p.uid.startsWith('p_') || original.isParticipant === true;
+        const isLeagueCreator = activeLeague?.creatorId === user.uid;
+        const canUpdate = isSuperAdmin || isApprovedAdmin || isSelf || isVirtual || isLeagueCreator;
+        
+        if (canUpdate) {
+          console.log(`Auto-updating Firestore points for participant ${p.displayName || p.uid}:`, {
+            totalPoints: p.totalPoints,
+            correctResults: p.correctResults,
+            correctWinners: p.correctWinners,
+            extraPoints: p.extraPoints
+          });
+          try {
+            await setDoc(doc(db, 'users', p.uid), {
+              totalPoints: p.totalPoints,
+              correctResults: p.correctResults,
+              correctWinners: p.correctWinners,
+              extraPoints: p.extraPoints,
+              lastUpdatedAt: new Date().toISOString()
+            }, { merge: true });
+          } catch (err) {
+            console.warn(`Could not auto-save calculated points for ${p.uid}:`, err);
+          }
+        }
+      }
+    });
+  }, [leaderboard, user, isSuperAdmin, isApprovedAdmin, participants, activeLeague]);
 
   // Obtener estadísticas de predicciones llenas y listas de predicciones para cada participante de la quiniela
   useEffect(() => {
@@ -3702,7 +3778,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               </div>
 
               {/* Sub-navegación del Panel Súper Admin */}
-              <div className="grid grid-cols-4 border-b border-border w-full !mt-0">
+              <div className="grid grid-cols-2 md:grid-cols-5 border-b border-border w-full !mt-0 gap-1 md:gap-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -3716,7 +3792,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Users className="w-6 h-6 text-primary" />
+                  <Users className="w-5 h-5 text-primary" />
                   <span className="hidden sm:inline">Administradores</span>
                 </button>
                 <button
@@ -3729,7 +3805,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <UserPlus className="w-6 h-6 text-primary" />
+                  <UserPlus className="w-5 h-5 text-primary" />
                   <span className="hidden sm:inline">Solicitudes</span>
                   {adminRequests.filter(r => r.status === 'pending').length > 0 && (
                     <span className="ml-1 bg-red-500 text-white font-mono text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
@@ -3750,7 +3826,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Trophy className="w-6 h-6 text-primary" />
+                  <Trophy className="w-5 h-5 text-primary" />
                   <span className="hidden sm:inline">Quinielas ({allLeagues.length})</span>
                 </button>
                 <button
@@ -3769,8 +3845,24 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <Award className="w-6 h-6 text-primary" />
+                  <Award className="w-5 h-5 text-primary" />
                   <span className="hidden sm:inline">Puntos Extras</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuperAdminTab('api_query');
+                    setEditingAdminId(null);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 px-3 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none w-full",
+                    superAdminTab === 'api_query' 
+                      ? "border-primary text-primary bg-primary/5 font-black" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Database className="w-5 h-5 text-primary" />
+                  <span className="hidden sm:inline font-black">Consola API</span>
                 </button>
               </div>
 
@@ -4263,6 +4355,261 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           </Table>
                         </div>
                       )}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : superAdminTab === 'api_query' ? (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <Card className="bg-card border-2 border-border rounded-none shadow-xl">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                        <Terminal className="w-5 h-5 text-primary" /> Consola de Consultas de Football-Data API
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground leading-relaxed">
+                        Realiza de manera directa peticiones HTTP GET autenticadas a la API oficial de football-data.org usando tus llaves de superadministrador. Útil para verificar resultados reales de partidos y depurar anomalías de sincronización.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                      
+                      {/* Presets rater-limit quick query list */}
+                      <div className="space-y-3">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                          Consultas Rápidas (Ahorro de Tiempo)
+                        </span>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/30 p-4 border border-border">
+                          <div>
+                            <span className="text-[9px] font-mono font-black uppercase tracking-widest text-primary/80 block mb-1.5">
+                              🌎 Copa del Mundo 2026 (WC)
+                            </span>
+                            <div className="flex flex-col gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/WC/matches");
+                                  handleApiConsoleSubmit("competitions/WC/matches");
+                                }}
+                              >
+                                /matches (Partidos)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/WC/teams");
+                                  handleApiConsoleSubmit("competitions/WC/teams");
+                                }}
+                              >
+                                /teams (Equipos)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/WC/standings");
+                                  handleApiConsoleSubmit("competitions/WC/standings");
+                                }}
+                              >
+                                /standings (Tablas)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/WC/scorers");
+                                  handleApiConsoleSubmit("competitions/WC/scorers");
+                                }}
+                              >
+                                /scorers (Goleadores)
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-[9px] font-mono font-black uppercase tracking-widest text-secondary block mb-1.5">
+                              🏆 Champions League 24/25 (CL)
+                            </span>
+                            <div className="flex flex-col gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/CL/matches");
+                                  handleApiConsoleSubmit("competitions/CL/matches");
+                                }}
+                              >
+                                /matches (Partidos)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/CL/teams");
+                                  handleApiConsoleSubmit("competitions/CL/teams");
+                                }}
+                              >
+                                /teams (Equipos)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/CL/standings");
+                                  handleApiConsoleSubmit("competitions/CL/standings");
+                                }}
+                              >
+                                /standings (Tablas)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions/CL/scorers");
+                                  handleApiConsoleSubmit("competitions/CL/scorers");
+                                }}
+                              >
+                                /scorers (Goleadores)
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground block mb-1.5">
+                              Otros de Interés
+                            </span>
+                            <div className="flex flex-col gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  setApiConsoleEndpoint("competitions");
+                                  handleApiConsoleSubmit("competitions");
+                                }}
+                              >
+                                /competitions (Torneos)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[9px] font-bold transition-all h-7 py-1 px-3 border-border uppercase justify-start"
+                                onClick={() => {
+                                  const queryEx = "matches?dateFrom=2026-06-11&dateTo=2026-06-13";
+                                  setApiConsoleEndpoint(queryEx);
+                                  handleApiConsoleSubmit(queryEx);
+                                }}
+                              >
+                                /matches (Junio 11-13)
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Custom Input Executor */}
+                      <div className="space-y-3">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                          Consulta Personalizada (Escribe la ruta que desees)
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <div className="flex-1 flex items-center bg-background border border-border h-11 px-3">
+                            <span className="text-muted-foreground font-mono text-[10px] sm:text-xs select-none pr-1.5 border-r border-border mr-1.5 uppercase font-bold tracking-tight">https://api.football-data.org/v4/</span>
+                            <input
+                              type="text"
+                              value={apiConsoleEndpoint}
+                              onChange={(e) => setApiConsoleEndpoint(e.target.value)}
+                              placeholder="competitions/WC/matches"
+                              className="w-full bg-transparent border-0 p-0 text-[11px] sm:text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-0"
+                            />
+                          </div>
+                          <Button
+                            onClick={() => handleApiConsoleSubmit()}
+                            disabled={apiConsoleLoading}
+                            className="h-11 px-6 text-[10px] font-black uppercase tracking-widest bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center gap-2 rounded-none"
+                          >
+                            {apiConsoleLoading ? null : <Play className="w-3.5 h-3.5" />}
+                            {apiConsoleLoading ? 'CONSULTANDO...' : 'CONSULTAR'}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Result Console Display */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            Resultado de la Consulta (Salida del Servidor)
+                          </span>
+                          {apiConsoleResult && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-[9px] font-bold h-7 px-3 border-border uppercase font-mono flex items-center gap-1.5"
+                              onClick={() => {
+                                navigator.clipboard.writeText(JSON.stringify(apiConsoleResult, null, 2));
+                                toast.success("¡JSON copiado al portapapeles!");
+                              }}
+                            >
+                              <Copy className="w-3 h-3" /> Copiar JSON
+                            </Button>
+                          )}
+                        </div>
+
+                        {apiConsoleLoading && (
+                          <div className="p-16 border border-dashed border-border flex flex-col justify-center items-center gap-3">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest animate-pulse">
+                              Consultando API Externa... Por favor espera
+                            </span>
+                          </div>
+                        )}
+
+                        {apiConsoleError && (
+                          <div className="bg-red-500/10 border-2 border-red-500/30 p-5 rounded-none font-mono text-xs text-red-100 space-y-2">
+                            <h4 className="font-bold flex items-center gap-1 text-red"><AlertTriangle className="w-4 h-4 text-red" /> ERROR AL CONSULTAR:</h4>
+                            <p className="font-bold leading-normal">{apiConsoleError}</p>
+                            <p className="text-[10px] text-red-300 mt-2">
+                              Asegúrate de que la ruta del endpoint sea correcta y que tu FOOTBALL_DATA_KEY no esté rate-limited o ausente.
+                            </p>
+                          </div>
+                        )}
+
+                        {!apiConsoleLoading && !apiConsoleError && !apiConsoleResult && (
+                          <div className="p-12 border border-dashed border-border flex flex-col justify-center items-center text-center">
+                            <Terminal className="w-8 h-8 text-muted-foreground mb-2" />
+                            <h4 className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                              Consola Vacía
+                            </h4>
+                            <p className="text-[9px] text-muted-foreground uppercase font-bold max-w-[325px] mt-1 leading-normal">
+                              Selecciona una consulta rápida de la sección de arriba o introduce una ruta personalizada y haz clic en Consultar para visualizar el payload real de la API.
+                            </p>
+                          </div>
+                        )}
+
+                        {apiConsoleResult && (
+                          <div className="relative border border-border group overflow-hidden">
+                            {/* Metadata segment */}
+                            <div className="bg-muted/50 border-b border-border px-4 py-2 flex justify-between items-center text-[10px] font-mono font-bold uppercase text-muted-foreground select-none">
+                              <span>HTTP 200 OK</span>
+                              <span>Timestamp: {new Date().toLocaleTimeString()}</span>
+                            </div>
+                            
+                            {/* Code console */}
+                            <div className="max-h-[500px] overflow-auto bg-black p-4 font-mono text-[11px] leading-relaxed text-emerald-400">
+                              <pre>{JSON.stringify(apiConsoleResult, null, 2)}</pre>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                     </CardContent>
                   </Card>
                 </div>
@@ -5663,22 +6010,35 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                         {shouldShowResult && (
                                           <div className="flex flex-col items-center gap-1">
                                             {/* Actual/Simulated Match Score */}
-                                            <div className="bg-primary/10 border border-primary/25 rounded px-2 py-0.5 flex items-center gap-1 text-[10px] font-bold text-primary">
-                                              <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80 mr-1">R:</span>
-                                              <span className="font-black text-foreground">
-                                                {match.actualHomeScore ?? 0}
-                                              </span>
-                                              <span className="text-muted-foreground font-normal">-</span>
-                                              <span className="font-black text-foreground">
-                                                {match.actualAwayScore ?? 0}
-                                              </span>
+                                            <div className="flex flex-col items-center gap-0.5">
+                                              <div className="bg-primary/10 border border-primary/25 rounded px-2 py-0.5 flex items-center gap-1 text-[10px] font-bold text-primary">
+                                                <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80 mr-1">{match.isFinalScore ? "R:" : "MT:"}</span>
+                                                {match.actualHomeScore !== null && match.actualAwayScore !== null ? (
+                                                  <>
+                                                    <span className="font-black text-foreground">
+                                                      {match.actualHomeScore}
+                                                    </span>
+                                                    <span className="text-muted-foreground font-normal">-</span>
+                                                    <span className="font-black text-foreground">
+                                                      {match.actualAwayScore}
+                                                    </span>
+                                                  </>
+                                                ) : (
+                                                  <span className="text-muted-foreground uppercase tracking-wider text-[8px] font-black">Pendiente</span>
+                                                )}
+                                              </div>
+                                              {match.halfTimeHomeScore !== null && match.halfTimeAwayScore !== null && match.halfTimeHomeScore !== undefined && match.halfTimeAwayScore !== undefined && (
+                                                <span className="text-[8px] font-bold text-muted-foreground/80 uppercase tracking-wider">
+                                                  {""}
+                                                </span>
+                                              )}
                                             </div>
 
                                             {/* Points Gained on this specific Match */}
-                                            {prediction.homeScore !== null && prediction.homeScore !== undefined && prediction.awayScore !== null && prediction.awayScore !== undefined && (
+                                            {match.actualHomeScore !== null && match.actualAwayScore !== null && prediction.homeScore !== null && prediction.homeScore !== undefined && prediction.awayScore !== null && prediction.awayScore !== undefined && (
                                               (() => {
-                                                const actHome = match.actualHomeScore ?? 0;
-                                                const actAway = match.actualAwayScore ?? 0;
+                                                const actHome = match.actualHomeScore;
+                                                const actAway = match.actualAwayScore;
                                                 const predHome = prediction.homeScore;
                                                 const predAway = prediction.awayScore;
                                                 const isExact = (predHome === actHome) && (predAway === actAway);
@@ -6202,7 +6562,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition, true)} 
+                    onClick={() => activeLeague?.competition && syncCompetitionData(activeLeague.competition, true, true)} 
                     disabled={isSyncing || !activeLeague?.competition}
                     className="text-[9px] font-black uppercase tracking-widest border-border h-8 px-4"
                   >
@@ -6244,8 +6604,15 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 )}
                                 <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? (homeTeam?.name || "TBD") : ((match as any).homeTeamName || homeTeam?.name || "TBD")}</span>
                               </div>
-                              <div className="bg-white/5 px-3 py-1 border border-border min-w-[60px] text-center">
-                                <span className="text-[14px] font-black tracking-tight">{match.actualHomeScore ?? '-'} : {match.actualAwayScore ?? '-'}</span>
+                              <div className="flex flex-col items-center gap-1">
+                                <div className="bg-white/5 px-3 py-1 border border-border min-w-[60px] text-center">
+                                  <span className="text-[14px] font-black tracking-tight">{match.actualHomeScore ?? '-'} : {match.actualAwayScore ?? '-'}</span>
+                                </div>
+                                {match.halfTimeHomeScore !== null && match.halfTimeAwayScore !== null && match.halfTimeHomeScore !== undefined && match.halfTimeAwayScore !== undefined && (
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest leading-none">
+                                    {!match.isFinalScore ? "Medio Tiempo" : ""}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-3 flex-1 justify-end text-right overflow-hidden">
                                 <span className="text-[11px] font-black uppercase truncate">{isSimulationMode ? (awayTeam?.name || "TBD") : ((match as any).awayTeamName || awayTeam?.name || "TBD")}</span>

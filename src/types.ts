@@ -16,6 +16,9 @@ export interface Match {
   status?: string;
   actualHomeScore?: number | null;
   actualAwayScore?: number | null;
+  halfTimeHomeScore?: number | null;
+  halfTimeAwayScore?: number | null;
+  isFinalScore?: boolean;
 }
 
 export interface Prediction {

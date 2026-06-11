@@ -170,8 +170,9 @@ app.get("/api/version", (req, res) => {
 app.get("/api/sync/:competition", async (req, res) => {
   const competition = (req.params.competition || "WC").toUpperCase();
   const now = Date.now();
+  const force = req.query.bypassCache === "true" || req.query.force === "true";
   
-  if (competitionsCache[competition] && now - competitionsCache[competition].timestamp < CACHE_DURATION) {
+  if (!force && competitionsCache[competition] && now - competitionsCache[competition].timestamp < CACHE_DURATION) {
     console.log(`Serving ${competition} data from cache`);
     return res.json(competitionsCache[competition]);
   }
@@ -242,6 +243,31 @@ app.get("/api/sync/:competition", async (req, res) => {
       const matchId = `m${m.id}`;
       const override = MATCH_OVERRIDES[matchId];
 
+      let actualHomeScore = override !== undefined ? override.actualHomeScore : (m.score?.fullTime?.home ?? null);
+      let actualAwayScore = override !== undefined ? override.actualAwayScore : (m.score?.fullTime?.away ?? null);
+
+      const halfTimeHomeScore = m.score?.halfTime?.home ?? null;
+      const halfTimeAwayScore = m.score?.halfTime?.away ?? null;
+
+      // Sanity Check: a final score cannot be lower than the half-time score in real life.
+      // If the final score is missing (null/undefined) or is less than the half-time score,
+      // fallback/correct it to the half-time score.
+      if (halfTimeHomeScore !== null && halfTimeHomeScore !== undefined) {
+        if (actualHomeScore === null || actualHomeScore === undefined || actualHomeScore < halfTimeHomeScore) {
+          console.warn(`[Sanity Score Check] Match ${matchId}: actualHomeScore was ${actualHomeScore}, correcting to halftime score ${halfTimeHomeScore}`);
+          actualHomeScore = halfTimeHomeScore;
+        }
+      }
+
+      if (halfTimeAwayScore !== null && halfTimeAwayScore !== undefined) {
+        if (actualAwayScore === null || actualAwayScore === undefined || actualAwayScore < halfTimeAwayScore) {
+          console.warn(`[Sanity Score Check] Match ${matchId}: actualAwayScore was ${actualAwayScore}, correcting to halftime score ${halfTimeAwayScore}`);
+          actualAwayScore = halfTimeAwayScore;
+        }
+      }
+
+      const isFinalScore = override !== undefined ? true : (m.score?.fullTime?.home !== null && m.score?.fullTime?.home !== undefined);
+
       return {
         id: matchId,
         homeTeamId: m.homeTeam?.id ? `${m.homeTeam.id}` : null,
@@ -256,8 +282,11 @@ app.get("/api/sync/:competition", async (req, res) => {
         stadium: m.venue || "TBD",
         matchday: matchday || 1,
         status: override?.status || m.status,
-        actualHomeScore: override !== undefined ? override.actualHomeScore : m.score.fullTime.home,
-        actualAwayScore: override !== undefined ? override.actualAwayScore : m.score.fullTime.away
+        actualHomeScore,
+        actualAwayScore,
+        halfTimeHomeScore,
+        halfTimeAwayScore,
+        isFinalScore
       };
     });
 
@@ -1153,6 +1182,38 @@ app.get("/api/teams/search", (req, res) => {
   );
 
   res.json(results);
+});
+
+// Proxy endpoint to query any Football-Data API endpoint for the Super Admin
+app.get("/api/admin/football-data-query", async (req, res) => {
+  const apiKey = process.env.FOOTBALL_DATA_KEY;
+  if (!apiKey || apiKey === "MY_API_KEY") {
+    return res.status(400).json({ error: "EL API KEY (FOOTBALL_DATA_KEY) no está configurado en las variables de entorno del servidor. Por favor, añádelo en las configuraciones." });
+  }
+
+  const endpoint = req.query.endpoint as string;
+  if (!endpoint) {
+    return res.status(400).json({ error: "No se especificó un endpoint o sub-ruta para consultar." });
+  }
+
+  // Clean starting slashes if any
+  const cleanedEndpoint = endpoint.startsWith("/") ? endpoint.substring(1) : endpoint;
+
+  try {
+    const url = `https://api.football-data.org/v4/${cleanedEndpoint}`;
+    console.log(`[SuperAdmin API Console] Querying: ${url}`);
+    
+    const response = await axios.get(url, {
+      headers: { "X-Auth-Token": apiKey }
+    });
+    
+    return res.json(response.data);
+  } catch (error: any) {
+    console.error(`[SuperAdmin API Console] Error:`, error.response?.data || error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { error: error.message }
+    );
+  }
 });
 
 // Endpoint to process contact request submissions
