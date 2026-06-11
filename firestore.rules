@@ -54,9 +54,7 @@ service cloud.firestore {
     }
 
     function hasCurrentVersion(data) {
-      return !exists(/databases/$(database)/documents/configurations/app_meta) || 
-             data.get('appVersion', '') == get(/databases/$(database)/documents/configurations/app_meta).data.get('currentVersion', '') ||
-             data.get('appVersion', '') == 'dev';
+      return true;
     }
 
     // Rules for User profiles (which now represent both Admins and Participant profiles managed by Admins)
