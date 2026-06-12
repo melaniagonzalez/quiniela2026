@@ -936,6 +936,7 @@ export default function App() {
 
   const [predictionsStats, setPredictionsStats] = useState<Record<string, { filled: number; total: number }>>({});
   const [participantsPredictions, setParticipantsPredictions] = useState<Record<string, Prediction[]>>({});
+  const predictionListenersRef = useRef<Record<string, () => void>>({});
 
   const [isCreatingLeague, setIsCreatingLeague] = useState(false);
   const [newLeagueCompetition, setNewLeagueCompetition] = useState<'WC' | 'CL'>('WC');
@@ -2173,111 +2174,201 @@ export default function App() {
     setLeaderboard(sorted);
   }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate, compConfigs, activeLeague]);
 
-  // Auto-sync computed leaderboard points back to Firestore to avoid stale points in list on first load
+  // Hold latest calculations and status in a sync ref to avoid triggering hot reload loops with state updates
+  const syncStateRef = useRef({
+    user,
+    leaderboard,
+    participants,
+    participantsPredictions,
+    isSuperAdmin,
+    isApprovedAdmin,
+    activeLeague
+  });
+
   useEffect(() => {
-    if (!user || leaderboard.length === 0) return;
-    
-    leaderboard.forEach(async (p) => {
-      // Find the raw version of this participant in the `participants` state to see if data differs from Firestore
-      const original = participants.find(op => op.uid === p.uid);
-      if (!original) return;
+    syncStateRef.current = {
+      user,
+      leaderboard,
+      participants,
+      participantsPredictions,
+      isSuperAdmin,
+      isApprovedAdmin,
+      activeLeague
+    };
+  }, [user, leaderboard, participants, participantsPredictions, isSuperAdmin, isApprovedAdmin, activeLeague]);
+
+  // Auto-sync computed leaderboard points back to Firestore to avoid stale points in list on first load, limited to at most once per minute
+  useEffect(() => {
+    const syncLeaderboardPoints = async () => {
+      const {
+        user,
+        leaderboard,
+        participants,
+        participantsPredictions,
+        isSuperAdmin,
+        isApprovedAdmin,
+        activeLeague
+      } = syncStateRef.current;
+
+      if (!user || leaderboard.length === 0) return;
       
-      const hasChanged = 
-        p.totalPoints !== (original.totalPoints ?? 0) ||
-        p.correctResults !== (original.correctResults ?? 0) ||
-        p.correctWinners !== (original.correctWinners ?? 0) ||
-        p.extraPoints !== (original.extraPoints ?? 0);
+      // Check if predictions are still loading or missing for any participant.
+      // This blocks writing incomplete temporary calculations (such as points set to 0 during loading) to Firestore.
+      const anyPending = participants.some(p => participantsPredictions[p.uid] === undefined);
+      if (anyPending) {
+        return;
+      }
+
+      console.log('Running throttled periodic points sync to Firestore...', new Date().toISOString());
+      
+      for (const p of leaderboard) {
+        // Find the raw version of this participant in the `participants` state to see if data differs from Firestore
+        const original = participants.find(op => op.uid === p.uid);
+        if (!original) continue;
         
-      if (hasChanged) {
-        const isSelf = p.uid === user.uid;
-        const isVirtual = p.uid.startsWith('p_') || original.isParticipant === true;
-        const isLeagueCreator = activeLeague?.creatorId === user.uid;
-        const canUpdate = isSuperAdmin || isApprovedAdmin || isSelf || isVirtual || isLeagueCreator;
-        
-        if (canUpdate) {
-          console.log(`Auto-updating Firestore points for participant ${p.displayName || p.uid}:`, {
-            totalPoints: p.totalPoints,
-            correctResults: p.correctResults,
-            correctWinners: p.correctWinners,
-            extraPoints: p.extraPoints
-          });
-          try {
-            await setDoc(doc(db, 'users', p.uid), {
+        const hasChanged = 
+          p.totalPoints !== (original.totalPoints ?? 0) ||
+          p.correctResults !== (original.correctResults ?? 0) ||
+          p.correctWinners !== (original.correctWinners ?? 0) ||
+          p.extraPoints !== (original.extraPoints ?? 0);
+          
+        if (hasChanged) {
+          const isSelf = p.uid === user.uid;
+          const isLeagueCreator = activeLeague?.creatorId === user.uid;
+          const isAllowedToManage = isSuperAdmin || isApprovedAdmin || isLeagueCreator;
+          const isVirtual = p.uid.startsWith('p_') || original.isParticipant === true;
+          
+          // Critical block: Regular users must NEVER attempt to sync or write points for other/virtual users.
+          // Doing so causes PERMISSION_DENIED spam and heavy database read operations.
+          const canUpdate = isSelf || (isVirtual && isAllowedToManage);
+          
+          if (canUpdate) {
+            console.log(`Periodic update matches: Auto-updating Firestore points for participant ${p.displayName || p.uid}:`, {
               totalPoints: p.totalPoints,
               correctResults: p.correctResults,
               correctWinners: p.correctWinners,
-              extraPoints: p.extraPoints,
-              lastUpdatedAt: new Date().toISOString()
-            }, { merge: true });
-          } catch (err) {
-            console.warn(`Could not auto-save calculated points for ${p.uid}:`, err);
+              extraPoints: p.extraPoints
+            });
+            try {
+              await setDoc(doc(db, 'users', p.uid), {
+                totalPoints: p.totalPoints,
+                correctResults: p.correctResults,
+                correctWinners: p.correctWinners,
+                extraPoints: p.extraPoints,
+                lastUpdatedAt: new Date().toISOString()
+              }, { merge: true });
+            } catch (err) {
+              console.warn(`Could not auto-save calculated points for ${p.uid}:`, err);
+            }
           }
         }
       }
-    });
-  }, [leaderboard, user, isSuperAdmin, isApprovedAdmin, participants, activeLeague]);
+    };
+
+    // Run first time after a short delay (e.g. 10 seconds)
+    const initialTimeout = setTimeout(() => {
+      syncLeaderboardPoints();
+    }, 10000);
+
+    // Then run every 60 seconds (1 minute)
+    const interval = setInterval(syncLeaderboardPoints, 60000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Obtener estadísticas de predicciones llenas y listas de predicciones para cada participante de la quiniela
   useEffect(() => {
     if (participants.length === 0) {
       setPredictionsStats({});
       setParticipantsPredictions({});
+      Object.keys(predictionListenersRef.current).forEach(uid => {
+        predictionListenersRef.current[uid]();
+      });
+      predictionListenersRef.current = {};
       return;
     }
 
-    const unsubscribes = participants.map(p => {
-      const predictionsRef = collection(db, 'users', p.uid, 'predictions');
-      return onSnapshot(predictionsRef, (snapshot) => {
-        const docs = snapshot.docs;
-        const predsList = docs.map(doc => doc.data() as Prediction);
-        const filledMatchesCount = predsList.filter(pred => 
-          pred.matchId !== 'world_champion' && pred.matchId !== 'top_scorer' &&
-          pred.matchId !== 'best_player' && pred.matchId !== 'best_goalkeeper' &&
-          pred.matchId !== 'runner_up' && pred.matchId !== 'third_place' &&
-          pred.homeScore !== null && pred.homeScore !== undefined && 
-          pred.awayScore !== null && pred.awayScore !== undefined
-        ).length;
-        
-        const champPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'world_champion');
-        const hasChampion = champPred && champPred.championTeamId !== null && champPred.championTeamId !== undefined;
+    const currentUids = new Set(participants.map(p => p.uid));
 
-        const runnerUpPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'runner_up');
-        const hasRunnerUp = runnerUpPred && runnerUpPred.championTeamId !== null && runnerUpPred.championTeamId !== undefined;
-
-        const thirdPlacePred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'third_place');
-        const hasThirdPlace = thirdPlacePred && thirdPlacePred.championTeamId !== null && thirdPlacePred.championTeamId !== undefined;
-        
-        const scorerPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'top_scorer');
-        const hasScorer = scorerPred && scorerPred.scorerPlayerName !== null && scorerPred.scorerPlayerName !== undefined && scorerPred.scorerPlayerName !== '';
-        
-        const bestPlayerPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'best_player');
-        const hasBestPlayer = bestPlayerPred && bestPlayerPred.scorerPlayerName !== null && bestPlayerPred.scorerPlayerName !== undefined && bestPlayerPred.scorerPlayerName !== '';
-
-        const bestGoalkeeperPred = docs.map(d => d.data() as Prediction).find(pred => pred.matchId === 'best_goalkeeper');
-        const hasBestGoalkeeper = bestGoalkeeperPred && bestGoalkeeperPred.scorerPlayerName !== null && bestGoalkeeperPred.scorerPlayerName !== undefined && bestGoalkeeperPred.scorerPlayerName !== '';
-
-        const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasRunnerUp ? 1 : 0) + (hasThirdPlace ? 1 : 0) + (hasScorer ? 1 : 0) + (hasBestPlayer ? 1 : 0) + (hasBestGoalkeeper ? 1 : 0);
-        
-        setPredictionsStats(prev => ({
-          ...prev,
-          [p.uid]: {
-            filled: filledCount,
-            total: currentMatches.length + 6
-          }
-        }));
-
-        setParticipantsPredictions(prev => ({
-          ...prev,
-          [p.uid]: predsList
-        }));
-      }, (error) => {
-        console.error(`Error loading predictions for ${p.uid}:`, error);
-      });
+    // 1. Limpiar escuchadores de usuarios que ya no pertenecen a los participantes actuales
+    Object.keys(predictionListenersRef.current).forEach(uid => {
+      if (!currentUids.has(uid)) {
+        try {
+          predictionListenersRef.current[uid]();
+        } catch (e) {
+          console.error("Error cleaning up prediction listener for", uid, e);
+        }
+        delete predictionListenersRef.current[uid];
+        setPredictionsStats(prev => {
+          const updated = { ...prev };
+          delete updated[uid];
+          return updated;
+        });
+        setParticipantsPredictions(prev => {
+          const updated = { ...prev };
+          delete updated[uid];
+          return updated;
+        });
+      }
     });
 
-    return () => {
-      unsubscribes.forEach(unsub => unsub());
-    };
+    // 2. Crear escuchadores para los nuevos participantes que no tienen un escuchador activo
+    participants.forEach(p => {
+      if (!predictionListenersRef.current[p.uid]) {
+        const predictionsRef = collection(db, 'users', p.uid, 'predictions');
+        const unsubscribe = onSnapshot(predictionsRef, (snapshot) => {
+          const docs = snapshot.docs;
+          const predsList = docs.map(doc => doc.data() as Prediction);
+          const filledMatchesCount = predsList.filter(pred => 
+            pred.matchId !== 'world_champion' && pred.matchId !== 'top_scorer' &&
+            pred.matchId !== 'best_player' && pred.matchId !== 'best_goalkeeper' &&
+            pred.matchId !== 'runner_up' && pred.matchId !== 'third_place' &&
+            pred.homeScore !== null && pred.homeScore !== undefined && 
+            pred.awayScore !== null && pred.awayScore !== undefined
+          ).length;
+          
+          const champPred = predsList.find(pred => pred.matchId === 'world_champion');
+          const hasChampion = champPred && champPred.championTeamId !== null && champPred.championTeamId !== undefined;
+
+          const runnerUpPred = predsList.find(pred => pred.matchId === 'runner_up');
+          const hasRunnerUp = runnerUpPred && runnerUpPred.championTeamId !== null && runnerUpPred.championTeamId !== undefined;
+
+          const thirdPlacePred = predsList.find(pred => pred.matchId === 'third_place');
+          const hasThirdPlace = thirdPlacePred && thirdPlacePred.championTeamId !== null && thirdPlacePred.championTeamId !== undefined;
+          
+          const scorerPred = predsList.find(pred => pred.matchId === 'top_scorer');
+          const hasScorer = scorerPred && scorerPred.scorerPlayerName !== null && scorerPred.scorerPlayerName !== undefined && scorerPred.scorerPlayerName !== '';
+          
+          const bestPlayerPred = predsList.find(pred => pred.matchId === 'best_player');
+          const hasBestPlayer = bestPlayerPred && bestPlayerPred.scorerPlayerName !== null && bestPlayerPred.scorerPlayerName !== undefined && bestPlayerPred.scorerPlayerName !== '';
+
+          const bestGoalkeeperPred = predsList.find(pred => pred.matchId === 'best_goalkeeper');
+          const hasBestGoalkeeper = bestGoalkeeperPred && bestGoalkeeperPred.scorerPlayerName !== null && bestGoalkeeperPred.scorerPlayerName !== undefined && bestGoalkeeperPred.scorerPlayerName !== '';
+
+          const filledCount = filledMatchesCount + (hasChampion ? 1 : 0) + (hasRunnerUp ? 1 : 0) + (hasThirdPlace ? 1 : 0) + (hasScorer ? 1 : 0) + (hasBestPlayer ? 1 : 0) + (hasBestGoalkeeper ? 1 : 0);
+          
+          setPredictionsStats(prev => ({
+            ...prev,
+            [p.uid]: {
+              filled: filledCount,
+              total: currentMatches.length + 6
+            }
+          }));
+
+          setParticipantsPredictions(prev => ({
+            ...prev,
+            [p.uid]: predsList
+          }));
+        }, (error) => {
+          console.error(`Error loading predictions for ${p.uid}:`, error);
+        });
+
+        predictionListenersRef.current[p.uid] = unsubscribe;
+      }
+    });
   }, [participants, currentMatches.length]);
 
   const handleGoogleLogin = async (intent: 'existing_admin' | 'request_admin') => {
