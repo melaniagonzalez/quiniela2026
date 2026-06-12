@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Loader2 } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -958,6 +958,10 @@ export default function App() {
 
   const [predictionsStats, setPredictionsStats] = useState<Record<string, { filled: number; total: number }>>({});
   const [participantsPredictions, setParticipantsPredictions] = useState<Record<string, Prediction[]>>({});
+  
+  const isCalculatingLeaderboard = useMemo(() => {
+    return participants.length > 0 && participants.some(p => participantsPredictions[p.uid] === undefined);
+  }, [participants, participantsPredictions]);
   const predictionListenersRef = useRef<Record<string, () => void>>({});
 
   // Clean up all dynamic participant prediction listeners on unmount to prevent Firestore read quota leaks/orphaned listeners
@@ -6394,10 +6398,17 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   </div>
                 )}
                 {!isApprovedAdmin && <div />}
-                <div className="flex items-center gap-8 ml-auto">
-                  <div className="text-center">
-                    <p className="text-[18px] font-black text-lime">{leaderboard.length}</p>
-                    <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Participantes</p>
+                <div className="flex items-center gap-4 sm:gap-6 ml-auto">
+                  {isCalculatingLeaderboard && (
+                    <div className="flex items-center gap-2 bg-lime/10 border border-lime/25 text-lime px-3 py-1.5 text-[9px] font-black uppercase tracking-wider animate-pulse rounded-sm">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span className="hidden xs:inline">Calculando en tiempo real...</span>
+                      <span className="xs:hidden">Calculando...</span>
+                    </div>
+                  )}
+                  <div className="text-center shrink-0">
+                    <p className="text-[14px] sm:text-[18px] font-black text-lime">{leaderboard.length}</p>
+                    <p className="text-[7px] sm:text-[8px] text-muted-foreground uppercase font-bold tracking-tight">Participantes</p>
                   </div>
                 </div>
               </div>
@@ -6504,23 +6515,38 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           })()}
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className="text-[14px] font-black text-white/95">
+                          <span className={cn(
+                            "text-[14px] font-black transition-all",
+                            participantsPredictions[entry.uid] === undefined ? "text-white/40 animate-pulse" : "text-white/95"
+                          )}>
                             {(entry.correctResults || 0) * 3} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className="text-[14px] font-black text-white/95">
+                          <span className={cn(
+                            "text-[14px] font-black transition-all",
+                            participantsPredictions[entry.uid] === undefined ? "text-white/40 animate-pulse" : "text-white/95"
+                          )}>
                             {(entry.correctWinners || 0) * 1} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className="text-[14px] font-black text-white/95">
+                          <span className={cn(
+                            "text-[14px] font-black transition-all",
+                            participantsPredictions[entry.uid] === undefined ? "text-white/40 animate-pulse" : "text-white/95"
+                          )}>
                             {entry.extraPoints || 0} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right px-1.5 sm:px-4">
-                          <span className="text-[15px] sm:text-[18px] font-black text-lime">
-                            {entry.totalPoints || 0} <span className="text-[10px] sm:text-[12px] text-muted-foreground ml-0.5 sm:ml-1">PTS</span>
+                          <span className={cn(
+                            "text-[15px] sm:text-[18px] font-black inline-flex items-center gap-1.5 transition-all justify-end w-full",
+                            participantsPredictions[entry.uid] === undefined ? "text-lime/40 animate-pulse" : "text-lime"
+                          )}>
+                            {participantsPredictions[entry.uid] === undefined && (
+                              <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-lime/50 shrink-0" />
+                            )}
+                            {entry.totalPoints || 0} <span className="text-[10px] sm:text-[12px] text-muted-foreground ml-0.5 sm:ml-1 font-medium">PTS</span>
                           </span>
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right pr-3 sm:pr-8 pl-1.5 sm:pl-4">
