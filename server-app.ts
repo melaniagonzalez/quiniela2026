@@ -349,8 +349,36 @@ app.get("/api/sync/:competition", async (req, res) => {
     
     res.json(competitionsCache[competition]);
   } catch (error: any) {
-    console.error(`Error syncing ${competition} data:`, error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to sync data" });
+    console.error(`Error syncing ${competition} data (errorCode ${error.response?.data?.errorCode || error.response?.status || 'unknown'}):`, error.response?.data || error.message);
+    
+    // Fallback 1: Servir datos de cache existente en memoria (incluso si bypassCache=true o expirado)
+    if (competitionsCache[competition]) {
+      console.log(`[Sync Fallback] Serving previous memory-cached ${competition} data after live API fetch failed.`);
+      return res.json(competitionsCache[competition]);
+    }
+
+    // Fallback 2: Si no hay cache en memoria, construir datos base desde src/constants.ts
+    try {
+      console.log(`[Sync Fallback] No memory cache found for ${competition}. Loading baseline matches and teams from src/constants.ts`);
+      const { TEAMS, MATCHES } = await import("./src/constants");
+      
+      const fallbackData = {
+        teams: TEAMS,
+        matches: MATCHES,
+        standings: [],
+        scorers: [],
+        players: [],
+        timestamp: now
+      };
+      
+      // Guardar en cache para evitar importaciones repetidas en caso de fallos continuos del API
+      competitionsCache[competition] = fallbackData;
+      return res.json(fallbackData);
+    } catch (fallbackError) {
+      console.error("[Sync Fallback] Local constants import fallback failed:", fallbackError);
+    }
+
+    res.status(500).json({ error: "Failed to sync data and no local fallback available" });
   }
 });
 
@@ -1253,7 +1281,12 @@ app.post("/api/contact", async (req, res) => {
       timestamp
     });
 
-    fs.writeFileSync(backupPath, JSON.stringify(submissions, null, 2), "utf8");
+    try {
+      fs.writeFileSync(backupPath, JSON.stringify(submissions, null, 2), "utf8");
+      console.log("✅ Contact submission successfully saved to local contact_submissions.json");
+    } catch (err) {
+      console.warn("⚠️ Local storage backup failed (likely read-only file system or permission restriction in production container):", err);
+    }
 
     // 2. Dispatch real email if RESEND_API_KEY is configured
     let emailSent = false;
