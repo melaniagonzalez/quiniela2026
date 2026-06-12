@@ -8488,7 +8488,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         {/* Footer Core Info Row */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left pt-6 border-t border-border/40 w-full mb-2">
           <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest shrink-0 mx-auto md:mx-0">
-            © 2026 Quiniela Mundial
+            © 2027 Quiniela Mundial
           </div>
         </div>
       </footer>
