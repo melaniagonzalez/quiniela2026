@@ -210,6 +210,22 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [dbLastUpdated, setDbLastUpdated] = useState<string | null>(null);
   const [nowTimeState, setNowTimeState] = useState<number>(Date.now());
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+
+  const handleFirebaseError = useCallback((context: string, error: any) => {
+    console.error(`Error ${context}:`, error);
+    if (error && (
+      error.code === 'resource-exhausted' ||
+      String(error.message || '').toLowerCase().includes('quota') ||
+      String(error.message || '').toLowerCase().includes('resource-exhausted') ||
+      String(error.code || '').toLowerCase().includes('quota') ||
+      String(error.toString && error.toString()).toLowerCase().includes('quota')
+    )) {
+      setIsQuotaExceeded(true);
+    } else {
+      toast.error(`Error al cargar ${context}`);
+    }
+  }, []);
   
   useEffect(() => {
     const interval = setInterval(() => {
@@ -950,6 +966,8 @@ export default function App() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const leaguesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as League));
         setLeagues(leaguesData);
+      }, (error) => {
+        handleFirebaseError("quinielas locales", error);
       });
       return () => unsubscribe();
     }
@@ -968,7 +986,7 @@ export default function App() {
           CL: newConfigs.CL || {}
         });
       }, (error) => {
-        console.error("Error loading configurations:", error);
+        handleFirebaseError("configuración de puntos", error);
       });
       return () => unsubscribe();
     }
@@ -981,7 +999,7 @@ export default function App() {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllLeagues(list);
       }, (error) => {
-        console.error("Error loading all leagues:", error);
+        handleFirebaseError("todas las quinielas", error);
       });
       return () => unsubscribe();
     }
@@ -994,7 +1012,7 @@ export default function App() {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllRegisteredUsers(list);
       }, (error) => {
-        console.error("Error loading all users:", error);
+        handleFirebaseError("todos los perfiles de usuario", error);
       });
       return () => unsubscribe();
     }
@@ -1007,7 +1025,7 @@ export default function App() {
         const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAdminRequests(list);
       }, (error) => {
-        console.error("Error loading admin requests:", error);
+        handleFirebaseError("solicitudes de administración", error);
       });
       return () => unsubscribe();
     }
@@ -1067,7 +1085,7 @@ export default function App() {
             });
           }
         }, (error) => {
-          console.error("Error loading admins list:", error);
+          handleFirebaseError("lista de administradores", error);
         });
         return () => unsubscribe();
       }
@@ -1100,6 +1118,7 @@ export default function App() {
         }
         setIsAdminConfigLoading(false);
       }, (error) => {
+        handleFirebaseError("permisos de administrador del usuario", error);
         setIsAdminConfigLoading(false);
         if (isAdminEmail(user.email)) {
           setCurrentUserAdminConfig({
@@ -1120,7 +1139,7 @@ export default function App() {
           setCurrentUserRequest(null);
         }
       }, (error) => {
-        console.error("Error subscribing to admin requests updates:", error);
+        handleFirebaseError("actualización de solicitudes de admin", error);
         setCurrentUserRequest(null);
       });
 
@@ -1183,8 +1202,7 @@ export default function App() {
         setActiveParticipantId(null);
       }
     }, (error) => {
-      console.error("Error loading participants:", error);
-      toast.error("Error al cargar los participantes de la quiniela");
+      handleFirebaseError("participantes de la quiniela", error);
     });
 
     return () => unsubscribe();
@@ -2138,7 +2156,7 @@ export default function App() {
       setBestGoalkeeperPrediction(initialBestGoalkeeper);
       dbBestGoalkeeperPredictionRef.current = initialBestGoalkeeper;
     }, (error) => {
-      console.error('Error fetching predictions:', error);
+      handleFirebaseError("predicciones", error);
     });
 
     return () => unsubscribe();
@@ -2363,7 +2381,7 @@ export default function App() {
             [p.uid]: predsList
           }));
         }, (error) => {
-          console.error(`Error loading predictions for ${p.uid}:`, error);
+          handleFirebaseError(`predicciones calculadas del participante ${p.uid}`, error);
         });
 
         predictionListenersRef.current[p.uid] = unsubscribe;
@@ -3553,6 +3571,38 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary selection:text-primary-foreground">
+      {isQuotaExceeded && (
+        <div className="bg-red-950/75 border-b border-red-500/40 text-[11px] sm:text-xs text-red-200 py-2.5 sm:py-3 px-4 shadow-[0_4px_20px_rgba(239,68,68,.2)] relative z-[99999] backdrop-blur-sm animate-in fade-in slide-in-from-top-4 duration-250">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left">
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-red-400 shrink-0">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping inline-block" />
+                ⚠️ Alerta de Cuota Firestore:
+              </div>
+              <span>
+                La base de datos se encuentra temporalmente en pausa por límite diario de lectura. Si ya activaste el plan <strong>Pay-As-You-Go/Blaze</strong>, por favor recarga la página para refrescar la conexión con la nueva tarifa ampliada.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  setIsQuotaExceeded(false);
+                  window.location.reload();
+                }}
+                className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white font-bold uppercase text-[10px] tracking-wider transition-colors cursor-pointer"
+              >
+                🔄 Recargar Aplicación
+              </button>
+              <button
+                onClick={() => setIsQuotaExceeded(false)}
+                className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white font-bold uppercase text-[10px] tracking-wider transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {newVersionAvailable && (
         <div className="fixed inset-0 bg-background/95 backdrop-blur-md z-[99999] flex items-center justify-center p-4 select-none">
           <div className="bg-card border border-border max-w-md w-full p-8 shadow-2xl rounded-none text-center flex flex-col items-center gap-6 animate-in fade-in zoom-in-95 duration-200">
