@@ -116,7 +116,9 @@ export const MATCHES: Match[] = ${JSON.stringify(formattedMatches, null, 2)};
     fs.writeFileSync(filePath, content, "utf-8");
     console.log("[Task Scheduler] src/constants.ts has been successfully overwritten and synced with the latest World Cup database from the API!");
   } catch (err: any) {
-    console.error("[Task Scheduler] Failed to write/sync constants.ts from the production API:", err.response?.data || err.message);
+    const status = err.response?.status || "unknown";
+    const msg = err.response?.data?.message || err.message;
+    console.warn(`[Task Scheduler Warn] World Cup constants synchronization failed (Status: ${status}). Message: ${msg}. Skipping fallback update this hour.`);
   }
 }
 
@@ -124,7 +126,13 @@ async function startServer() {
   const PORT = 3000;
 
   // Run initial synchronization of local constants on server startup
-  cronUpdateLocalConstants();
+  // Skip immediately in development to prevent API rate-limiting due to dev server restarts
+  if (process.env.NODE_ENV === "production") {
+    // In production, sync after 20 seconds to allow standard boot up
+    setTimeout(cronUpdateLocalConstants, 20000);
+  } else {
+    console.log("[Task Scheduler] Skipping immediate startup sync in development to prevent API rate-limiting.");
+  }
   // Set up hourly background task to keep the file synced with real-time data from the official API
   setInterval(cronUpdateLocalConstants, 1000 * 60 * 60);
 

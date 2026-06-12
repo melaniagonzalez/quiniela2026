@@ -237,7 +237,7 @@ export default function App() {
   useEffect(() => {
     const fetchDbStatus = async () => {
       try {
-        const res = await apiFetch('/api/db-status');
+        const res = await apiFetch(`/api/db-status?t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
           if (data.lastUpdated) {
@@ -720,7 +720,9 @@ export default function App() {
   const syncCompetitionData = async (comp: string, showToast: boolean = false, force: boolean = false) => {
     setIsSyncing(true);
     try {
-      const url = force ? `/api/sync/${comp}?bypassCache=true` : `/api/sync/${comp}`;
+      const url = force 
+        ? `/api/sync/${comp}?bypassCache=true&t=${Date.now()}` 
+        : `/api/sync/${comp}?t=${Date.now()}`;
       const response = await apiFetch(url);
       if (!response.ok) throw new Error('Sync failed');
       const data = await response.json();
@@ -852,6 +854,10 @@ export default function App() {
                   window.location.hostname.includes('ais-dev');
 
     const headers = new Headers(init?.headers);
+    headers.set('Cache-Control', 'no-cache');
+    headers.set('Pragma', 'no-cache');
+    headers.set('Expires', '0');
+
     if (!isDev) {
       headers.set('X-App-Version', currentVersion);
     }
@@ -2534,7 +2540,7 @@ export default function App() {
         return;
       }
       const competition = activeLeague?.competition || 'WC';
-      const response = await apiFetch(`/api/results/${competition}`);
+      const response = await apiFetch(`/api/results/${competition}?t=${Date.now()}`);
       if (response.ok) {
         const data = await response.json();
         setNewsData(data);

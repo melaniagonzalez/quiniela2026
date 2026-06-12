@@ -17,9 +17,62 @@ const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAw
 const app = express();
 app.use(express.json());
 
+// Prevent browser/proxy caching of all dynamic API routes to ensure real-time fresh statistics and scores
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+  next();
+});
+
 // Cache for different competitions
 let competitionsCache: Record<string, { teams: any[]; matches: any[]; standings: any[]; scorers: any[]; players?: any[]; timestamp: number }> = {};
-const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes (300,000 ms) to stay highly real-time while respecting API rate-limits
+let lastFailedSync: Record<string, number> = {};
+let activeSyncPromises: Record<string, Promise<any> | null> = {};
+
+function getDynamicCacheDuration(competition: string): number {
+  const cache = competitionsCache[competition];
+  if (!cache || !cache.matches) return 1000 * 60 * 15; // 15 minutes default
+
+  const now = Date.now();
+  const hasLiveMatch = cache.matches.some((m: any) => {
+    if (["IN_PLAY", "LIVE", "FIRST_HALF", "SECOND_HALF", "PAUSE"].includes(m.status)) {
+      return true;
+    }
+    // Check if match starts in next 30 minutes or finished in the last 30 minutes
+    const matchTime = new Date(m.date).getTime();
+    return Math.abs(now - matchTime) < 1000 * 60 * 30;
+  });
+
+  if (hasLiveMatch) {
+    return 1000 * 60 * 3; // 3 minutes during live/hot match windows
+  }
+  return 1000 * 60 * 30; // 30 minutes otherwise for gentle rate-limiting
+}
+
+async function serveLocalConstantsFallback(competition: string, res: any, now: number) {
+  try {
+    console.log(`[Sync Fallback] Loading baseline matches and teams from src/constants.ts for ${competition}`);
+    const { TEAMS, MATCHES } = await import("./src/constants");
+    
+    const fallbackData = {
+      teams: TEAMS,
+      matches: MATCHES,
+      standings: [],
+      scorers: [],
+      players: [],
+      timestamp: now
+    };
+    
+    competitionsCache[competition] = fallbackData;
+    return res.json(fallbackData);
+  } catch (fallbackError) {
+    console.error("[Sync Fallback] Local constants import fallback failed:", fallbackError);
+    return res.status(500).json({ error: "Failed to sync data and no local fallback available" });
+  }
+}
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -201,9 +254,43 @@ app.get("/api/sync/:competition", async (req, res) => {
   const now = Date.now();
   const force = req.query.bypassCache === "true" || req.query.force === "true";
   
-  if (!force && competitionsCache[competition] && now - competitionsCache[competition].timestamp < CACHE_DURATION) {
-    console.log(`Serving ${competition} data from cache`);
+  // 1. Failure lockout: If a previous sync failed less than 2 minutes ago, prevent live API lookup to protect our rate limit.
+  const lastFailed = lastFailedSync[competition] || 0;
+  if (now - lastFailed < 1000 * 60 * 2) {
+    console.log(`[Rate-Limit Lock] Skipping live API sync for ${competition} because a previous sync failed recently (rate limit lockout active for ${Math.round((120000 - (now - lastFailed)) / 1000)}s).`);
+    if (competitionsCache[competition]) {
+      return res.json(competitionsCache[competition]);
+    }
+    return serveLocalConstantsFallback(competition, res, now);
+  }
+
+  // 2. Cooldown for "force" bypass requests: If a force list refresh is requested but the last successful sync was under 2 minutes ago,
+  // ignore force and serve the cache to prevent hitting 429 when users spam or open multiple pages.
+  const lastSuccessfulSyncAge = now - (competitionsCache[competition]?.timestamp || 0);
+  if (force && competitionsCache[competition] && lastSuccessfulSyncAge < 1000 * 60 * 2) {
+    console.log(`[Rate-Limit Lock] Cooldown: ignoring force flag for ${competition} since last successful sync was only ${Math.round(lastSuccessfulSyncAge / 1000)}s ago.`);
     return res.json(competitionsCache[competition]);
+  }
+
+  // 3. Normal cache hit check using dynamic cache duration
+  const cacheDuration = getDynamicCacheDuration(competition);
+  if (!force && competitionsCache[competition] && lastSuccessfulSyncAge < cacheDuration) {
+    console.log(`Serving ${competition} data from cache (dynamic duration: ${cacheDuration / 1000}s, current age: ${Math.round(lastSuccessfulSyncAge / 1000)}s)`);
+    return res.json(competitionsCache[competition]);
+  }
+
+  // 4. Request Coalescing (Singleflight): If visual sync is already active, await that exact same sync promise rather than initiating overlapping rate-limited fetches!
+  if (activeSyncPromises[competition]) {
+    console.log(`[Singleflight] Deduplicating concurrent sync request for ${competition}. Joining existing active lookup.`);
+    try {
+      const result = await activeSyncPromises[competition];
+      return res.json(result);
+    } catch (err: any) {
+      if (competitionsCache[competition]) {
+        return res.json(competitionsCache[competition]);
+      }
+      return serveLocalConstantsFallback(competition, res, now);
+    }
   }
 
   const apiKey = process.env.FOOTBALL_DATA_KEY;
@@ -212,38 +299,77 @@ app.get("/api/sync/:competition", async (req, res) => {
     return res.json({ teams: [], matches: [] });
   }
 
-  try {
+  // Create the shared task promise
+  const syncPromise = (async () => {
     console.log(`Fetching fresh ${competition} data sequentially from football-data.org...`);
-    
     const headers = { "X-Auth-Token": apiKey };
-    const matchesResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/matches`, headers);
-    await delay(300);
-    const teamsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/teams`, headers);
-    await delay(300);
-    const standingsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/standings`, headers);
-    await delay(300);
-    const scorersResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/scorers`, headers);
 
+    // Optimize: Reuse teams data if we already reached and cached them in memory. Under stable conditions, teams do not change.
+    const cachedTeams = competitionsCache[competition]?.teams || [];
+    const cachedPlayers = competitionsCache[competition]?.players || [];
+    let formattedTeams = cachedTeams;
+    let activePlayers = cachedPlayers;
     const teamsMap = new Map();
-    const formattedTeams = teamsResponse.data.teams.map((t: any) => {
-      const teamData = {
-        id: `${t.id}`,
-        name: translateTeamName(t.name),
-        shortName: translateTeamName(t.shortName || t.name),
-        tla: t.tla,
-        flag: t.crest,
-        group: "" 
-      };
-      teamsMap.set(t.id, teamData);
-      return teamData;
-    });
+
+    if (cachedTeams.length > 0) {
+      console.log(`[Sync Optimization] Reusing ${cachedTeams.length} teams and ${cachedPlayers.length} players from memory to reduce external API consumption.`);
+      cachedTeams.forEach((t: any) => teamsMap.set(Number(t.id), t));
+    }
+
+    // Step 4a: Get Matches
+    const matchesResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/matches`, headers);
+    await delay(350);
+
+    // Step 4b: Get Teams (Only if cache is empty or we are forced to fully flush)
+    if (formattedTeams.length === 0) {
+      console.log(`[Sync Detail] Teams cache is currently empty for ${competition}, hitting live teams endpoint.`);
+      const teamsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/teams`, headers);
+      formattedTeams = teamsResponse.data.teams.map((t: any) => {
+        const teamData = {
+          id: `${t.id}`,
+          name: translateTeamName(t.name),
+          shortName: translateTeamName(t.shortName || t.name),
+          tla: t.tla,
+          flag: t.crest,
+          group: "" 
+        };
+        teamsMap.set(Number(t.id), teamData);
+        return teamData;
+      });
+
+      if (teamsResponse.data && Array.isArray(teamsResponse.data.teams)) {
+        teamsResponse.data.teams.forEach((t: any) => {
+          const teamName = translateTeamName(t.name);
+          const teamFlag = t.crest || "⚽";
+          if (Array.isArray(t.squad)) {
+            t.squad.forEach((p: any) => {
+              if (p && p.name) {
+                activePlayers.push({
+                  name: p.name,
+                  team: teamName,
+                  flag: teamFlag
+                });
+              }
+            });
+          }
+        });
+      }
+      await delay(350);
+    }
+
+    // Step 4c: Standings & Scorers
+    const standingsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/standings`, headers);
+    await delay(350);
+    const scorersResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/scorers`, headers);
 
     const formattedMatches = matchesResponse.data.matches.map((m: any) => {
       const group = m.group ? m.group.replace('GROUP_', '') : m.stage;
       
       if (m.stage === 'GROUP_STAGE') {
-        if (m.homeTeam?.id && teamsMap.has(m.homeTeam.id)) teamsMap.get(m.homeTeam.id).group = group;
-        if (m.awayTeam?.id && teamsMap.has(m.awayTeam.id)) teamsMap.get(m.awayTeam.id).group = group;
+        const hId = m.homeTeam?.id;
+        const aId = m.awayTeam?.id;
+        if (hId && teamsMap.has(Number(hId))) teamsMap.get(Number(hId)).group = group;
+        if (aId && teamsMap.has(Number(aId))) teamsMap.get(Number(aId)).group = group;
       }
 
       let matchday = m.matchday;
@@ -262,7 +388,6 @@ app.get("/api/sync/:competition", async (req, res) => {
           matchday = 17;
         }
       } else if (competition === "WC") {
-        // World Cup 2026 Stages mapping to sequential days
         if (m.stage === "GROUP_STAGE") matchday = m.matchday || 1;
         else if (m.stage === "LAST_32") matchday = 4;
         else if (m.stage === "LAST_16") matchday = 5;
@@ -280,19 +405,14 @@ app.get("/api/sync/:competition", async (req, res) => {
       const halfTimeHomeScore = m.score?.halfTime?.home ?? null;
       const halfTimeAwayScore = m.score?.halfTime?.away ?? null;
 
-      // Sanity Check: a final score cannot be lower than the half-time score in real life.
-      // If the final score is missing (null/undefined) or is less than the half-time score,
-      // fallback/correct it to the half-time score.
       if (halfTimeHomeScore !== null && halfTimeHomeScore !== undefined) {
         if (actualHomeScore === null || actualHomeScore === undefined || actualHomeScore < halfTimeHomeScore) {
-          console.warn(`[Sanity Score Check] Match ${matchId}: actualHomeScore was ${actualHomeScore}, correcting to halftime score ${halfTimeHomeScore}`);
           actualHomeScore = halfTimeHomeScore;
         }
       }
 
       if (halfTimeAwayScore !== null && halfTimeAwayScore !== undefined) {
         if (actualAwayScore === null || actualAwayScore === undefined || actualAwayScore < halfTimeAwayScore) {
-          console.warn(`[Sanity Score Check] Match ${matchId}: actualAwayScore was ${actualAwayScore}, correcting to halftime score ${halfTimeAwayScore}`);
           actualAwayScore = halfTimeAwayScore;
         }
       }
@@ -350,49 +470,40 @@ app.get("/api/sync/:competition", async (req, res) => {
       };
     });
 
-    const activePlayers: any[] = [];
-    if (teamsResponse.data && Array.isArray(teamsResponse.data.teams)) {
-      teamsResponse.data.teams.forEach((t: any) => {
-        const teamName = translateTeamName(t.name);
-        const teamFlag = t.crest || "⚽";
-        if (Array.isArray(t.squad)) {
-          t.squad.forEach((p: any) => {
-            if (p && p.name) {
-              activePlayers.push({
-                name: p.name,
-                team: teamName,
-                flag: teamFlag
-              });
-            }
-          });
-        }
-      });
-    }
-
-    competitionsCache[competition] = { 
-      teams: Array.from(teamsMap.values()), 
+    const outputData = { 
+      teams: formattedTeams, 
       matches: formattedMatches,
       standings: translatedStandings,
       scorers: translatedScorers,
       players: activePlayers,
-      timestamp: now 
+      timestamp: Date.now() 
     };
-    
-    res.json(competitionsCache[competition]);
+
+    competitionsCache[competition] = outputData;
+    return outputData;
+  })();
+
+  activeSyncPromises[competition] = syncPromise;
+
+  try {
+    const freshData = await syncPromise;
+    res.json(freshData);
   } catch (error: any) {
-    console.error(`Error syncing ${competition} data (errorCode ${error.response?.data?.errorCode || error.response?.status || 'unknown'}):`, error.response?.data || error.message);
+    const errorStatus = error.response?.status || 'unknown';
+    const errorMsg = error.response?.data?.message || error.message;
+    console.warn(`[Soccer API Sync Warning] Failed to fetch latest ${competition} data (Status: ${errorStatus}). Message: ${errorMsg}. Activating rate-limit lock for 2 minutes.`);
     
-    // Fallback 1: Servir datos de cache existente en memoria (incluso si bypassCache=true o expirado)
+    lastFailedSync[competition] = Date.now();
+    
+    // Fallback 1: Serve existing memory cache
     if (competitionsCache[competition]) {
       console.log(`[Sync Fallback] Serving previous memory-cached ${competition} data after live API fetch failed.`);
       return res.json(competitionsCache[competition]);
     }
 
-    // Fallback 2: Si no hay cache en memoria, construir datos base desde src/constants.ts
+    // Fallback 2: Constant baseline fallback
     try {
-      console.log(`[Sync Fallback] No memory cache found for ${competition}. Loading baseline matches and teams from src/constants.ts`);
       const { TEAMS, MATCHES } = await import("./src/constants");
-      
       const fallbackData = {
         teams: TEAMS,
         matches: MATCHES,
@@ -401,15 +512,15 @@ app.get("/api/sync/:competition", async (req, res) => {
         players: [],
         timestamp: now
       };
-      
-      // Guardar en cache para evitar importaciones repetidas en caso de fallos continuos del API
       competitionsCache[competition] = fallbackData;
       return res.json(fallbackData);
     } catch (fallbackError) {
       console.error("[Sync Fallback] Local constants import fallback failed:", fallbackError);
     }
 
-    res.status(500).json({ error: "Failed to sync data and no local fallback available" });
+    res.status(200).json({ teams: [], matches: [], standings: [], scorers: [], players: [], timestamp: now, note: "No live data available, initialized blank structure" });
+  } finally {
+    activeSyncPromises[competition] = null;
   }
 });
 
