@@ -954,6 +954,22 @@ export default function App() {
   const [participantsPredictions, setParticipantsPredictions] = useState<Record<string, Prediction[]>>({});
   const predictionListenersRef = useRef<Record<string, () => void>>({});
 
+  // Clean up all dynamic participant prediction listeners on unmount to prevent Firestore read quota leaks/orphaned listeners
+  useEffect(() => {
+    return () => {
+      Object.keys(predictionListenersRef.current).forEach(uid => {
+        try {
+          if (typeof predictionListenersRef.current[uid] === 'function') {
+            predictionListenersRef.current[uid]();
+          }
+        } catch (e) {
+          console.error("Error cleaning up dynamic participant prediction listener on unmount:", e);
+        }
+      });
+      predictionListenersRef.current = {};
+    };
+  }, []);
+
   const [isCreatingLeague, setIsCreatingLeague] = useState(false);
   const [newLeagueCompetition, setNewLeagueCompetition] = useState<'WC' | 'CL'>('WC');
   const [newLeagueName, setNewLeagueName] = useState('');
