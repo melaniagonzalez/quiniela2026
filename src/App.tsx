@@ -2846,7 +2846,7 @@ export default function App() {
           createdAt: new Date().toISOString()
         });
       } catch (dbErr) {
-        handleFirestoreError(dbErr, OperationType.CREATE, `contactRequests/${requestId}`);
+        console.warn("Firestore backup for contactRequest failed, proceeding with server-side email trigger:", dbErr);
       }
 
       // 2. Enviar al backend vía HTTP POST (que simula el correo de forma real con logs y backup JSON)
