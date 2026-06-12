@@ -13,6 +13,35 @@ const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAw
   "m537327": { actualHomeScore: 2, actualAwayScore: 0, status: "FINISHED" }
 };
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(url: string, headers: any, retries = 3, initialDelay = 2000): Promise<any> {
+  let delayMs = initialDelay;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const requestHeaders = {
+        ...headers,
+        "Connection": "close",
+        "User-Agent": "PGSimpleApp/1.0.0"
+      };
+      return await axios.get(url, { headers: requestHeaders, timeout: 12000 });
+    } catch (err: any) {
+      const status = err.response?.status;
+      const isRateLimit = status === 429;
+      const isTransientNetworkError = !err.response || err.code === "ECONNRESET" || err.code === "ETIMEDOUT" || err.message?.toLowerCase().includes("socket hang up") || err.message?.toLowerCase().includes("timeout");
+      
+      if ((isRateLimit || isTransientNetworkError) && i < retries - 1) {
+        const errorDesc = isRateLimit ? "Rate-limited (429)" : `Transient network error (${err.code || err.message || 'unknown'})`;
+        console.warn(`[Task Scheduler] ${errorDesc} on ${url}. Retrying in ${delayMs / 1000}s... (Attempt ${i + 1}/${retries})`);
+        await delay(delayMs);
+        delayMs *= 2.5; // exponential backoff with slightly larger backoff
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 async function cronUpdateLocalConstants() {
   const apiKey = process.env.FOOTBALL_DATA_KEY;
   if (!apiKey || apiKey === "MY_API_KEY") {
@@ -22,12 +51,12 @@ async function cronUpdateLocalConstants() {
 
   const competition = "WC";
   try {
-    console.log(`[Task Scheduler] Periodic check starting: Fetching World Cup data of 2026 to synchronize the local database file (constants.ts)...`);
+    console.log(`[Task Scheduler] Periodic check starting: Fetching World Cup data of 2026 to synchronize the local database file (constants.ts) sequentially...`);
     
-    const [matchesResponse, teamsResponse] = await Promise.all([
-      axios.get(`https://api.football-data.org/v4/competitions/${competition}/matches`, { headers: { "X-Auth-Token": apiKey } }),
-      axios.get(`https://api.football-data.org/v4/competitions/${competition}/teams`, { headers: { "X-Auth-Token": apiKey } })
-    ]);
+    const headers = { "X-Auth-Token": apiKey };
+    const matchesResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/matches`, headers);
+    await delay(500);
+    const teamsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/teams`, headers);
 
     const teamsMap = new Map();
     const formattedTeams = teamsResponse.data.teams.map((t: any) => {

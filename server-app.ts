@@ -21,6 +21,35 @@ app.use(express.json());
 let competitionsCache: Record<string, { teams: any[]; matches: any[]; standings: any[]; scorers: any[]; players?: any[]; timestamp: number }> = {};
 const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes (300,000 ms) to stay highly real-time while respecting API rate-limits
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(url: string, headers: any, retries = 3, initialDelay = 2000): Promise<any> {
+  let delayMs = initialDelay;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const requestHeaders = {
+        ...headers,
+        "Connection": "close",
+        "User-Agent": "PGSimpleApp/1.0.0"
+      };
+      return await axios.get(url, { headers: requestHeaders, timeout: 12000 });
+    } catch (err: any) {
+      const status = err.response?.status;
+      const isRateLimit = status === 429;
+      const isTransientNetworkError = !err.response || err.code === "ECONNRESET" || err.code === "ETIMEDOUT" || err.message?.toLowerCase().includes("socket hang up") || err.message?.toLowerCase().includes("timeout");
+      
+      if ((isRateLimit || isTransientNetworkError) && i < retries - 1) {
+        const errorDesc = isRateLimit ? "Rate-limited (429)" : `Transient network error (${err.code || err.message || 'unknown'})`;
+        console.warn(`[Football-Data API] ${errorDesc} on ${url}. Retrying in ${delayMs / 1000}s... (Attempt ${i + 1}/${retries})`);
+        await delay(delayMs);
+        delayMs *= 2.5; // exponential backoff with slightly larger backoff
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 const TEAM_TRANSLATIONS: Record<string, string> = {
   "Croatia": "Croacia",
   "Germany": "Alemania",
@@ -184,14 +213,16 @@ app.get("/api/sync/:competition", async (req, res) => {
   }
 
   try {
-    console.log(`Fetching fresh ${competition} data from football-data.org...`);
+    console.log(`Fetching fresh ${competition} data sequentially from football-data.org...`);
     
-    const [matchesResponse, teamsResponse, standingsResponse, scorersResponse] = await Promise.all([
-      axios.get(`https://api.football-data.org/v4/competitions/${competition}/matches`, { headers: { "X-Auth-Token": apiKey } }),
-      axios.get(`https://api.football-data.org/v4/competitions/${competition}/teams`, { headers: { "X-Auth-Token": apiKey } }),
-      axios.get(`https://api.football-data.org/v4/competitions/${competition}/standings`, { headers: { "X-Auth-Token": apiKey } }),
-      axios.get(`https://api.football-data.org/v4/competitions/${competition}/scorers`, { headers: { "X-Auth-Token": apiKey } })
-    ]);
+    const headers = { "X-Auth-Token": apiKey };
+    const matchesResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/matches`, headers);
+    await delay(300);
+    const teamsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/teams`, headers);
+    await delay(300);
+    const standingsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/standings`, headers);
+    await delay(300);
+    const scorersResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/scorers`, headers);
 
     const teamsMap = new Map();
     const formattedTeams = teamsResponse.data.teams.map((t: any) => {
@@ -1298,8 +1329,16 @@ app.post("/api/contact", async (req, res) => {
         // By default, if the user hasn't verified their custom domain in Resend,
         // they MUST send FROM onboarding@resend.dev, and can only send TO their own registered email.
         // Once they verify their domain (e.g. pgsimple.com), they can send FROM info@pgsimple.com or anything@pgsimple.com.
-        const fromAddress = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
         const toAddress = process.env.RESEND_TO_EMAIL || "info@pgsimple.com";
+        let fromAddress = process.env.RESEND_FROM_EMAIL;
+        
+        if (!fromAddress) {
+          if (toAddress.toLowerCase().endsWith("@pgsimple.com") || toAddress.toLowerCase() === "info@pgsimple.com") {
+            fromAddress = "no-reply@pgsimple.com";
+          } else {
+            fromAddress = "onboarding@resend.dev";
+          }
+        }
 
         await resend.emails.send({
           from: `Pagina Web <${fromAddress}>`,
@@ -1337,13 +1376,14 @@ app.post("/api/contact", async (req, res) => {
           `
         });
         emailSent = true;
-        console.log(`✅ [PGSimple] Correo enviado de forma REAL vía Resend a ${toAddress}`);
+        console.log(`✅ [PGSimple] Correo enviado de forma REAL vía Resend de ${fromAddress} a ${toAddress}`);
       } catch (resendError: any) {
         console.error("❌ Error al enviar correo de contacto vía Resend API:", resendError);
-        emailWarning = resendError.message || "No se pudo despachar el correo (verifica el estado o dominio en Resend).";
+        emailWarning = resendError.message || "No se pudo despachar el correo (verifica las credenciales o el estado de tu dominio en la consola de Resend).";
       }
     } else {
-      console.log(`⚠️ [PGSimple] RESEND_API_KEY no configurada. Formulario guardado localmente e insertado en db.`);
+      console.log(`⚠️ [PGSimple] RESEND_API_KEY no configurada en este entorno.`);
+      emailWarning = "La clave 'RESEND_API_KEY' no está configurada en las variables de entorno de este host (Netlify). Los datos se guardaron localmente pero el correo de notificación en tiempo real no pudo enviarse.";
     }
 
     // 3. Simular el envío del correo electrónico con logs formateados en el servidor

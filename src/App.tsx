@@ -2863,14 +2863,20 @@ export default function App() {
         }),
       });
 
+      const resData = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || 'Error de procesamiento en el servidor.');
+        throw new Error(resData.error || 'Error de procesamiento en el servidor.');
       }
 
       // Éxito total
       setContactSuccess(true);
       toast.success('¡Solicitud de contacto enviada con éxito!');
+
+      if (resData.emailWarning) {
+        console.warn('Resend email warning:', resData.emailWarning);
+        toast.info(`Aviso de correo: ${resData.emailWarning}`, { duration: 8000 });
+      }
       
       // Limpiar campos
       setContactName('');
