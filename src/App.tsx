@@ -2850,7 +2850,7 @@ export default function App() {
       }
 
       // 2. Enviar al backend vía HTTP POST (que simula el correo de forma real con logs y backup JSON)
-      const response = await fetch('/api/contact', {
+      const response = await apiFetch('/api/contact', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
