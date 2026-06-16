@@ -312,6 +312,35 @@ const HEADER_BANNERS = [
 ];
 
 export default function App() {
+  const [headerElement, setHeaderElement] = useState<HTMLElement | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(101);
+
+  const headerRef = useCallback((node: HTMLElement | null) => {
+    setHeaderElement(node);
+  }, []);
+
+  useEffect(() => {
+    if (!headerElement) return;
+
+    const handleResize = () => {
+      setHeaderHeight(headerElement.getBoundingClientRect().height);
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    resizeObserver.observe(headerElement);
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [headerElement]);
+
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedDate, setSimulatedDate] = useState('2026-06-11T00:00:00Z');
   const [clickCount, setClickCount] = useState(0);
@@ -3857,7 +3886,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         </div>
       )}
       {/* Header */}
-      <header className="px-4 lg:px-16 py-3 sm:py-6 border-b border-border flex flex-row justify-between items-center gap-4 bg-gradient-to-br from-purple/10 via-background to-primary/10 sticky top-0 z-50 backdrop-blur-md">
+      <header ref={headerRef} className="px-4 lg:px-16 py-3 sm:py-6 border-b border-border flex flex-row justify-between items-center gap-4 bg-gradient-to-br from-purple/10 via-background to-primary/10 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex flex-col">
             <h1 className="text-[20px] sm:text-[32px] lg:text-[42px] font-black leading-none tracking-tight uppercase flex flex-col sm:block">
@@ -5387,7 +5416,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               <div className="w-full space-y-6">
                 
                 {/* Sticky Matchday navigation */}
-                <div className="sticky top-[64px] sm:top-[92px] md:top-[100px] lg:top-[101px] z-30 bg-background/95 backdrop-blur-md py-[3px] mb-0 shadow-[0_10px_10px_-10px_rgba(0,0,0,0.5)] border-b border-border/10 -mx-6 px-6 lg:-mx-16 lg:px-16 flex items-center justify-center gap-4">
+                <div 
+                  className="sticky z-30 bg-background/95 backdrop-blur-md py-[3px] mb-0 shadow-[0_10px_10px_-10px_rgba(0,0,0,0.5)] border-b border-border/10 -mx-6 px-6 lg:-mx-16 lg:px-16 flex items-center justify-center gap-4"
+                  style={{ top: `${headerHeight}px` }}
+                >
                   <div className="h-[1px] flex-1 bg-border/40" />
                   <div className="flex flex-col items-center gap-2">
                     <div className="flex items-center gap-4">
