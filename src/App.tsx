@@ -6322,10 +6322,13 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                     <div className="bg-card border border-border p-4 sm:p-6 grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-6 group hover:border-primary/50 transition-colors relative overflow-hidden">
                                       <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-purple via-primary to-lime opacity-50" />
                                       
-                                      <div className="absolute top-[6px] right-2 flex gap-2">
-                                        <div className="bg-white/5 text-muted-foreground text-[8px] font-black px-2 py-0.5 uppercase tracking-widest border border-border">
+                                      <div className="absolute top-[6px] left-3">
+                                        <div className="bg-white/5 text-white text-[8px] font-black px-2 py-0.5 uppercase tracking-widest border border-border">
                                           {new Date(match.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                         </div>
+                                      </div>
+                                      
+                                      <div className="absolute top-[6px] right-2 flex gap-2">
                                         {isSimulationMode ? (
                                           isLocked && (
                                             <div className="bg-primary/20 text-primary text-[8px] font-black px-2 py-0.5 uppercase tracking-widest">
@@ -7052,7 +7055,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         const awayTeam = currentTeams.find(t => t.id === match.awayTeamId);
                         return (
                           <div key={match.id} className="bg-card border border-border p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
-                            <div className="flex justify-between items-center text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                            <div className="flex justify-between items-center text-[9px] font-black text-white uppercase tracking-widest">
                               <span>{new Date(match.date).toLocaleDateString()}</span>
                               <span className={(!isSimulationMode && ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '')) ? "text-lime animate-pulse font-black" : "text-muted-foreground"}>
                                 {isSimulationMode ? "FINALIZADO (SIM)" : (['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ? "EN VIVO" : (match.status || 'FINALIZADO'))}
@@ -7147,7 +7150,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               </div>
                               <div className="flex flex-col items-center">
                                 <span className="text-[9px] font-black text-primary uppercase">VS</span>
-                                <span className="text-[8px] text-muted-foreground whitespace-nowrap">{new Date(match.date).toLocaleDateString()}</span>
+                                <span className="text-[10px] text-white whitespace-nowrap">
+                                  {new Date(match.date).toLocaleDateString()} - {new Date(match.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               </div>
                               <div className="flex items-center gap-3 flex-1 justify-end text-right overflow-hidden">
                                 <span className="text-[10px] font-black uppercase truncate">{isSimulationMode ? (awayTeam?.name || "TBD") : ((match as any).awayTeamName || awayTeam?.name || "TBD")}</span>
