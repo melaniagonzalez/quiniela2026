@@ -8924,7 +8924,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
 
               {/* Table of Participant Predictions */}
-              <div className="flex-1 flex flex-col min-h-[220px] max-h-[290px] overflow-hidden border border-zinc-800">
+              <div className="flex-1 flex flex-col min-h-[250px] max-h-[320px] overflow-hidden border border-zinc-800">
                 {/* Table list scrolling body */}
                 <div className="overflow-y-auto flex-1 bg-zinc-950/40 divide-y divide-zinc-900">
                   {participantRows.length === 0 ? (
@@ -8941,7 +8941,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         const realAway = selectedMatchDetails.actualAwayScore!;
                         
                         const isWinnerCorrect = 
-                          (row.homeScore! > row.awayScore! && realHome > realAway) || 
+                           (row.homeScore! > row.awayScore! && realHome > realAway) || 
                           (row.homeScore! === row.awayScore! && realHome === realAway) || 
                           (row.homeScore! < row.awayScore! && realHome < realAway);
                           
@@ -8973,11 +8973,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             <span className="text-[10px] font-mono text-zinc-600 font-bold w-4 shrink-0">{idx + 1}</span>
                             <img 
                               src={row.photoURL || getAvatarForUser(row.displayName || 'Anónimo')} 
-                              className="w-5.5 h-5.5 rounded-full border border-zinc-800 bg-zinc-900 shrink-0 object-cover" 
+                              className="w-[24px] h-[24px] rounded-full border border-zinc-800 bg-zinc-900 shrink-0 object-cover" 
                               referrerPolicy="no-referrer" 
                               alt=""
                             />
-                            <span className="text-[10px] font-black uppercase text-zinc-200 tracking-wider truncate max-w-[120px] sm:max-w-none">
+                            <span className="text-[11px] font-black uppercase text-zinc-200 tracking-wider truncate max-w-[120px] sm:max-w-none">
                               {row.displayName}
                             </span>
                           </div>
