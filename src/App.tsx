@@ -156,6 +156,154 @@ const translateTeamName = (name: string): string => {
   return TEAM_TRANSLATIONS[name] || TEAM_TRANSLATIONS[name.trim()] || name;
 };
 
+const getTeamAcronym = (teamName?: string): string => {
+  if (!teamName) return "TBD";
+  
+  // Translate first to match Spanish/English names correctly
+  const translated = translateTeamName(teamName).trim();
+  const name = translated.toUpperCase().replace(/[^A-ZÁÉÍÓÚÜÑ ]/g, "").trim();
+  
+  const customAbbreviations: Record<string, string> = {
+    "ARGENTINA": "ARG",
+    "ALEMANIA": "GER",
+    "GERMANY": "GER",
+    "FRANCIA": "FRA",
+    "FRANCE": "FRA",
+    "ESPAÑA": "ESP",
+    "SPAIN": "ESP",
+    "ITALIA": "ITA",
+    "ITALY": "ITA",
+    "PORTUGAL": "POR",
+    "INGLATERRA": "ENG",
+    "ENGLAND": "ENG",
+    "BRASIL": "BRA",
+    "BRAZIL": "BRA",
+    "COLOMBIA": "COL",
+    "URUGUAY": "URU",
+    "CHILE": "CHI",
+    "ECUADOR": "ECU",
+    "PERU": "PER",
+    "PERÚ": "PER",
+    "VENEZUELA": "VEN",
+    "PARAGUAY": "PAR",
+    "BOLIVIA": "BOL",
+    "ESTADOS UNIDOS": "USA",
+    "EE UU": "USA",
+    "EE. UU.": "USA",
+    "UNITED STATES": "USA",
+    "MEXICO": "MEX",
+    "MÉXICO": "MEX",
+    "CANADA": "CAN",
+    "CANADÁ": "CAN",
+    "COSTA RICA": "CRC",
+    "PANAMA": "PAN",
+    "PANAMÁ": "PAN",
+    "JAMAICA": "JAM",
+    "CROACIA": "CRO",
+    "CROATIA": "CRO",
+    "PAISES BAJOS": "NED",
+    "PAÍSES BAJOS": "NED",
+    "NETHERLANDS": "NED",
+    "HOLANDA": "NED",
+    "BELGICA": "BEL",
+    "BÉLGICA": "BEL",
+    "BELGIUM": "BEL",
+    "SUIZA": "SUI",
+    "SWITZERLAND": "SUI",
+    "SUECIA": "SWE",
+    "SWEDEN": "SWE",
+    "DINAMARCA": "DEN",
+    "DENMARK": "DEN",
+    "ESCOCIA": "SCO",
+    "SCOTLAND": "SCO",
+    "HUNGRIA": "HUN",
+    "HUNGRÍA": "HUN",
+    "HUNGARY": "HUN",
+    "RUMANIA": "ROU",
+    "ROMANIA": "ROU",
+    "UCRANIA": "UKR",
+    "UKRAINE": "UKR",
+    "ESLOVAQUIA": "SVK",
+    "SLOVAKIA": "SVK",
+    "ESLOVENIA": "SVN",
+    "SLOVENIA": "SVN",
+    "GEORGIA": "GEO",
+    "TURQUIA": "TUR",
+    "TURQUÍA": "TUR",
+    "TURKEY": "TUR",
+    "REPUBLICA CHECA": "CZE",
+    "REPÚBLICA CHECA": "CZE",
+    "CZECHIA": "CZE",
+    "POLONIA": "POL",
+    "POLAND": "POL",
+    "AUSTRIA": "AUT",
+    "ALBANIA": "ALB",
+    "SERBIA": "SRB",
+    "ARABIA SAUDITA": "KSA",
+    "SAUDI ARABIA": "KSA",
+    "EGIPTO": "EGY",
+    "EGYPT": "EGY",
+    "MARRUECOS": "MAR",
+    "MOROCCO": "MAR",
+    "NIGERIA": "NGA",
+    "SENEGAL": "SEN",
+    "SUDÁFRICA": "RSA",
+    "SUDAFRICA": "RSA",
+    "SOUTH AFRICA": "RSA",
+    "JAPON": "JPN",
+    "JAPÓN": "JPN",
+    "JAPAN": "JPN",
+    "COREA DEL SUR": "KOR",
+    "SOUTH KOREA": "KOR",
+    "AUSTRALIA": "AUS",
+    "NUEVA ZELANDA": "NZL",
+    "NEW ZEALAND": "NZL",
+    "IRAN": "IRN",
+    "IRÁN": "IRN",
+    "CHAMPIONS LEAGUE": "UCL",
+    "REAL MADRID": "RMD",
+    "BARCELONA": "FCB",
+    "FC BARCELONA": "FCB",
+    "MANCHESTER CITY": "MCI",
+    "MANCHESTER UNITED": "MUN",
+    "LIVERPOOL": "LIV",
+    "ARSENAL": "ARS",
+    "CHELSEA": "CHE",
+    "BAYERN MUNICH": "BAY",
+    "BAYERN MÚNICH": "BAY",
+    "BORUSSIA DORTMUND": "BVB",
+    "PARIS SAINT-GERMAIN": "PSG",
+    "PSG": "PSG",
+    "INTER DE MILAN": "INT",
+    "INTER MILAN": "INT",
+    "AC MILAN": "ACM",
+    "JUVENTUS": "JUV",
+    "ATLETICO DE MADRID": "ATM",
+    "ATLÉTICO DE MADRID": "ATM",
+  };
+
+  if (customAbbreviations[name]) {
+    return customAbbreviations[name];
+  }
+
+  const words = name.split(/\s+/).filter(w => w.length > 0 && w !== "DE" && w !== "DEL" && w !== "EL" && w !== "LA" && w !== "LOS" && w !== "LAS" && w !== "Y" && w !== "FC");
+  
+  if (words.length >= 3) {
+    return (words[0][0] + words[1][0] + words[2][0]).toUpperCase();
+  } else if (words.length === 2) {
+    const firstWord = words[0];
+    const secondWord = words[1];
+    if (firstWord.length >= 2) {
+      return (firstWord.slice(0, 2) + secondWord[0]).toUpperCase();
+    }
+    return (firstWord[0] + secondWord.slice(0, 2)).toUpperCase();
+  } else if (words.length === 1 && words[0].length >= 3) {
+    return words[0].slice(0, 3).toUpperCase();
+  }
+
+  return translated.slice(0, 3).toUpperCase();
+};
+
 export default function App() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedDate, setSimulatedDate] = useState('2026-06-11T00:00:00Z');
@@ -446,6 +594,32 @@ export default function App() {
   const currentScorers = useMemo(() => {
     return isSimulationMode ? SCORERS_MOCK : apiScorers;
   }, [isSimulationMode, apiScorers]);
+
+  const latestOrLiveMatch = useMemo(() => {
+    if (currentMatches.length === 0) return null;
+    
+    // 1. Is there any match currently in play?
+    const liveMatch = currentMatches.find(m => 
+      !isSimulationMode && ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(m.status || '')
+    );
+    if (liveMatch) return liveMatch;
+    
+    // 2. Otherwise, find the most recently started or finished match.
+    const pastMatches = currentMatches.filter(m => {
+      const isFinished = ['FINISHED', 'FT', 'AWARDED'].includes(m.status || '') || 
+        (isSimulationMode && m.actualHomeScore !== null && m.actualHomeScore !== undefined) ||
+        (!isSimulationMode && apiMatches.length === 0 && new Date(m.date) < new Date());
+      return isFinished;
+    });
+    
+    if (pastMatches.length > 0) {
+      // Return the one with the latest date among past matches
+      return [...pastMatches].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    }
+    
+    // 3. Fallback: first match
+    return currentMatches[0];
+  }, [currentMatches, isSimulationMode, apiMatches, nowTimeState]);
 
   const computedStandings = useMemo(() => {
     const groupsMap: Record<string, any[]> = {};
@@ -833,6 +1007,8 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [modalProfileName, setModalProfileName] = useState('');
   const [modalProfileCode, setModalProfileCode] = useState('');
+  const [selectedMatchDetails, setSelectedMatchDetails] = useState<Match | null>(null);
+  const [matchModalSearch, setMatchModalSearch] = useState('');
 
   // Version checker to solve client side caching & ensure they run the latest layout
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
@@ -6097,7 +6273,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
                                 const shouldShowResult = isSimulationMode
                                   ? isLocked
-                                  : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'AWARDED'].includes(match.status || '') || (apiMatches.length === 0 && new Date(match.date) < new Date()));
+                                  : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED', 'AWARDED'].includes(match.status || '') || (apiMatches.length === 0 && new Date(match.date) < new Date()));
 
                                 return (
                                   <motion.div
@@ -6120,7 +6296,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                             </div>
                                           )
                                         ) : (
-                                          ['IN_PLAY', 'LIVE'].includes(match.status || '') ? (
+                                          ['IN_PLAY', 'LIVE', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ? (
                                             <div className="bg-red-600 text-white text-[8px] font-black px-2 py-0.5 uppercase tracking-widest animate-pulse">
                                               En Vivo
                                             </div>
@@ -6397,13 +6573,58 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     )}
                   </div>
                 )}
-                {!isApprovedAdmin && <div />}
+                {(!isApprovedAdmin && latestOrLiveMatch) ? (() => {
+                  const homeTeam = currentTeams.find(t => t.id === latestOrLiveMatch.homeTeamId);
+                  const awayTeam = currentTeams.find(t => t.id === latestOrLiveMatch.awayTeamId);
+                  return (
+                    <button
+                      onClick={() => {
+                        setMatchModalSearch('');
+                        setSelectedMatchDetails(latestOrLiveMatch);
+                      }}
+                      className="flex items-center gap-3 sm:gap-4 bg-zinc-950/80 border animate-border-pulse-blue px-4 py-2 sm:px-5 sm:py-3 transition-all text-left cursor-pointer group shadow-lg rounded-none hover:shadow-[#009deb]/20"
+                      title="Ver todos los datos del último partido"
+                    >
+                      {homeTeam?.flag?.startsWith('http') ? (
+                        <img src={homeTeam.flag} className="w-6 h-6 sm:w-7 sm:h-7 object-contain shrink-0" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="text-lg sm:text-2xl shrink-0">{homeTeam?.flag || "🏳️"}</span>
+                      )}
+
+                      <div className="text-[11px] sm:text-[13px] bg-white/5 border border-border/80 px-2.5 py-0.5 sm:px-3 sm:py-1 font-black flex items-center gap-1.5 leading-none rounded-sm font-mono text-zinc-100">
+                        {['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') && (
+                          <span className="w-2 h-2 bg-lime rounded-full animate-pulse mr-0.5" />
+                        )}
+                        <span>
+                          {latestOrLiveMatch.actualHomeScore !== null && latestOrLiveMatch.actualHomeScore !== undefined
+                            ? `${latestOrLiveMatch.actualHomeScore} - ${latestOrLiveMatch.actualAwayScore}`
+                            : "VS"
+                          }
+                        </span>
+                      </div>
+
+                      {awayTeam?.flag?.startsWith('http') ? (
+                        <img src={awayTeam.flag} className="w-6 h-6 sm:w-7 sm:h-7 object-contain shrink-0" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="text-lg sm:text-2xl shrink-0">{awayTeam?.flag || "🏳️"}</span>
+                      )}
+
+                      {['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') ? (
+                        <span className="text-[8px] sm:text-[9.5px] bg-red-600/25 text-red-500 px-2.5 py-1 font-black uppercase tracking-widest hidden sm:inline-block border border-red-500/35 ml-1 rounded-[2px] animate-pulse font-bold">
+                          EN VIVO
+                        </span>
+                      ) : (
+                        <span className="text-[8px] sm:text-[9.5px] bg-lime/15 text-lime px-2.5 py-1 font-black uppercase tracking-widest hidden sm:inline-block border border-lime/30 ml-1 rounded-[2px]">
+                          DATOS PARTIDO
+                        </span>
+                      )}
+                    </button>
+                  );
+                })() : (!isApprovedAdmin && <div />)}
                 <div className="flex items-center gap-4 sm:gap-6 ml-auto">
                   {isCalculatingLeaderboard && (
-                    <div className="flex items-center gap-2 bg-lime/10 border border-lime/25 text-lime px-3 py-1.5 text-[9px] font-black uppercase tracking-wider animate-pulse rounded-sm">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span className="hidden xs:inline">Calculando en tiempo real...</span>
-                      <span className="xs:hidden">Calculando...</span>
+                    <div className="flex items-center justify-center bg-lime/10 border border-lime/25 text-lime p-2 animate-pulse rounded-sm" title="Calculando en tiempo real...">
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     </div>
                   )}
                   <div className="text-center shrink-0">
@@ -6515,39 +6736,49 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           })()}
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className={cn(
-                            "text-[14px] font-black transition-all",
-                            participantsPredictions[entry.uid] === undefined ? "text-white/40 animate-pulse" : "text-white/95"
-                          )}>
-                            {(entry.correctResults || 0) * 3} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
-                          </span>
+                          {isCalculatingLeaderboard || participantsPredictions[entry.uid] === undefined ? (
+                            <div className="flex justify-end items-center pr-2">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground/60" />
+                            </div>
+                          ) : (
+                            <span className="text-[14px] font-black text-white/95">
+                              {(entry.correctResults || 0) * 3} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className={cn(
-                            "text-[14px] font-black transition-all",
-                            participantsPredictions[entry.uid] === undefined ? "text-white/40 animate-pulse" : "text-white/95"
-                          )}>
-                            {(entry.correctWinners || 0) * 1} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
-                          </span>
+                          {isCalculatingLeaderboard || participantsPredictions[entry.uid] === undefined ? (
+                            <div className="flex justify-end items-center pr-2">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground/60" />
+                            </div>
+                          ) : (
+                            <span className="text-[14px] font-black text-white/95">
+                              {(entry.correctWinners || 0) * 1} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell py-4 sm:py-6 text-right px-4">
-                          <span className={cn(
-                            "text-[14px] font-black transition-all",
-                            participantsPredictions[entry.uid] === undefined ? "text-white/40 animate-pulse" : "text-white/95"
-                          )}>
-                            {entry.extraPoints || 0} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
-                          </span>
+                          {isCalculatingLeaderboard || participantsPredictions[entry.uid] === undefined ? (
+                            <div className="flex justify-end items-center pr-2">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground/60" />
+                            </div>
+                          ) : (
+                            <span className="text-[14px] font-black text-white/95">
+                              {entry.extraPoints || 0} <span className="text-[11px] text-muted-foreground font-medium ml-1">PTS</span>
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right px-1.5 sm:px-4">
-                          <span className={cn(
-                            "text-[15px] sm:text-[18px] font-black inline-flex items-center gap-1.5 transition-all justify-end w-full",
-                            participantsPredictions[entry.uid] === undefined ? "text-lime/40 animate-pulse" : "text-lime"
-                          )}>
-                            {participantsPredictions[entry.uid] === undefined && (
-                              <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-lime/50 shrink-0" />
-                            )}
-                            {entry.totalPoints || 0} <span className="text-[10px] sm:text-[12px] text-muted-foreground ml-0.5 sm:ml-1 font-medium">PTS</span>
-                          </span>
+                          {isCalculatingLeaderboard || participantsPredictions[entry.uid] === undefined ? (
+                            <span className="text-[13px] sm:text-[14px] font-black text-lime/70 animate-pulse inline-flex items-center gap-1.5 justify-end w-full">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-lime/50 shrink-0" />
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">CALCULANDO</span>
+                            </span>
+                          ) : (
+                            <span className="text-[15px] sm:text-[18px] font-black text-lime inline-flex items-center gap-1.5 justify-end w-full">
+                              {entry.totalPoints || 0} <span className="text-[10px] sm:text-[12px] text-muted-foreground ml-0.5 sm:ml-1 font-medium">PTS</span>
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="py-4 sm:py-6 text-right pr-3 sm:pr-8 pl-1.5 sm:pl-4">
                           <div className="flex items-center justify-end gap-1.5 sm:gap-2">
@@ -6771,7 +7002,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   const displayResults = currentMatches.filter(m => {
                     const isFinished = isSimulationMode 
                       ? new Date(m.date) < new Date(simulatedDate)
-                      : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'AWARDED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) < new Date()));
+                      : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED', 'AWARDED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) < new Date()));
                     return isFinished;
                   });
                   
@@ -6786,8 +7017,8 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           <div key={match.id} className="bg-card border border-border p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
                             <div className="flex justify-between items-center text-[9px] font-black text-muted-foreground uppercase tracking-widest">
                               <span>{new Date(match.date).toLocaleDateString()}</span>
-                              <span className={(!isSimulationMode && (match.status === 'LIVE' || match.status === 'IN_PLAY')) ? "text-lime animate-pulse" : "text-muted-foreground"}>
-                                {isSimulationMode ? "FINALIZADO (SIM)" : (match.status || 'FINALIZADO')}
+                              <span className={(!isSimulationMode && ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '')) ? "text-lime animate-pulse font-black" : "text-muted-foreground"}>
+                                {isSimulationMode ? "FINALIZADO (SIM)" : (['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ? "EN VIVO" : (match.status || 'FINALIZADO'))}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-4">
@@ -8464,6 +8695,314 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
           </motion.div>
         </div>
       )}
+    </AnimatePresence>
+
+    {/* Popup Modal: Datos Último Partido / Estadísticas de Partido */}
+    <AnimatePresence>
+      {selectedMatchDetails && (() => {
+        const matchId = selectedMatchDetails.id;
+        const homeTeam = currentTeams.find(t => t.id === selectedMatchDetails.homeTeamId);
+        const awayTeam = currentTeams.find(t => t.id === selectedMatchDetails.awayTeamId);
+        
+        // Date parsing:
+        const matchDateFormatted = new Date(selectedMatchDetails.date).toLocaleString([], {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        // 100% chart breakdown calculation:
+        let homeWinsCount = 0;
+        let drawsCount = 0;
+        let awayWinsCount = 0;
+        let totalValids = 0;
+        const scoreFrequency: Record<string, number> = {};
+
+        // Loop over participants:
+        const participantRows = participants.map(p => {
+          const userPreds = participantsPredictions[p.uid] || [];
+          const pred = userPreds.find(pr => pr.matchId === matchId);
+          const hasPred = pred && pred.homeScore !== null && pred.homeScore !== undefined && pred.awayScore !== null && pred.awayScore !== undefined;
+          
+          let predictionString = "—";
+          let homeS: number | null = null;
+          let awayS: number | null = null;
+          let outcome: 'home' | 'draw' | 'away' | 'none' = 'none';
+
+          if (hasPred) {
+            homeS = pred.homeScore;
+            awayS = pred.awayScore;
+            predictionString = `${homeS} - ${awayS}`;
+            totalValids++;
+            
+            if (homeS! > awayS!) {
+              homeWinsCount++;
+              outcome = 'home';
+            } else if (homeS! === awayS!) {
+              drawsCount++;
+              outcome = 'draw';
+            } else {
+              awayWinsCount++;
+              outcome = 'away';
+            }
+
+            const freqKey = `${homeS}-${awayS}`;
+            scoreFrequency[freqKey] = (scoreFrequency[freqKey] || 0) + 1;
+          }
+
+          return {
+            uid: p.uid,
+            displayName: p.displayName || "Participante",
+            photoURL: p.photoURL,
+            hasPrediction: hasPred,
+            homeScore: homeS,
+            awayScore: awayS,
+            predictionString,
+            outcome
+          };
+        });
+
+        const homePercent = totalValids > 0 ? Math.round((homeWinsCount / totalValids) * 100) : 0;
+        const drawPercent = totalValids > 0 ? Math.round((drawsCount / totalValids) * 100) : 0;
+        const awayPercent = totalValids > 0 ? 100 - homePercent - drawPercent : 0; // ensure total is exactly 100
+
+        // Find most common scorer prediction:
+        let mostCommonStr = "Ninguno";
+        let maxFreq = 0;
+        Object.entries(scoreFrequency).forEach(([scoreKey, count]) => {
+          if (count > maxFreq) {
+            maxFreq = count;
+            const [h, a] = scoreKey.split('-');
+            mostCommonStr = `${h} - ${a}`;
+          }
+        });
+
+        // Check if official score exists:
+        const hasOfficialScore = selectedMatchDetails.actualHomeScore !== null && selectedMatchDetails.actualHomeScore !== undefined && selectedMatchDetails.actualAwayScore !== null && selectedMatchDetails.actualAwayScore !== undefined;
+        
+        // Filter rows by search:
+        const filteredParticipantRows = participantRows.filter(row => 
+          row.displayName.toLowerCase().includes(matchModalSearch.toLowerCase())
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto w-full">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-none p-4 sm:p-5 shadow-2xl relative flex flex-col mt-0 mb-8"
+            >
+              {/* Header Close button */}
+              <button
+                onClick={() => setSelectedMatchDetails(null)}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors p-1 cursor-pointer"
+                aria-label="Cerrar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Title Section */}
+              <div className="mb-3 flex justify-center text-center">
+                <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-white flex items-center justify-center gap-2">
+                  <Trophy className="w-4 h-4 text-[#009deb]" /> Datos Último Partido
+                </h3>
+              </div>
+
+              {/* Teams Presentation Row */}
+              <div className="bg-zinc-900/60 border border-border/30 p-3 rounded-none mb-3.5">
+                <div className="flex items-center justify-between gap-2 max-w-lg mx-auto">
+                  {/* Home Team */}
+                  <div className="flex flex-col items-center text-center flex-1 gap-2">
+                    {homeTeam?.flag?.startsWith('http') ? (
+                      <img src={homeTeam.flag} className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="text-3xl">{homeTeam?.flag || "🏳️"}</span>
+                    )}
+                    <span className="text-xs font-black uppercase text-white truncate max-w-[120px] sm:max-w-none">
+                      {getTeamAcronym(homeTeam?.name)}
+                    </span>
+                  </div>
+
+                  {/* Scoreboard / VS */}
+                  <div className="flex flex-col items-center px-4 shrink-0">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest font-mono text-center mb-1">
+                      {matchDateFormatted}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-widest font-black text-lime/80 font-mono text-center mb-1.5">
+                      {hasOfficialScore ? "OFICIAL" : "PROGRAMADO"}
+                    </span>
+                    <div className="bg-zinc-950 border border-zinc-800 px-4 py-2 text-center rounded-sm">
+                      <span className="font-mono text-xl sm:text-2xl font-black text-lime leading-none">
+                        {hasOfficialScore 
+                          ? `${selectedMatchDetails.actualHomeScore} - ${selectedMatchDetails.actualAwayScore}` 
+                          : "VS"
+                        }
+                      </span>
+                    </div>
+                    {maxFreq > 0 && (
+                      <span className="text-[10px] font-black text-[#009deb] uppercase tracking-wider font-mono text-center mt-2">
+                        Marcador más votado {mostCommonStr}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Away Team */}
+                  <div className="flex flex-col items-center text-center flex-1 gap-2">
+                    {awayTeam?.flag?.startsWith('http') ? (
+                      <img src={awayTeam.flag} className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="text-3xl">{awayTeam?.flag || "🏳️"}</span>
+                    )}
+                    <span className="text-xs font-black uppercase text-white truncate max-w-[120px] sm:max-w-none">
+                      {getTeamAcronym(awayTeam?.name)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 100% Horizontal Stacked Bar Chart */}
+              <div className="mb-4">
+                <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-2">
+                  Tendencia de Pronósticos del Grupo
+                </h4>
+
+                {/* The horizontal bar */}
+                <div className="w-full h-6 bg-zinc-900 flex rounded-none overflow-hidden border border-zinc-800 p-[2px]">
+                  {homePercent > 0 && (
+                    <div 
+                      className="bg-emerald-600/90 hover:bg-emerald-600 transition-colors flex items-center justify-center font-black text-[10px] text-white select-none shrink-0"
+                      style={{ width: `${homePercent}%` }}
+                      title={`Gana ${getTeamAcronym(homeTeam?.name)}: ${homePercent}% (${homeWinsCount})`}
+                    >
+                      {homePercent >= 10 && `${homePercent}%`}
+                    </div>
+                  )}
+                  {drawPercent > 0 && (
+                    <div 
+                      className="bg-zinc-600 hover:bg-zinc-500 transition-colors flex items-center justify-center font-black text-[10px] text-zinc-200 select-none shrink-0 border-l border-r border-zinc-950"
+                      style={{ width: `${drawPercent}%` }}
+                      title={`Empate: ${drawPercent}% (${drawsCount})`}
+                    >
+                      {drawPercent >= 10 && `${drawPercent}%`}
+                    </div>
+                  )}
+                  {awayPercent > 0 && (
+                    <div 
+                      className="bg-blue-600/90 hover:bg-blue-600 transition-colors flex items-center justify-center font-black text-[10px] text-white select-none shrink-0"
+                      style={{ width: `${awayPercent}%` }}
+                      title={`Gana ${getTeamAcronym(awayTeam?.name)}: ${awayPercent}% (${awayWinsCount})`}
+                    >
+                      {awayPercent >= 10 && `${awayPercent}%`}
+                    </div>
+                  )}
+                  {totalValids === 0 && (
+                    <div className="w-full h-full flex items-center justify-center font-bold text-[10px] text-zinc-500 uppercase">
+                      Sin pronósticos registrados todavía
+                    </div>
+                  )}
+                </div>
+
+                {/* Legend beneath stacked bar */}
+                <div className="grid grid-cols-3 gap-1 pt-2 text-[9px] font-black uppercase tracking-wider font-mono">
+                  <div className="flex items-center gap-1.5 text-emerald-500 justify-start">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="truncate">{getTeamAcronym(homeTeam?.name)}: {homePercent}% ({homeWinsCount})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-zinc-400 justify-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0" />
+                    <span>Empate: {drawPercent}% ({drawsCount})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-blue-400 justify-end">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                    <span className="truncate">{getTeamAcronym(awayTeam?.name)}: {awayPercent}% ({awayWinsCount})</span>
+                  </div>
+                </div>
+              </div>
+
+
+              {/* Table of Participant Predictions */}
+              <div className="flex-1 flex flex-col min-h-[220px] max-h-[290px] overflow-hidden border border-zinc-800">
+                {/* Table list scrolling body */}
+                <div className="overflow-y-auto flex-1 bg-zinc-950/40 divide-y divide-zinc-900">
+                  {participantRows.length === 0 ? (
+                    <div className="text-center py-6 text-[10px] uppercase font-black text-zinc-600 tracking-widest">
+                      No se encontraron participantes
+                    </div>
+                  ) : (
+                    participantRows.map((row, idx) => {
+                      // Calculate match exact/winner outcome if official score is available
+                      let outcomeBadge = null;
+                      if (hasOfficialScore && row.hasPrediction) {
+                        const isExact = row.homeScore === selectedMatchDetails.actualHomeScore && row.awayScore === selectedMatchDetails.actualAwayScore;
+                        const realHome = selectedMatchDetails.actualHomeScore!;
+                        const realAway = selectedMatchDetails.actualAwayScore!;
+                        
+                        const isWinnerCorrect = 
+                          (row.homeScore! > row.awayScore! && realHome > realAway) || 
+                          (row.homeScore! === row.awayScore! && realHome === realAway) || 
+                          (row.homeScore! < row.awayScore! && realHome < realAway);
+                          
+                        if (isExact) {
+                          outcomeBadge = (
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-1.5 py-0.5 rounded-[2px]">
+                              +3
+                            </span>
+                          );
+                        } else if (isWinnerCorrect) {
+                          outcomeBadge = (
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-lime/10 border border-lime/30 text-lime px-1.5 py-0.5 rounded-[2px]">
+                              +1
+                            </span>
+                          );
+                        } else {
+                          outcomeBadge = (
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-[2px]">
+                              0 PTS
+                            </span>
+                          );
+                        }
+                      }
+
+                      return (
+                        <div key={row.uid} className="flex items-center justify-between py-1.5 px-2.5 hover:bg-zinc-900/60 transition-colors">
+                          {/* Name info */}
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-[10px] font-mono text-zinc-600 font-bold w-4 shrink-0">{idx + 1}</span>
+                            <img 
+                              src={row.photoURL || getAvatarForUser(row.displayName || 'Anónimo')} 
+                              className="w-5.5 h-5.5 rounded-full border border-zinc-800 bg-zinc-900 shrink-0 object-cover" 
+                              referrerPolicy="no-referrer" 
+                              alt=""
+                            />
+                            <span className="text-[10px] font-black uppercase text-zinc-200 tracking-wider truncate max-w-[120px] sm:max-w-none">
+                              {row.displayName}
+                            </span>
+                          </div>
+
+                          {/* Prediction scores and badges */}
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-mono font-black text-white bg-zinc-900 border border-zinc-800 px-2 py-0.5 min-w-[50px] text-center rounded-sm">
+                              {row.predictionString}
+                            </span>
+                            <div className="w-[85px] text-right">
+                              {outcomeBadge}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+
+            </motion.div>
+          </div>
+        );
+      })()}
     </AnimatePresence>
 
       {/* Footer */}

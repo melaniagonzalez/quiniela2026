@@ -121,3 +121,18 @@
     @apply font-sans;
     }
 }
+
+@keyframes border-pulse-blue {
+  0%, 100% {
+    border-color: #009deb;
+    box-shadow: 0 0 4px rgba(0, 157, 235, 0.4);
+  }
+  50% {
+    border-color: rgba(0, 157, 235, 0.3);
+    box-shadow: 0 0 12px rgba(0, 157, 235, 0.15);
+  }
+}
+
+.animate-border-pulse-blue {
+  animation: border-pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
