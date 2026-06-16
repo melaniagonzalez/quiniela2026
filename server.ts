@@ -15,7 +15,7 @@ const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAw
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function fetchWithRetry(url: string, headers: any, retries = 3, initialDelay = 2000): Promise<any> {
+async function fetchWithRetry(url: string, headers: any, retries = 4, initialDelay = 2000): Promise<any> {
   let delayMs = initialDelay;
   for (let i = 0; i < retries; i++) {
     try {
@@ -32,7 +32,7 @@ async function fetchWithRetry(url: string, headers: any, retries = 3, initialDel
       
       if ((isRateLimit || isTransientNetworkError) && i < retries - 1) {
         const errorDesc = isRateLimit ? "Rate-limited (429)" : `Transient network error (${err.code || err.message || 'unknown'})`;
-        console.warn(`[Task Scheduler] ${errorDesc} on ${url}. Retrying in ${delayMs / 1000}s... (Attempt ${i + 1}/${retries})`);
+        console.info(`[Task Scheduler Info] ${errorDesc} on ${url}. Retrying in ${delayMs / 1000}s... (Attempt ${i + 1}/${retries})`);
         await delay(delayMs);
         delayMs *= 2.5; // exponential backoff with slightly larger backoff
         continue;

@@ -76,7 +76,7 @@ async function serveLocalConstantsFallback(competition: string, res: any, now: n
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function fetchWithRetry(url: string, headers: any, retries = 3, initialDelay = 2000): Promise<any> {
+async function fetchWithRetry(url: string, headers: any, retries = 4, initialDelay = 2000): Promise<any> {
   let delayMs = initialDelay;
   for (let i = 0; i < retries; i++) {
     try {
@@ -93,7 +93,7 @@ async function fetchWithRetry(url: string, headers: any, retries = 3, initialDel
       
       if ((isRateLimit || isTransientNetworkError) && i < retries - 1) {
         const errorDesc = isRateLimit ? "Rate-limited (429)" : `Transient network error (${err.code || err.message || 'unknown'})`;
-        console.warn(`[Football-Data API] ${errorDesc} on ${url}. Retrying in ${delayMs / 1000}s... (Attempt ${i + 1}/${retries})`);
+        console.info(`[Football-Data API Info] ${errorDesc} on ${url}. Retrying in ${delayMs / 1000}s... (Attempt ${i + 1}/${retries})`);
         await delay(delayMs);
         delayMs *= 2.5; // exponential backoff with slightly larger backoff
         continue;

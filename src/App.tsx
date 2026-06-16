@@ -304,10 +304,25 @@ const getTeamAcronym = (teamName?: string): string => {
   return translated.slice(0, 3).toUpperCase();
 };
 
+const HEADER_BANNERS = [
+  { img: "/Banner_Duca.png", link: "https://ducacr.com/", alt: "Banner Duca" },
+  { img: "/Banner_Visas.png", link: "https://www.instagram.com/visasya_cr?fbclid=IwY2xjawSdoBJleHRuA2FlbQIxMABicmlkETFUOG5wQnhBSnozMVVrNDdlc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHhZtmrrcb0P3-dZKl3AHQLaq5BrnTEqml6AEdqZzJcHOI9gtsrIBY5fNSVWq_aem_rZKThYZ1gzJr7RC3E5qoBw", alt: "Banner Visas" },
+  { img: "/Banner_Pizarras.png", link: "https://www.facebook.com/allsolutionscr?rdid=5npiwE1ODBWzB7ok&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1GF2vjdZ3f%2F#", alt: "Banner Pizarras" },
+  { img: "/Banner_Jacaranda.png", link: "https://jacarandacr.com/", alt: "Banner Jacaranda" }
+];
+
 export default function App() {
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   const [simulatedDate, setSimulatedDate] = useState('2026-06-11T00:00:00Z');
   const [clickCount, setClickCount] = useState(0);
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentBannerIndex(prev => (prev + 1) % HEADER_BANNERS.length);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
@@ -3843,11 +3858,31 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       )}
       {/* Header */}
       <header className="px-4 lg:px-16 py-3 sm:py-6 border-b border-border flex flex-row justify-between items-center gap-4 bg-gradient-to-br from-purple/10 via-background to-primary/10 sticky top-0 z-50 backdrop-blur-md">
-        <div className="flex flex-col">
-          <h1 className="text-[20px] sm:text-[32px] lg:text-[42px] font-black leading-none tracking-tight uppercase flex flex-col sm:block">
-            <span className="text-purple">Quiniela</span>
-            <span className="sm:inline-block sm:ml-2 text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mundial</span>
-          </h1>
+        <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
+          <div className="flex flex-col">
+            <h1 className="text-[20px] sm:text-[32px] lg:text-[42px] font-black leading-none tracking-tight uppercase flex flex-col sm:block">
+              <span className="text-purple">Quiniela</span>
+              <span className="sm:inline-block sm:ml-2 text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mundial</span>
+            </h1>
+          </div>
+          {!isApprovedAdmin && (guestLeagueId || selectedLeagueId) && (
+            <div id="banner-container-header" className="shrink-0">
+              <a 
+                href={HEADER_BANNERS[currentBannerIndex].link} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="hover:opacity-90 transition-opacity block"
+              >
+                <img 
+                  key={currentBannerIndex}
+                  src={HEADER_BANNERS[currentBannerIndex].img} 
+                  alt={HEADER_BANNERS[currentBannerIndex].alt} 
+                  className="w-[219px] h-[50px] object-contain animate-fade-in"
+                  referrerPolicy="no-referrer"
+                />
+              </a>
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-2 sm:gap-3">
@@ -3929,9 +3964,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               {user.photoURL && <img src={user.photoURL} alt="Profile" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-primary/30 shrink-0" referrerPolicy="no-referrer" />}
             </div>
           ) : (
-            <Button size="sm" onClick={handleLogin} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10 rounded-none">
-              Soy Admin
-            </Button>
+            !guestLeagueId && !selectedLeagueId && (
+              <Button size="sm" onClick={handleLogin} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 uppercase text-[9px] sm:text-[10px] font-black tracking-widest px-3 sm:px-6 h-8 sm:h-10 rounded-none">
+                Soy Admin
+              </Button>
+            )
           )}
         </div>
       </header>
