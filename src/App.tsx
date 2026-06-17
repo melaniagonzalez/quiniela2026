@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Loader2 } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Loader2, BarChart2, Flame, Target, Star, Brain } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -2166,6 +2166,202 @@ export default function App() {
 
     return { totalPoints, correctResults, correctWinners, extraPoints };
   };
+
+  const leagueStats = useMemo(() => {
+    const stats = {
+      totalParticipants: participants.length,
+      totalPredictionsCount: 0,
+      finishedPredictionsCount: 0,
+      totalExactScores: 0,
+      totalCorrectWinners: 0,
+      totalIncorrect: 0,
+      averagePoints: 0,
+      highestScore: 0,
+      highestParticipantName: 'N/A',
+      highestParticipantPhoto: '',
+      averageExactPercent: 0,
+      averageWinnerPercent: 0,
+      bestExactCount: -1,
+      bestExactParticipantName: 'N/A',
+      bestExactParticipantPhoto: '',
+      bestWinnerCount: -1,
+      bestWinnerParticipantName: 'N/A',
+      bestWinnerParticipantPhoto: '',
+      worstWinnerCount: -1,
+      worstWinnerParticipantName: 'N/A',
+      worstWinnerParticipantPhoto: '',
+      participantsBreakdown: [] as any[],
+      mostPredictableMatches: [] as any[],
+      mostSurprisingMatches: [] as any[],
+    };
+
+    if (participants.length === 0) return stats;
+
+    let sumPoints = 0;
+    let bestScore = -1;
+    let bestScoreName = 'N/A';
+    let bestScorePhoto = '';
+    let maxExact = -1;
+    let maxExactName = 'N/A';
+    let maxExactPhoto = '';
+    let maxWinner = -1;
+    let maxWinnerName = 'N/A';
+    let maxWinnerPhoto = '';
+    let minWinner = Infinity;
+    let minWinnerName = 'N/A';
+    let minWinnerPhoto = '';
+
+    const finishedMatchesMap = new Map();
+    currentMatches.forEach(m => {
+      const isFinished = isSimulationMode 
+        ? new Date(m.date) < new Date(simulatedDate)
+        : (['FINISHED', 'FT', 'AWARDED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) < new Date()));
+      if (isFinished && m.actualHomeScore !== null && m.actualAwayScore !== null) {
+        finishedMatchesMap.set(m.id, m);
+      }
+    });
+
+    const breakdown = participants.map(p => {
+      const preds = participantsPredictions[p.uid] || [];
+      const { totalPoints, correctResults, correctWinners } = calculateUserPoints(preds, activeLeague?.competition);
+
+      let userFinishedPredsCount = 0;
+      preds.forEach(pred => {
+        const m = finishedMatchesMap.get(pred.matchId);
+        if (m && pred.homeScore !== null && pred.awayScore !== null) {
+          userFinishedPredsCount++;
+        }
+      });
+
+      sumPoints += totalPoints;
+
+      if (totalPoints > bestScore) {
+        bestScore = totalPoints;
+        bestScoreName = p.displayName || 'Anónimo';
+        bestScorePhoto = p.photoURL || '';
+      }
+      if (correctResults > maxExact) {
+        maxExact = correctResults;
+        maxExactName = p.displayName || 'Anónimo';
+        maxExactPhoto = p.photoURL || '';
+      }
+      if (correctWinners > maxWinner) {
+        maxWinner = correctWinners;
+        maxWinnerName = p.displayName || 'Anónimo';
+        maxWinnerPhoto = p.photoURL || '';
+      }
+
+      const totalHits = correctResults + correctWinners;
+      if (userFinishedPredsCount > 0 && totalHits < minWinner) {
+        minWinner = totalHits;
+        minWinnerName = p.displayName || 'Anónimo';
+        minWinnerPhoto = p.photoURL || '';
+      }
+
+      const exactPct = userFinishedPredsCount > 0 ? (correctResults / userFinishedPredsCount) * 100 : 0;
+      const winnerPct = userFinishedPredsCount > 0 ? (correctWinners / userFinishedPredsCount) * 100 : 0;
+      const incorrectResults = userFinishedPredsCount - correctResults - correctWinners;
+      const incorrectPct = userFinishedPredsCount > 0 ? (incorrectResults / userFinishedPredsCount) * 100 : 0;
+
+      stats.totalPredictionsCount += preds.length;
+      stats.finishedPredictionsCount += userFinishedPredsCount;
+      stats.totalExactScores += correctResults;
+      stats.totalCorrectWinners += correctWinners;
+
+      return {
+        uid: p.uid,
+        displayName: p.displayName || 'Anónimo',
+        photoURL: p.photoURL,
+        totalPoints,
+        correctResults,
+        correctWinners,
+        incorrectResults,
+        finishedPredsCount: userFinishedPredsCount,
+        exactPct,
+        winnerPct,
+        incorrectPct
+      };
+    });
+
+    stats.averagePoints = participants.length > 0 ? sumPoints / participants.length : 0;
+    stats.highestScore = bestScore;
+    stats.highestParticipantName = bestScoreName;
+    stats.highestParticipantPhoto = bestScorePhoto;
+    stats.bestExactCount = maxExact;
+    stats.bestExactParticipantName = maxExactName;
+    stats.bestExactParticipantPhoto = maxExactPhoto;
+    stats.bestWinnerCount = maxWinner;
+    stats.bestWinnerParticipantName = maxWinnerName;
+    stats.bestWinnerParticipantPhoto = maxWinnerPhoto;
+    stats.worstWinnerCount = minWinner === Infinity ? -1 : minWinner;
+    stats.worstWinnerParticipantName = minWinnerName;
+    stats.worstWinnerParticipantPhoto = minWinnerPhoto;
+    stats.participantsBreakdown = breakdown.sort((a, b) => b.totalPoints - a.totalPoints);
+
+    if (stats.finishedPredictionsCount > 0) {
+      stats.averageExactPercent = (stats.totalExactScores / stats.finishedPredictionsCount) * 100;
+      stats.averageWinnerPercent = ((stats.totalExactScores + stats.totalCorrectWinners) / stats.finishedPredictionsCount) * 100;
+      stats.totalIncorrect = stats.finishedPredictionsCount - stats.totalExactScores - stats.totalCorrectWinners;
+    }
+
+    // Match predictability analysis
+    const matchStats: any[] = [];
+    finishedMatchesMap.forEach((m) => {
+      let correctCount = 0;
+      let exactCount = 0;
+      let totalGuessed = 0;
+
+      participants.forEach(p => {
+        const preds = participantsPredictions[p.uid] || [];
+        const pred = preds.find(pr => pr.matchId === m.id);
+        if (pred && pred.homeScore !== null && pred.awayScore !== null) {
+          totalGuessed++;
+          const homeRes = m.actualHomeScore;
+          const awayRes = m.actualAwayScore;
+          
+          if (pred.homeScore === homeRes && pred.awayScore === awayRes) {
+            exactCount++;
+            correctCount++;
+          } else {
+            const predResult = Math.sign(pred.homeScore - pred.awayScore);
+            const actualResult = Math.sign(homeRes - awayRes);
+            if (predResult === actualResult) {
+              correctCount++;
+            }
+          }
+        }
+      });
+
+      if (totalGuessed > 0) {
+        const homeTeam = currentTeams.find(t => t.id === m.homeTeamId);
+        const awayTeam = currentTeams.find(t => t.id === m.awayTeamId);
+        matchStats.push({
+          matchId: m.id,
+          homeTeamName: homeTeam?.name || m.homeTeamName || 'TBD',
+          awayTeamName: awayTeam?.name || m.awayTeamName || 'TBD',
+          homeTeamCrest: homeTeam?.crest,
+          awayTeamCrest: awayTeam?.crest,
+          homeTeamFlag: homeTeam?.flag,
+          awayTeamFlag: awayTeam?.flag,
+          actualHomeScore: m.actualHomeScore,
+          actualAwayScore: m.actualAwayScore,
+          exactCount,
+          correctCount,
+          totalGuessed,
+          exactPercent: (exactCount / totalGuessed) * 100,
+          correctPercent: (correctCount / totalGuessed) * 100,
+        });
+      }
+    });
+
+    const sortedPredictable = [...matchStats].sort((a, b) => b.correctPercent - a.correctPercent);
+    const sortedSurprises = [...matchStats].sort((a, b) => a.correctPercent - b.correctPercent);
+
+    stats.mostPredictableMatches = sortedPredictable.slice(0, 3);
+    stats.mostSurprisingMatches = sortedSurprises.slice(0, 3);
+
+    return stats;
+  }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate, apiMatches, activeLeague, currentTeams, calculateUserPoints]);
 
   // Seed Test Users
   const seedTestUsers = async () => {
@@ -5363,7 +5559,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             </div>
 
             {!predictionsEditMode && activeTab !== 'settings' && (
-              <div className="grid grid-cols-3 border-b border-border w-full">
+              <div className={cn(
+                "grid border-b border-border w-full",
+                isApprovedAdmin ? "grid-cols-4" : "grid-cols-3"
+              )}>
                 <button
                   onClick={async () => {
                     const isUpToDate = await verifyLatestVersion();
@@ -5409,6 +5608,23 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <Trophy className="w-6 h-6" />
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Resultados</span>
                 </button>
+                {isApprovedAdmin && (
+                  <button
+                    onClick={async () => {
+                      const isUpToDate = await verifyLatestVersion();
+                      if (isUpToDate) setActiveTab('estadisticas');
+                    }}
+                    className={cn(
+                      "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
+                      activeTab === 'estadisticas' 
+                        ? "border-primary text-primary" 
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <BarChart2 className="w-6 h-6" />
+                    <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Estadísticas</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -7638,6 +7854,431 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     </div>
                   </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'estadisticas' ? (
+          <div className="space-y-12 max-w-5xl mx-auto w-full pt-4 px-4 sm:px-0">
+            {/* Header section */}
+            <div className="flex items-center justify-center md:justify-start gap-2">
+              <Brain className="w-3.5 h-3.5 text-primary" />
+              <h2 className="text-[10px] font-black uppercase tracking-wider">
+                Estadísticas de la Quiniela ({leagueStats.totalParticipants} {leagueStats.totalParticipants === 1 ? 'participante' : 'participantes'})
+              </h2>
+            </div>
+
+            {/* Pillar 1: Key Metrics Grid (Bento style) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Card 1: Exact Hitrate */}
+              <Card className="bg-zinc-950 border border-border flex flex-col justify-between p-6 rounded-none">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Marcadores Exactos</span>
+                    <Target className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="flex items-center gap-4 py-2">
+                    {/* SVG Circular Progress */}
+                    <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
+                      <svg className="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" r="28" className="stroke-white/5 fill-none" strokeWidth="4" />
+                        <circle 
+                          cx="32" 
+                          cy="32" 
+                          r="28" 
+                          className="stroke-purple-500 fill-none" 
+                          strokeWidth="4" 
+                          strokeDasharray="175.9" 
+                          strokeDashoffset={(175.9 - (175.9 * leagueStats.averageExactPercent) / 100).toFixed(1)} 
+                        />
+                      </svg>
+                      <span className="absolute text-[12px] font-black">{leagueStats.averageExactPercent.toFixed(1)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-[24px] font-black text-purple-400 block leading-none">{leagueStats.totalExactScores}</span>
+                      <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1 block">ACIERTO TOTAL</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-relaxed mt-4">
+                  Porcentaje de predicciones que acertaron el marcador exacto (+3 PTS).
+                </p>
+              </Card>
+
+              {/* Card 2: Winner Hitrate */}
+              <Card className="bg-zinc-950 border border-border flex flex-col justify-between p-6 rounded-none">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Ganador / Tendencia</span>
+                    <Flame className="w-4 h-4 text-lime" />
+                  </div>
+                  <div className="flex items-center gap-4 py-2">
+                    {/* SVG Circular Progress */}
+                    <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
+                      <svg className="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" r="28" className="stroke-white/5 fill-none" strokeWidth="4" />
+                        <circle 
+                          cx="32" 
+                          cy="32" 
+                          r="28" 
+                          className="stroke-lime fill-none" 
+                          strokeWidth="4" 
+                          strokeDasharray="175.9" 
+                          strokeDashoffset={(175.9 - (175.9 * leagueStats.averageWinnerPercent) / 100).toFixed(1)} 
+                        />
+                      </svg>
+                      <span className="absolute text-[12px] font-black">{leagueStats.averageWinnerPercent.toFixed(1)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-[24px] font-black text-lime block leading-none">{leagueStats.totalExactScores + leagueStats.totalCorrectWinners}</span>
+                      <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1 block">ACIERTO TOTAL</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-relaxed mt-4">
+                  Porcentaje de predicciones que acertaron la tendencia (ganador o empate).
+                </p>
+              </Card>
+
+              {/* Card 3: Participation & General (Donut / Pie Chart) */}
+              <Card className="bg-zinc-950 border border-border flex flex-col justify-between p-6 rounded-none">
+                <div className="space-y-4">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Distribución de Aciertos</span>
+                    <BarChart2 className="w-4 h-4 text-primary" />
+                  </div>
+                  
+                  {(() => {
+                    const finishedCount = leagueStats.finishedPredictionsCount;
+                    const count3 = leagueStats.totalExactScores;
+                    const count1 = leagueStats.totalCorrectWinners;
+                    const count0 = leagueStats.totalIncorrect;
+
+                    const pct3 = finishedCount > 0 ? (count3 / finishedCount) * 100 : 0;
+                    const pct1 = finishedCount > 0 ? (count1 / finishedCount) * 100 : 0;
+                    const pct0 = finishedCount > 0 ? (count0 / finishedCount) * 100 : 0;
+
+                    return (
+                      <div className="flex items-center gap-5 py-1">
+                        {/* Donut Chart visual using highly reliable SVG */}
+                        <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">
+                          <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90 transition-transform duration-300 hover:scale-105">
+                            {finishedCount === 0 ? (
+                              <circle
+                                cx="18"
+                                cy="18"
+                                r="15.9155"
+                                fill="none"
+                                stroke="#52525b"
+                                strokeWidth="4.2"
+                              />
+                            ) : (
+                              <>
+                                {/* Gray segment (0 PTS) */}
+                                {pct0 > 0 && (
+                                  <circle
+                                    cx="18"
+                                    cy="18"
+                                    r="15.9155"
+                                    fill="none"
+                                    stroke="#52525b"
+                                    strokeWidth="4.2"
+                                    strokeDasharray={`${pct0} 100`}
+                                    strokeDashoffset={-(pct3 + pct1)}
+                                  />
+                                )}
+                                {/* Yellow segment (1 PT) */}
+                                {pct1 > 0 && (
+                                  <circle
+                                    cx="18"
+                                    cy="18"
+                                    r="15.9155"
+                                    fill="none"
+                                    stroke="#d4e029"
+                                    strokeWidth="4.2"
+                                    strokeDasharray={`${pct1} 100`}
+                                    strokeDashoffset={-pct3}
+                                  />
+                                )}
+                                {/* Purple segment (3 PTS) */}
+                                {pct3 > 0 && (
+                                  <circle
+                                    cx="18"
+                                    cy="18"
+                                    r="15.9155"
+                                    fill="none"
+                                    stroke="#a855f7"
+                                    strokeWidth="4.2"
+                                    strokeDasharray={`${pct3} 100`}
+                                    strokeDashoffset={0}
+                                  />
+                                )}
+                              </>
+                            )}
+                          </svg>
+                          {/* Concentric inner circle for donut rendering */}
+                          <div className="absolute w-12 h-12 rounded-full bg-zinc-950 flex flex-col items-center justify-center">
+                            <span className="text-[14px] font-black leading-none">{finishedCount}</span>
+                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5 text-center">Evaluados</span>
+                          </div>
+                        </div>
+
+                        {/* Custom Legend */}
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
+                              <span className="text-[10px] font-black text-muted-foreground uppercase truncate">Exacto</span>
+                            </div>
+                            <span className="text-[10px] font-black text-purple-400 pl-2 shrink-0">
+                              {count3} <span className="font-bold text-muted-foreground">({pct3.toFixed(0)}%)</span>
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#d4e029] shrink-0" />
+                              <span className="text-[10px] font-black text-muted-foreground uppercase truncate">Ganador</span>
+                            </div>
+                            <span className="text-[10px] font-black text-[#d4e029] pl-2 shrink-0">
+                              {count1} <span className="font-bold text-muted-foreground">({pct1.toFixed(0)}%)</span>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full bg-zinc-600 shrink-0" />
+                              <span className="text-[10px] font-black text-muted-foreground uppercase truncate">Fallidos</span>
+                            </div>
+                            <span className="text-[10px] font-black text-zinc-400 pl-2 shrink-0">
+                              {count0} <span className="font-bold text-muted-foreground">({pct0.toFixed(0)}%)</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider leading-relaxed mt-4">
+                  Distribución general de los pronósticos de la liga sobre partidos evaluados.
+                </p>
+              </Card>
+            </div>
+
+            {/* Pillar 2: Distinctive High-Performing Stars */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-primary animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest block leading-none">Distinciones de Rendimiento</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Star 1: Exact King */}
+                <div className="bg-purple-950/20 border border-purple-500/20 p-5 flex items-center gap-4 relative overflow-hidden rounded-none">
+                  <div className="absolute right-0 top-0 translate-x-2 -translate-y-2 text-purple-500/10 font-bold text-7xl select-none pointer-events-none font-black">🎯</div>
+                  <img 
+                    src={leagueStats.bestExactParticipantPhoto || getAvatarForUser(leagueStats.bestExactParticipantName)} 
+                    className="w-12 h-12 rounded-full border border-purple-500/30 bg-zinc-900 object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => { (e.target as HTMLImageElement).src = getAvatarForUser(leagueStats.bestExactParticipantName); }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[8px] font-black text-purple-400 uppercase tracking-widest block mb-0.5">Especialista en Marcador</span>
+                    <span className="text-[13px] font-black text-foreground uppercase block truncate">{leagueStats.bestExactParticipantName}</span>
+                    <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase mt-1 block">
+                      {leagueStats.bestExactCount > 0 ? `${leagueStats.bestExactCount} exactos` : 'Sin datos'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Star 2: Winner/Draw King */}
+                <div className="bg-lime/5 border border-lime/20 p-5 flex items-center gap-4 relative overflow-hidden rounded-none">
+                  <div className="absolute right-0 top-0 translate-x-3 -translate-y-2 text-lime/10 font-bold text-7xl select-none pointer-events-none font-black">🏁</div>
+                  <img 
+                    src={leagueStats.bestWinnerParticipantPhoto || getAvatarForUser(leagueStats.bestWinnerParticipantName)} 
+                    className="w-12 h-12 rounded-full border border-lime/30 bg-zinc-900 object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => { (e.target as HTMLImageElement).src = getAvatarForUser(leagueStats.bestWinnerParticipantName); }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[8px] font-black text-lime uppercase tracking-widest block mb-0.5">As de Tendencias</span>
+                    <span className="text-[13px] font-black text-foreground uppercase block truncate">{leagueStats.bestWinnerParticipantName}</span>
+                    <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase mt-1 block">
+                      {leagueStats.bestWinnerCount > 0 ? `${leagueStats.bestWinnerCount + leagueStats.bestExactCount} acertados` : 'Sin datos'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Star 3: Low hits (Menos asertivo) */}
+                <div className="bg-amber-500/5 border border-amber-500/20 p-5 flex items-center gap-4 relative overflow-hidden rounded-none">
+                  <div className="absolute right-0 top-0 translate-x-2 -translate-y-2 text-amber-500/10 font-bold text-7xl select-none pointer-events-none font-black">🧭</div>
+                  <img 
+                    src={leagueStats.worstWinnerParticipantPhoto || getAvatarForUser(leagueStats.worstWinnerParticipantName)} 
+                    className="w-12 h-12 rounded-full border border-amber-500/30 bg-zinc-900 object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => { (e.target as HTMLImageElement).src = getAvatarForUser(leagueStats.worstWinnerParticipantName); }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest block mb-0.5">Menos aciertos</span>
+                    <span className="text-[13px] font-black text-foreground uppercase block truncate">{leagueStats.worstWinnerParticipantName}</span>
+                    <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase mt-1 block">
+                      {leagueStats.worstWinnerCount >= 0 ? `${leagueStats.worstWinnerCount} aciertos` : 'Sin datos'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar 3: Match Predictability (Surprising vs Predictable) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Easiest/Predictable Matches */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-lime animate-pulse" />
+                  <span className="text-[10px] font-black uppercase tracking-widest block leading-none">Partidos Más Predecibles (Tendencia Acertada)</span>
+                </div>
+                <div className="space-y-4 bg-zinc-950 border border-border p-5 rounded-none">
+                  {leagueStats.mostPredictableMatches.length === 0 ? (
+                    <div className="text-center py-8">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground">Aún no hay partidos terminados</span>
+                    </div>
+                  ) : (
+                    leagueStats.mostPredictableMatches.map((m: any) => (
+                      <div key={m.matchId} className="flex items-center justify-between border-b border-white/5 pb-3.5 last:border-0 last:pb-0">
+                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                          {/* Flags layout */}
+                          <div className="flex -space-x-1 px-1 shrink-0">
+                            {m.homeTeamFlag?.startsWith('http') ? (
+                              <img src={m.homeTeamFlag} className="w-5.5 h-5.5 object-contain rounded-full border border-black/40 bg-zinc-900" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-lg leading-none">{m.homeTeamFlag || '🏳️'}</span>
+                            )}
+                            {m.awayTeamFlag?.startsWith('http') ? (
+                              <img src={m.awayTeamFlag} className="w-5.5 h-5.5 object-contain rounded-full border border-black/40 bg-zinc-900" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-lg leading-none">{m.awayTeamFlag || '🏳️'}</span>
+                            )}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[11px] font-black uppercase truncate text-foreground leading-tight">
+                              {m.homeTeamName} vs {m.awayTeamName}
+                            </span>
+                            <span className="text-[8px] font-black uppercase font-mono text-muted-foreground mt-1">
+                              RESULTADO REAL: {m.actualHomeScore} - {m.actualAwayScore}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right pl-4">
+                          <span className="text-[13.5px] font-black text-lime block leading-none">{m.correctPercent.toFixed(0)}%</span>
+                          <span className="text-[8px] font-mono font-bold text-muted-foreground uppercase mt-0.5 block tracking-tighter">
+                            {m.correctCount} DE {m.totalGuessed} ACERTARON
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Toughest/Upset Matches */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-[10px] font-black uppercase tracking-widest block leading-none">Mayores Sorpresas (Tendencia Fallada)</span>
+                </div>
+                <div className="space-y-4 bg-zinc-950 border border-border p-5 rounded-none">
+                  {leagueStats.mostSurprisingMatches.length === 0 ? (
+                    <div className="text-center py-8">
+                      <span className="text-[10px] uppercase font-black tracking-widest text-muted-foreground">Aún no hay partidos terminados</span>
+                    </div>
+                  ) : (
+                    leagueStats.mostSurprisingMatches.map((m: any) => (
+                      <div key={m.matchId} className="flex items-center justify-between border-b border-white/5 pb-3.5 last:border-0 last:pb-0">
+                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                          {/* Flags layout */}
+                          <div className="flex -space-x-1 px-1 shrink-0">
+                            {m.homeTeamFlag?.startsWith('http') ? (
+                              <img src={m.homeTeamFlag} className="w-5.5 h-5.5 object-contain rounded-full border border-black/40 bg-zinc-900" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-lg leading-none">{m.homeTeamFlag || '🏳️'}</span>
+                            )}
+                            {m.awayTeamFlag?.startsWith('http') ? (
+                              <img src={m.awayTeamFlag} className="w-5.5 h-5.5 object-contain rounded-full border border-black/40 bg-zinc-900" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-lg leading-none">{m.awayTeamFlag || '🏳️'}</span>
+                            )}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[11px] font-black uppercase truncate text-foreground leading-tight">
+                              {m.homeTeamName} vs {m.awayTeamName}
+                            </span>
+                            <span className="text-[8px] font-black uppercase font-mono text-muted-foreground mt-1">
+                              RESULTADO REAL: {m.actualHomeScore} - {m.actualAwayScore}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right pl-4">
+                          <span className="text-[13.5px] font-black text-red-500 block leading-none">{m.correctPercent.toFixed(0)}%</span>
+                          <span className="text-[8px] font-mono font-bold text-muted-foreground uppercase mt-0.5 block tracking-tighter">
+                            {m.correctCount} DE {m.totalGuessed} ACERTARON
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar 4: Detailed Breakdown Grid/Table per participant */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <TableIcon className="w-4 h-4 text-primary" />
+                <span className="text-[10px] font-black uppercase tracking-widest block leading-none">Rendimiento Detallado por Participante</span>
+              </div>
+              <div className="bg-card border border-border overflow-hidden rounded-none">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent border-b border-border">
+                        <TableHead className="text-[10px] font-black uppercase py-4 px-4">Participante</TableHead>
+                        <TableHead className="text-right text-[10px] font-black uppercase py-4 px-4">Partidos</TableHead>
+                        <TableHead className="text-right text-[10px] font-black uppercase py-4 px-4">Exacto</TableHead>
+                        <TableHead className="text-right text-[10px] font-black uppercase py-4 px-4">Ganador</TableHead>
+                        <TableHead className="text-right text-[10px] font-black uppercase py-4 px-4">Fallidos</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {leagueStats.participantsBreakdown.map((row: any) => (
+                        <TableRow key={row.uid} className="hover:bg-white/5 border-b border-white/5 transition-colors">
+                          <TableCell className="py-4 px-4">
+                            <div className="flex items-center gap-3">
+                              <img 
+                                src={row.photoURL || getAvatarForUser(row.displayName)} 
+                                className="w-8 h-8 rounded-full border border-border" 
+                                referrerPolicy="no-referrer"
+                                onError={(e) => { (e.target as HTMLImageElement).src = getAvatarForUser(row.displayName); }}
+                              />
+                              <span className="text-[12px] font-black uppercase">
+                                {row.displayName}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4 px-4 text-right text-[12px] font-bold text-muted-foreground">
+                            {row.finishedPredsCount} <span className="text-[10px] text-muted-foreground/80 ml-1">(100%)</span>
+                          </TableCell>
+                          <TableCell className="py-4 px-4 text-right text-[12px] font-black text-purple-400">
+                            {row.correctResults} <span className="text-[10px] text-purple-400/80 font-bold ml-1">({row.exactPct.toFixed(1)}%)</span>
+                          </TableCell>
+                          <TableCell className="py-4 px-4 text-right text-[12px] font-black text-[#d4e029]">
+                            {row.correctWinners} <span className="text-[10px] text-[#d4e029]/80 font-bold ml-1">({row.winnerPct.toFixed(1)}%)</span>
+                          </TableCell>
+                          <TableCell className="py-4 px-4 text-right text-[12px] font-black text-zinc-400">
+                            {row.incorrectResults} <span className="text-[10px] text-zinc-400/80 font-bold ml-1">({row.incorrectPct.toFixed(1)}%)</span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             </div>
