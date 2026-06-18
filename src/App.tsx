@@ -6888,7 +6888,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         <span>
                           {latestOrLiveMatch.actualHomeScore !== null && latestOrLiveMatch.actualHomeScore !== undefined
                             ? `${latestOrLiveMatch.actualHomeScore} - ${latestOrLiveMatch.actualAwayScore}`
-                            : "VS"
+                            : (['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') || (!isSimulationMode && new Date(latestOrLiveMatch.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(latestOrLiveMatch.status || '')))
+                              ? `${latestOrLiveMatch.actualHomeScore ?? 0} - ${latestOrLiveMatch.actualAwayScore ?? 0}`
+                              : "VS"
                           }
                         </span>
                       </div>
