@@ -644,7 +644,10 @@ export default function App() {
     
     // 1. Is there any match currently in play?
     const liveMatch = currentMatches.find(m => 
-      !isSimulationMode && ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(m.status || '')
+      !isSimulationMode && (
+        ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(m.status || '') ||
+        (new Date(m.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(m.status || ''))
+      )
     );
     if (liveMatch) return liveMatch;
     
@@ -652,7 +655,7 @@ export default function App() {
     const pastMatches = currentMatches.filter(m => {
       const isFinished = ['FINISHED', 'FT', 'AWARDED'].includes(m.status || '') || 
         (isSimulationMode && m.actualHomeScore !== null && m.actualHomeScore !== undefined) ||
-        (!isSimulationMode && apiMatches.length === 0 && new Date(m.date) < new Date());
+        (!isSimulationMode && new Date(m.date) < new Date());
       return isFinished;
     });
     
@@ -3686,7 +3689,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
     const unfinished = currentMatches.find(m => {
       const isFinished = isSimulationMode
         ? new Date(m.date) < new Date(simulatedDate)
-        : (new Date(m.date) < new Date() || ['FINISHED', 'FT', 'AWARDED'].includes(m.status || ''));
+        : (['FINISHED', 'FT', 'AWARDED'].includes(m.status || '') || new Date(m.date) < new Date(Date.now() - 210 * 60 * 1000)); // 3.5 hours fallback
       return !isFinished;
     });
     return unfinished?.matchday || matchdays[0];
@@ -6550,6 +6553,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 const prediction = predictions.find(p => p.matchId === match.id) || { matchId: match.id, homeScore: null, awayScore: null };
 
                                 const isLocked = getIsMatchLocked(match);
+                                const isMatchLive = !isSimulationMode && (
+                                  ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ||
+                                  (new Date(match.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(match.status || ''))
+                                );
 
                                 const shouldShowResult = isSimulationMode
                                   ? isLocked
@@ -6579,7 +6586,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                             </div>
                                           )
                                         ) : (
-                                          ['IN_PLAY', 'LIVE', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ? (
+                                          isMatchLive ? (
                                             <div className="bg-red-600 text-white text-[8px] font-black px-2 py-0.5 uppercase tracking-widest animate-pulse">
                                               En Vivo
                                             </div>
@@ -6875,7 +6882,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       )}
 
                       <div className="text-[11px] sm:text-[13px] bg-white/5 border border-border/80 px-2.5 py-0.5 sm:px-3 sm:py-1 font-black flex items-center gap-1.5 leading-none rounded-sm font-mono text-zinc-100">
-                        {['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') && (
+                        {(['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') || (!isSimulationMode && new Date(latestOrLiveMatch.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(latestOrLiveMatch.status || ''))) && (
                           <span className="w-2 h-2 bg-lime rounded-full animate-pulse mr-0.5" />
                         )}
                         <span>
@@ -6892,7 +6899,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         <span className="text-lg sm:text-2xl shrink-0">{awayTeam?.flag || "🏳️"}</span>
                       )}
 
-                      {['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') ? (
+                      {(['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') || (!isSimulationMode && new Date(latestOrLiveMatch.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(latestOrLiveMatch.status || ''))) ? (
                         <span className="text-[8px] sm:text-[9.5px] bg-red-600/25 text-red-500 px-2.5 py-1 font-black uppercase tracking-widest hidden sm:inline-block border border-red-500/35 ml-1 rounded-[2px] animate-pulse font-bold">
                           EN VIVO
                         </span>
@@ -7285,7 +7292,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   const displayResults = currentMatches.filter(m => {
                     const isFinished = isSimulationMode 
                       ? new Date(m.date) < new Date(simulatedDate)
-                      : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED', 'AWARDED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) < new Date()));
+                      : (['FINISHED', 'FT', 'IN_PLAY', 'LIVE', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED', 'AWARDED'].includes(m.status || '') || new Date(m.date) < new Date());
                     return isFinished;
                   });
                   
@@ -7296,12 +7303,16 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       .map(match => {
                         const homeTeam = currentTeams.find(t => t.id === match.homeTeamId);
                         const awayTeam = currentTeams.find(t => t.id === match.awayTeamId);
+                        const isMatchLive = !isSimulationMode && (
+                          ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ||
+                          (new Date(match.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(match.status || ''))
+                        );
                         return (
                           <div key={match.id} className="bg-card border border-border p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
                             <div className="flex justify-between items-center text-[9px] font-black text-white uppercase tracking-widest">
                               <span>{new Date(match.date).toLocaleDateString()}</span>
-                              <span className={(!isSimulationMode && ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '')) ? "text-lime animate-pulse font-black" : "text-muted-foreground"}>
-                                {isSimulationMode ? "FINALIZADO (SIM)" : (['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') ? "EN VIVO" : (match.status || 'FINALIZADO'))}
+                              <span className={isMatchLive ? "text-lime animate-pulse font-black" : "text-muted-foreground"}>
+                                {isSimulationMode ? "FINALIZADO (SIM)" : (isMatchLive ? "EN VIVO" : (['FINISHED', 'FT', 'AWARDED'].includes(match.status || '') ? "FINALIZADO" : match.status || 'FINALIZADO'))}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-4">
@@ -7370,7 +7381,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     const displayUpcoming = currentMatches.filter(m => {
                       const isUpcoming = isSimulationMode
                         ? new Date(m.date) >= new Date(simulatedDate)
-                        : (['SCHEDULED', 'TIMED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) >= new Date()));
+                        : (['SCHEDULED', 'TIMED'].includes(m.status || '') && new Date(m.date) >= new Date());
                       return isUpcoming;
                     });
                     
@@ -9423,6 +9434,11 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
           minute: '2-digit'
         });
 
+        const isMatchLive = !isSimulationMode && (
+          ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(selectedMatchDetails.status || '') ||
+          (new Date(selectedMatchDetails.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(selectedMatchDetails.status || ''))
+        );
+
         // 100% chart breakdown calculation:
         let homeWinsCount = 0;
         let drawsCount = 0;
@@ -9541,14 +9557,16 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest font-mono text-center mb-1">
                       {matchDateFormatted}
                     </span>
-                    <span className="text-[10px] uppercase tracking-widest font-black text-lime/80 font-mono text-center mb-1.5">
-                      {hasOfficialScore ? "OFICIAL" : "PROGRAMADO"}
+                    <span className={`text-[10px] uppercase tracking-widest font-black font-mono text-center mb-1.5 ${isMatchLive ? "text-lime animate-pulse" : "text-lime/80"}`}>
+                      {hasOfficialScore ? "OFICIAL" : (isMatchLive ? "EN VIVO" : "PROGRAMADO")}
                     </span>
                     <div className="bg-zinc-950 border border-zinc-800 px-4 py-2 text-center rounded-sm">
                       <span className="font-mono text-xl sm:text-2xl font-black text-lime leading-none">
                         {hasOfficialScore 
                           ? `${selectedMatchDetails.actualHomeScore} - ${selectedMatchDetails.actualAwayScore}` 
-                          : "VS"
+                          : isMatchLive 
+                            ? `${selectedMatchDetails.actualHomeScore ?? 0} - ${selectedMatchDetails.actualAwayScore ?? 0}`
+                            : "VS"
                         }
                       </span>
                     </div>
@@ -9635,6 +9653,13 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
 
               {/* Table of Participant Predictions */}
               <div className="flex-1 flex flex-col min-h-[250px] max-h-[320px] overflow-hidden border border-zinc-800">
+                {/* Table Header divided in three equal columns */}
+                <div className="grid grid-cols-3 border-b border-zinc-800 bg-zinc-900/40 py-2 px-3 text-[9px] font-black uppercase tracking-wider font-mono text-zinc-500">
+                  <div className="text-left font-bold">Participante</div>
+                  <div className="text-center font-bold">Pronóstico</div>
+                  <div className="text-right pr-2 font-bold">Puntos</div>
+                </div>
+
                 {/* Table list scrolling body */}
                 <div className="overflow-y-auto flex-1 bg-zinc-950/40 divide-y divide-zinc-900">
                   {participantRows.length === 0 ? (
@@ -9643,12 +9668,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     </div>
                   ) : (
                     participantRows.map((row, idx) => {
-                      // Calculate match exact/winner outcome if official score is available
+                      // Calculate match exact/winner outcome if official score is available or is match live
                       let outcomeBadge = null;
-                      if (hasOfficialScore && row.hasPrediction) {
-                        const isExact = row.homeScore === selectedMatchDetails.actualHomeScore && row.awayScore === selectedMatchDetails.actualAwayScore;
-                        const realHome = selectedMatchDetails.actualHomeScore!;
-                        const realAway = selectedMatchDetails.actualAwayScore!;
+                      if ((hasOfficialScore || isMatchLive) && row.hasPrediction) {
+                        const realHome = selectedMatchDetails.actualHomeScore ?? 0;
+                        const realAway = selectedMatchDetails.actualAwayScore ?? 0;
+                        const isExact = row.homeScore === realHome && row.awayScore === realAway;
                         
                         const isWinnerCorrect = 
                            (row.homeScore! > row.awayScore! && realHome > realAway) || 
@@ -9657,29 +9682,29 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           
                         if (isExact) {
                           outcomeBadge = (
-                            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-1.5 py-0.5 rounded-[2px]">
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-[2px]" title={isMatchLive ? "Provisional: Marcador exacto" : "Marcador exacto"}>
                               +3
                             </span>
                           );
                         } else if (isWinnerCorrect) {
                           outcomeBadge = (
-                            <span className="text-[10px] font-black uppercase tracking-widest bg-lime/10 border border-lime/30 text-lime px-1.5 py-0.5 rounded-[2px]">
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-lime/10 border border-lime/30 text-lime px-2 py-0.5 rounded-[2px]" title={isMatchLive ? "Provisional: Ganador o empate acertado" : "Ganador o empate acertado"}>
                               +1
                             </span>
                           );
                         } else {
                           outcomeBadge = (
-                            <span className="text-[10px] font-black uppercase tracking-widest bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-[2px]">
-                              0 PTS
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-[2px]">
+                              0
                             </span>
                           );
                         }
                       }
 
                       return (
-                        <div key={row.uid} className="flex items-center justify-between py-1.5 px-2.5 hover:bg-zinc-900/60 transition-colors">
-                          {/* Name info */}
-                          <div className="flex items-center gap-2.5 min-w-0">
+                        <div key={row.uid} className="grid grid-cols-3 items-center py-2 px-3 hover:bg-zinc-900/60 transition-colors">
+                          {/* Col 1: Name info */}
+                          <div className="flex items-center gap-2 min-w-0 text-left">
                             <span className="text-[10px] font-mono text-zinc-600 font-bold w-4 shrink-0">{idx + 1}</span>
                             <img 
                               src={row.photoURL || getAvatarForUser(row.displayName || 'Anónimo')} 
@@ -9687,19 +9712,21 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                               referrerPolicy="no-referrer" 
                               alt=""
                             />
-                            <span className="text-[11px] font-black uppercase text-zinc-200 tracking-wider truncate max-w-[120px] sm:max-w-none">
+                            <span className="text-[11px] font-black uppercase text-zinc-200 tracking-wider truncate">
                               {row.displayName}
                             </span>
                           </div>
 
-                          {/* Prediction scores and badges */}
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-mono font-black text-white bg-zinc-900 border border-zinc-800 px-2 py-0.5 min-w-[50px] text-center rounded-sm">
+                          {/* Col 2: Prediction scores - perfectly centered */}
+                          <div className="flex justify-center text-center">
+                            <span className="text-[10px] font-mono font-black text-white bg-zinc-900 border border-zinc-800 px-2.5 py-0.5 min-w-[55px] text-center rounded-sm">
                               {row.predictionString}
                             </span>
-                            <div className="w-[85px] text-right">
-                              {outcomeBadge}
-                            </div>
+                          </div>
+
+                          {/* Col 3: Points / Outcome Badges */}
+                          <div className="flex justify-end pr-2">
+                            {outcomeBadge}
                           </div>
                         </div>
                       );
