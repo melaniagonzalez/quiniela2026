@@ -5559,10 +5559,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             </div>
 
             {!predictionsEditMode && activeTab !== 'settings' && (
-              <div className={cn(
-                "grid border-b border-border w-full",
-                isApprovedAdmin ? "grid-cols-4" : "grid-cols-3"
-              )}>
+              <div className="grid grid-cols-4 border-b border-border w-full">
                 <button
                   onClick={async () => {
                     const isUpToDate = await verifyLatestVersion();
@@ -5608,23 +5605,21 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                   <Trophy className="w-6 h-6" />
                   <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Resultados</span>
                 </button>
-                {isApprovedAdmin && (
-                  <button
-                    onClick={async () => {
-                      const isUpToDate = await verifyLatestVersion();
-                      if (isUpToDate) setActiveTab('estadisticas');
-                    }}
-                    className={cn(
-                      "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
-                      activeTab === 'estadisticas' 
-                        ? "border-primary text-primary" 
-                        : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <BarChart2 className="w-6 h-6" />
-                    <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Estadísticas</span>
-                  </button>
-                )}
+                <button
+                  onClick={async () => {
+                    const isUpToDate = await verifyLatestVersion();
+                    if (isUpToDate) setActiveTab('estadisticas');
+                  }}
+                  className={cn(
+                    "px-2 sm:px-8 py-3 sm:py-4 text-[10px] sm:text-[12px] font-black uppercase tracking-wider sm:tracking-[0.2em] transition-all border-b-2 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 w-full",
+                    activeTab === 'estadisticas' 
+                      ? "border-primary text-primary" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <BarChart2 className="w-6 h-6" />
+                  <span className="hidden sm:inline text-[8px] sm:text-[12px] text-center">Estadísticas</span>
+                </button>
               </div>
             )}
 
