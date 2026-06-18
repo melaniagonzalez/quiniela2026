@@ -9756,17 +9756,24 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         >
           {/* Left side: pgsimple branding banner card replacing the old text */}
           <div className="w-full md:max-w-md flex items-center justify-start">
-            <img 
-              src="/images/pgsimplebanner.jpeg" 
-              alt="pgsimple banner" 
-              className="w-full h-auto rounded-xl border border-zinc-800 shadow-[0_4px_30px_rgba(0,0,0,0.4)] object-contain"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.src !== "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg") {
-                  target.src = "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg";
-                }
-              }}
-            />
+            <a 
+              href="https://pgsimple.com/" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="w-full hover:opacity-90 transition-opacity"
+            >
+              <img 
+                src="/images/pgsimplebanner.jpeg" 
+                alt="pgsimple banner" 
+                className="w-full h-auto rounded-xl border border-zinc-800 shadow-[0_4px_30px_rgba(0,0,0,0.4)] object-contain"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (target.src !== "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg") {
+                    target.src = "https://2026quiniela.netlify.app/images/pgsimplebanner.jpeg";
+                  }
+                }}
+              />
+            </a>
           </div>
 
           {/* Right side: Contact Button */}

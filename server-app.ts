@@ -317,50 +317,106 @@ app.get("/api/sync/:competition", async (req, res) => {
     }
 
     // Step 4a: Get Matches
-    const matchesResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/matches`, headers);
-    await delay(350);
+    let matchesResponse: any;
+    try {
+      matchesResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/matches`, headers, 2, 800);
+      await delay(350);
+    } catch (err: any) {
+      console.error(`[Sync Matches Error] Could not load live matches for ${competition}:`, err.message || err);
+      // If we don't even have matches, load from local constants fallback safely inside syncPromise so it produces usable local/cached data!
+      const { MATCHES, TEAMS } = await import("./src/constants");
+      const teamsObj = Object.fromEntries(TEAMS.map(t => [String(t.id), t]));
+      matchesResponse = { data: { matches: MATCHES.map(m => {
+        const homeTeam = teamsObj[String(m.homeTeamId)];
+        const awayTeam = teamsObj[String(m.awayTeamId)];
+        return {
+          id: Number(m.id.replace('m', '')),
+          homeTeam: { id: m.homeTeamId ? Number(m.homeTeamId) : null, name: homeTeam?.name || "TBD", crest: homeTeam?.flag || null },
+          awayTeam: { id: m.awayTeamId ? Number(m.awayTeamId) : null, name: awayTeam?.name || "TBD", crest: awayTeam?.flag || null },
+          utcDate: m.date,
+          venue: m.stadium || "TBD",
+          stage: m.group ? `GROUP_${m.group}` : "GROUP_STAGE",
+          status: m.status || "TIMED",
+          score: {
+            fullTime: { home: m.actualHomeScore ?? null, away: m.actualAwayScore ?? null },
+            halfTime: { home: m.halfTimeHomeScore ?? null, away: m.halfTimeAwayScore ?? null }
+          }
+        };
+      })}};
+    }
 
     // Step 4b: Get Teams (Only if cache is empty or we are forced to fully flush)
     if (formattedTeams.length === 0) {
       console.log(`[Sync Detail] Teams cache is currently empty for ${competition}, hitting live teams endpoint.`);
-      const teamsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/teams`, headers);
-      formattedTeams = teamsResponse.data.teams.map((t: any) => {
-        const teamData = {
-          id: `${t.id}`,
-          name: translateTeamName(t.name),
-          shortName: translateTeamName(t.shortName || t.name),
-          tla: t.tla,
-          flag: t.crest,
-          group: "" 
-        };
-        teamsMap.set(Number(t.id), teamData);
-        return teamData;
-      });
-
-      if (teamsResponse.data && Array.isArray(teamsResponse.data.teams)) {
-        teamsResponse.data.teams.forEach((t: any) => {
-          const teamName = translateTeamName(t.name);
-          const teamFlag = t.crest || "⚽";
-          if (Array.isArray(t.squad)) {
-            t.squad.forEach((p: any) => {
-              if (p && p.name) {
-                activePlayers.push({
-                  name: p.name,
-                  team: teamName,
-                  flag: teamFlag
-                });
-              }
-            });
-          }
+      try {
+        const teamsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/teams`, headers, 2, 800);
+        formattedTeams = teamsResponse.data.teams.map((t: any) => {
+          const teamData = {
+            id: `${t.id}`,
+            name: translateTeamName(t.name),
+            shortName: translateTeamName(t.shortName || t.name),
+            tla: t.tla,
+            flag: t.crest,
+            group: "" 
+          };
+          teamsMap.set(Number(t.id), teamData);
+          return teamData;
         });
+
+        if (teamsResponse.data && Array.isArray(teamsResponse.data.teams)) {
+          teamsResponse.data.teams.forEach((t: any) => {
+            const teamName = translateTeamName(t.name);
+            const teamFlag = t.crest || "⚽";
+            if (Array.isArray(t.squad)) {
+              t.squad.forEach((p: any) => {
+                if (p && p.name) {
+                  activePlayers.push({
+                    name: p.name,
+                    team: teamName,
+                    flag: teamFlag
+                  });
+                }
+              });
+            }
+          });
+        }
+        await delay(350);
+      } catch (e: any) {
+        console.warn("[Sync Warning] Teams fetch failed, using constants TEAMS as fallback:", e.message || e);
+        const { TEAMS } = await import("./src/constants");
+        formattedTeams = TEAMS.map(t => ({
+          id: t.id,
+          name: t.name,
+          shortName: t.name,
+          tla: (t.name || "").substring(0, 3).toUpperCase(),
+          flag: t.flag,
+          group: t.group || ""
+        }));
+        formattedTeams.forEach((t: any) => teamsMap.set(Number(t.id), t));
       }
-      await delay(350);
     }
 
-    // Step 4c: Standings & Scorers
-    const standingsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/standings`, headers);
-    await delay(350);
-    const scorersResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/scorers`, headers);
+    // Step 4c: Standings & Scorers with soft try-catch so rate-limiting on subordinate endpoints does not break matches sync!
+    let standingsResponse: any = { data: { standings: [] } };
+    try {
+      standingsResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/standings`, headers, 2, 800);
+      await delay(350);
+    } catch (e: any) {
+      console.warn(`[Sync Standings Warning] Standings fetch failed for ${competition}:`, e.message || e);
+      if (competitionsCache[competition]?.standings) {
+        standingsResponse = { data: { standings: competitionsCache[competition].standings } };
+      }
+    }
+
+    let scorersResponse: any = { data: { scorers: [] } };
+    try {
+      scorersResponse = await fetchWithRetry(`https://api.football-data.org/v4/competitions/${competition}/scorers`, headers, 2, 800);
+    } catch (e: any) {
+      console.warn(`[Sync Scorers Warning] Scorers fetch failed for ${competition}:`, e.message || e);
+      if (competitionsCache[competition]?.scorers) {
+        scorersResponse = { data: { scorers: competitionsCache[competition].scorers } };
+      }
+    }
 
     const formattedMatches = matchesResponse.data.matches.map((m: any) => {
       const group = m.group ? m.group.replace('GROUP_', '') : m.stage;
