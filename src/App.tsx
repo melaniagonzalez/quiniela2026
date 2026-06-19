@@ -1969,7 +1969,7 @@ export default function App() {
     }
   };
 
-  const calculateUserPoints = (userPredictions: Prediction[], leagueCompParam?: 'WC' | 'CL') => {
+  const calculateUserPoints = (userPredictions: Prediction[], leagueCompParam?: 'WC' | 'CL', excludeMatchId?: string) => {
     let totalPoints = 0;
     let correctResults = 0;
     let correctWinners = 0;
@@ -2132,6 +2132,8 @@ export default function App() {
         }
         return;
       }
+
+      if (excludeMatchId && pred.matchId === excludeMatchId) return;
 
       if (pred.homeScore === null || pred.awayScore === null) return;
 
@@ -2609,6 +2611,14 @@ export default function App() {
 
   // Recalculate leaderboard dynamically whenever participants list, their predictions, or matches change
   useEffect(() => {
+    // 1. Find the latest match that has scores
+    const finishedOrLiveMatches = currentMatches.filter(m => m.actualHomeScore !== null && m.actualAwayScore !== null);
+    const latestMatch = finishedOrLiveMatches.reduce((latest, current) => {
+      if (!latest) return current;
+      return new Date(current.date || 0).getTime() > new Date(latest.date || 0).getTime() ? current : latest;
+    }, null as any);
+
+    // 2. Compute current and previous points for everyone
     const recalculated = participants.map(p => {
       const userPreds = participantsPredictions[p.uid];
       if (userPreds === undefined) {
@@ -2618,23 +2628,59 @@ export default function App() {
           totalPoints: p.totalPoints || 0,
           correctResults: p.correctResults || 0,
           correctWinners: p.correctWinners || 0,
-          extraPoints: p.extraPoints || 0
+          extraPoints: p.extraPoints || 0,
+          prevPoints: p.totalPoints || 0
         };
       }
       
       const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds, activeLeague?.competition);
+      
+      let prevPoints = totalPoints;
+      if (latestMatch) {
+        const { totalPoints: computedPrev } = calculateUserPoints(userPreds, activeLeague?.competition, latestMatch.id);
+        prevPoints = computedPrev;
+      }
+
       return {
         ...p,
         totalPoints,
         correctResults,
         correctWinners,
-        extraPoints
+        extraPoints,
+        prevPoints
       };
     });
     
-    // Sort descending by totalPoints
-    const sorted = recalculated.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
-    setLeaderboard(sorted);
+    // Sort descending by current totalPoints
+    const sortedCurrent = [...recalculated].sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
+    // Sort descending by previous points (excluding the latest match)
+    const sortedPrev = [...recalculated].sort((a, b) => (b.prevPoints || 0) - (a.prevPoints || 0));
+
+    // Map uid -> previous 0-indexed rank
+    const prevRankMap: Record<string, number> = {};
+    sortedPrev.forEach((item, idx) => {
+      prevRankMap[item.uid] = idx;
+    });
+
+    // Assign trend "up" | "down" | "same"
+    const finalLeaderboard = sortedCurrent.map((item, currentIdx) => {
+      const prevIdx = prevRankMap[item.uid];
+      let trend: 'up' | 'down' | 'same' = 'same';
+      if (prevIdx !== undefined && latestMatch) {
+        if (currentIdx < prevIdx) {
+          trend = 'up';
+        } else if (currentIdx > prevIdx) {
+          trend = 'down';
+        }
+      }
+      return {
+        ...item,
+        trend
+      };
+    });
+
+    setLeaderboard(finalLeaderboard);
   }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate, compConfigs, activeLeague]);
 
   // Hold latest calculations and status in a sync ref to avoid triggering hot reload loops with state updates
@@ -6928,7 +6974,8 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-b border-border">
-                    <TableHead className="w-[45px] sm:w-[60px] text-center text-[12px] font-black uppercase py-4 sm:py-6 px-1 sm:px-4">POS</TableHead>
+                    <TableHead className="w-[14px] sm:w-[18px] p-0 text-center"></TableHead>
+                    <TableHead className="w-[30px] sm:w-[45px] text-center text-[12px] font-black uppercase py-4 sm:py-6 px-0.5 sm:px-2">POS</TableHead>
                     <TableHead className="text-[12px] font-black uppercase py-4 sm:py-6 px-1.5 sm:px-4">Participante</TableHead>
                     <TableHead className="hidden sm:table-cell text-center text-[12px] font-black uppercase py-6">Progreso</TableHead>
                     <TableHead className="hidden md:table-cell text-right text-[12px] font-black uppercase py-6 px-4">PTS Exactos</TableHead>
@@ -6948,7 +6995,14 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         key={entry.uid}
                         className="group hover:bg-white/5 border-b border-white/5 transition-colors"
                       >
-                        <TableCell className="py-4 sm:py-6 text-center px-1 sm:px-4">
+                        <TableCell className="py-4 sm:py-6 text-center p-0 w-[14px] sm:w-[18px]">
+                          {entry.trend === 'up' ? (
+                            <span className="text-emerald-500 font-extrabold text-[12px] sm:text-[14px]" title="Subió posiciones">▲</span>
+                          ) : entry.trend === 'down' ? (
+                            <span className="text-rose-500 font-extrabold text-[12px] sm:text-[14px]" title="Bajó posiciones">▼</span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="py-4 sm:py-6 text-center w-[30px] sm:w-[45px] px-0.5 sm:px-2">
                           <span className={cn(
                             "text-[14px] font-black",
                             index === 0 ? "text-lime" : index === 1 ? "text-gray-300" : index === 2 ? "text-amber-600" : ""
