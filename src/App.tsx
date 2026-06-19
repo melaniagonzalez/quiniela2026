@@ -7586,6 +7586,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                           <TableRow className="hover:bg-transparent border-b border-border">
                             <TableHead className="text-[9px] font-black uppercase py-4">Equipo</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase py-4">PJ</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase py-4">DG</TableHead>
                             <TableHead className="text-right text-[9px] font-black uppercase py-4">PTS</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -7611,6 +7612,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-center font-mono text-[10px]">{row.playedGames}</TableCell>
+                                <TableCell className="text-center font-mono text-[10px] text-zinc-400">
+                                  {row.goalDifference !== undefined 
+                                    ? (row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference) 
+                                    : 0
+                                  }
+                                </TableCell>
                                 <TableCell className="text-right font-black text-lime text-[11px]">{row.points}</TableCell>
                               </TableRow>
                             );
