@@ -9768,7 +9768,6 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                         <div key={row.uid} className="grid grid-cols-3 items-center py-2 px-3 hover:bg-zinc-900/60 transition-colors">
                           {/* Col 1: Name info */}
                           <div className="flex items-center gap-2 min-w-0 text-left">
-                            <span className="text-[10px] font-mono text-zinc-600 font-bold w-4 shrink-0">{idx + 1}</span>
                             <img 
                               src={row.photoURL || getAvatarForUser(row.displayName || 'Anónimo')} 
                               className="w-[24px] h-[24px] rounded-full border border-zinc-800 bg-zinc-900 shrink-0 object-cover" 
