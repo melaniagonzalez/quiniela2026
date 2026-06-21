@@ -312,9 +312,9 @@ export const MATCHES: Match[] = [
     "group": "A",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 1
   },
   {
     "id": "m537333",
@@ -324,9 +324,9 @@ export const MATCHES: Match[] = [
     "group": "B",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537345",
@@ -336,9 +336,9 @@ export const MATCHES: Match[] = [
     "group": "D",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 4,
+    "actualAwayScore": 1
   },
   {
     "id": "m537334",
@@ -348,9 +348,9 @@ export const MATCHES: Match[] = [
     "group": "B",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537339",
@@ -360,9 +360,9 @@ export const MATCHES: Match[] = [
     "group": "C",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537340",
@@ -372,9 +372,9 @@ export const MATCHES: Match[] = [
     "group": "C",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 0,
+    "actualAwayScore": 1
   },
   {
     "id": "m537346",
@@ -384,9 +384,9 @@ export const MATCHES: Match[] = [
     "group": "D",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 0
   },
   {
     "id": "m537351",
@@ -396,9 +396,9 @@ export const MATCHES: Match[] = [
     "group": "E",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 7,
+    "actualAwayScore": 1
   },
   {
     "id": "m537357",
@@ -408,9 +408,9 @@ export const MATCHES: Match[] = [
     "group": "F",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 2
   },
   {
     "id": "m537352",
@@ -420,9 +420,9 @@ export const MATCHES: Match[] = [
     "group": "E",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 0
   },
   {
     "id": "m537358",
@@ -432,9 +432,9 @@ export const MATCHES: Match[] = [
     "group": "F",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 5,
+    "actualAwayScore": 1
   },
   {
     "id": "m537369",
@@ -444,9 +444,9 @@ export const MATCHES: Match[] = [
     "group": "H",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 0,
+    "actualAwayScore": 0
   },
   {
     "id": "m537363",
@@ -456,9 +456,9 @@ export const MATCHES: Match[] = [
     "group": "G",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537370",
@@ -468,9 +468,9 @@ export const MATCHES: Match[] = [
     "group": "H",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537364",
@@ -480,9 +480,9 @@ export const MATCHES: Match[] = [
     "group": "G",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 2
   },
   {
     "id": "m537391",
@@ -492,9 +492,9 @@ export const MATCHES: Match[] = [
     "group": "I",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 3,
+    "actualAwayScore": 1
   },
   {
     "id": "m537392",
@@ -504,9 +504,9 @@ export const MATCHES: Match[] = [
     "group": "I",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 4
   },
   {
     "id": "m537397",
@@ -516,9 +516,9 @@ export const MATCHES: Match[] = [
     "group": "J",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 3,
+    "actualAwayScore": 0
   },
   {
     "id": "m537398",
@@ -528,9 +528,9 @@ export const MATCHES: Match[] = [
     "group": "J",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 3,
+    "actualAwayScore": 1
   },
   {
     "id": "m537403",
@@ -540,9 +540,9 @@ export const MATCHES: Match[] = [
     "group": "K",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537409",
@@ -552,9 +552,9 @@ export const MATCHES: Match[] = [
     "group": "L",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 4,
+    "actualAwayScore": 2
   },
   {
     "id": "m537410",
@@ -564,9 +564,9 @@ export const MATCHES: Match[] = [
     "group": "L",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 0
   },
   {
     "id": "m537404",
@@ -576,9 +576,9 @@ export const MATCHES: Match[] = [
     "group": "K",
     "stadium": "TBD",
     "matchday": 1,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 3
   },
   {
     "id": "m537329",
@@ -588,9 +588,9 @@ export const MATCHES: Match[] = [
     "group": "A",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 1
   },
   {
     "id": "m537335",
@@ -600,9 +600,9 @@ export const MATCHES: Match[] = [
     "group": "B",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 4,
+    "actualAwayScore": 1
   },
   {
     "id": "m537336",
@@ -612,9 +612,9 @@ export const MATCHES: Match[] = [
     "group": "B",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 6,
+    "actualAwayScore": 0
   },
   {
     "id": "m537330",
@@ -624,9 +624,9 @@ export const MATCHES: Match[] = [
     "group": "A",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 1,
+    "actualAwayScore": 0
   },
   {
     "id": "m537348",
@@ -636,9 +636,9 @@ export const MATCHES: Match[] = [
     "group": "D",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 0
   },
   {
     "id": "m537342",
@@ -648,9 +648,9 @@ export const MATCHES: Match[] = [
     "group": "C",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 0,
+    "actualAwayScore": 1
   },
   {
     "id": "m537341",
@@ -660,9 +660,9 @@ export const MATCHES: Match[] = [
     "group": "C",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 3,
+    "actualAwayScore": 0
   },
   {
     "id": "m537347",
@@ -672,9 +672,9 @@ export const MATCHES: Match[] = [
     "group": "D",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 0,
+    "actualAwayScore": 1
   },
   {
     "id": "m537359",
@@ -684,9 +684,9 @@ export const MATCHES: Match[] = [
     "group": "F",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 5,
+    "actualAwayScore": 1
   },
   {
     "id": "m537353",
@@ -696,9 +696,9 @@ export const MATCHES: Match[] = [
     "group": "E",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 2,
+    "actualAwayScore": 1
   },
   {
     "id": "m537354",
@@ -708,9 +708,9 @@ export const MATCHES: Match[] = [
     "group": "E",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 0,
+    "actualAwayScore": 0
   },
   {
     "id": "m537360",
@@ -720,9 +720,9 @@ export const MATCHES: Match[] = [
     "group": "F",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 0,
+    "actualAwayScore": 4
   },
   {
     "id": "m537371",
@@ -732,9 +732,9 @@ export const MATCHES: Match[] = [
     "group": "H",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "FINISHED",
+    "actualHomeScore": 4,
+    "actualAwayScore": 0
   },
   {
     "id": "m537365",
@@ -744,9 +744,9 @@ export const MATCHES: Match[] = [
     "group": "G",
     "stadium": "TBD",
     "matchday": 2,
-    "status": "TIMED",
-    "actualHomeScore": null,
-    "actualAwayScore": null
+    "status": "IN_PLAY",
+    "actualHomeScore": 0,
+    "actualAwayScore": 0
   },
   {
     "id": "m537372",

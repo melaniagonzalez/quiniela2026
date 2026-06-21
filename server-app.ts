@@ -11,7 +11,8 @@ import { Resend } from "resend";
 dotenv.config();
 
 const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAwayScore: number | null, status?: string }> = {
-  "m537327": { actualHomeScore: 2, actualAwayScore: 0, status: "FINISHED" }
+  "m537327": { actualHomeScore: 2, actualAwayScore: 0, status: "FINISHED" },
+  "m537371": { actualHomeScore: 4, actualAwayScore: 0, status: "FINISHED" }
 };
 
 const app = express();
