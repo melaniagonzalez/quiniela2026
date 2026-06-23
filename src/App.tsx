@@ -2536,6 +2536,16 @@ export default function App() {
       return;
     }
 
+    // Reset local state first to prevent showing stale data from previous participant while loading
+    const blank = currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
+    setPredictions(blank);
+    setChampionPrediction(null);
+    setRunnerUpPrediction(null);
+    setThirdPlacePrediction(null);
+    setScorerPrediction(null);
+    setBestPlayerPrediction(null);
+    setBestGoalkeeperPrediction(null);
+
     const predictionsRef = collection(db, 'users', targetId, 'predictions');
     const unsubscribe = onSnapshot(predictionsRef, (snapshot) => {
       const firestorePredictions = snapshot.docs.map(doc => doc.data() as Prediction);
