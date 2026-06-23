@@ -639,17 +639,26 @@ export default function App() {
     return isSimulationMode ? SCORERS_MOCK : apiScorers;
   }, [isSimulationMode, apiScorers]);
 
-  const latestOrLiveMatch = useMemo(() => {
-    if (currentMatches.length === 0) return null;
+  const latestOrLiveMatches = useMemo(() => {
+    if (currentMatches.length === 0) return [];
     
     // 1. Is there any match currently in play?
-    const liveMatch = currentMatches.find(m => 
+    const liveMatches = currentMatches.filter(m => 
       !isSimulationMode && (
         ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(m.status || '') ||
         (new Date(m.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(m.status || ''))
       )
     );
-    if (liveMatch) return liveMatch;
+    if (liveMatches.length > 0) {
+      const liveDates = new Set(liveMatches.map(m => new Date(m.date).getTime()));
+      const simultaneousMatches = currentMatches.filter(m => 
+        liveMatches.some(lm => lm.id === m.id) || 
+        (m.date && liveDates.has(new Date(m.date).getTime()))
+      );
+      return simultaneousMatches.filter((m, index, self) =>
+        self.findIndex(t => t.id === m.id) === index
+      );
+    }
     
     // 2. Otherwise, find the most recently started or finished match.
     const pastMatches = currentMatches.filter(m => {
@@ -660,13 +669,22 @@ export default function App() {
     });
     
     if (pastMatches.length > 0) {
-      // Return the one with the latest date among past matches
-      return [...pastMatches].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+      const sortedPast = [...pastMatches].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const latestDateStr = sortedPast[0].date;
+      if (latestDateStr) {
+        const latestTime = new Date(latestDateStr).getTime();
+        return currentMatches.filter(m => m.date && new Date(m.date).getTime() === latestTime);
+      }
+      return [sortedPast[0]];
     }
     
     // 3. Fallback: first match
-    return currentMatches[0];
+    return [currentMatches[0]];
   }, [currentMatches, isSimulationMode, apiMatches, nowTimeState]);
+
+  const latestOrLiveMatch = useMemo(() => {
+    return latestOrLiveMatches[0] || null;
+  }, [latestOrLiveMatches]);
 
   const computedStandings = useMemo(() => {
     const groupsMap: Record<string, any[]> = {};
@@ -4269,15 +4287,53 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Fecha Simulada (United 2026)</label>
-                  <input 
-                    type="date" 
-                    min="2026-06-11" 
-                    max="2026-07-24"
-                    value={simulatedDate.split('T')[0]}
-                    onChange={(e) => setSimulatedDate(`${e.target.value}T12:00:00Z`)}
-                    className="w-full bg-background border border-border px-3 py-2 text-xs font-mono"
-                  />
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-1">Fecha y Hora Simulada (Format 24h - United 2026)</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="date" 
+                      min="2026-06-11" 
+                      max="2026-07-24"
+                      value={simulatedDate.split('T')[0] || '2026-06-11'}
+                      onChange={(e) => {
+                        const datePart = e.target.value;
+                        const timePart = simulatedDate.split('T')[1] || '12:00:00Z';
+                        setSimulatedDate(`${datePart}T${timePart}`);
+                      }}
+                      className="flex-1 bg-background border border-border px-3 py-2 text-xs font-mono h-9 rounded-none text-foreground"
+                    />
+                    <div className="flex items-center gap-1.5 bg-background border border-border px-3 py-1 text-xs font-mono h-9">
+                      <select
+                        value={simulatedDate.split('T')[1]?.substring(0, 2) || '12'}
+                        onChange={(e) => {
+                          const datePart = simulatedDate.split('T')[0] || '2026-06-11';
+                          const minPart = simulatedDate.split('T')[1]?.substring(3, 5) || '00';
+                          setSimulatedDate(`${datePart}T${e.target.value}:${minPart}:00Z`);
+                        }}
+                        className="bg-transparent border-none outline-none cursor-pointer font-bold text-center w-8 text-foreground"
+                      >
+                        {Array.from({ length: 24 }).map((_, h) => {
+                          const val = String(h).padStart(2, '0');
+                          return <option key={val} value={val} className="bg-zinc-950 text-white">{val}</option>;
+                        })}
+                      </select>
+                      <span className="text-muted-foreground font-black">:</span>
+                      <select
+                        value={simulatedDate.split('T')[1]?.substring(3, 5) || '00'}
+                        onChange={(e) => {
+                          const datePart = simulatedDate.split('T')[0] || '2026-06-11';
+                          const hourPart = simulatedDate.split('T')[1]?.substring(0, 2) || '12';
+                          setSimulatedDate(`${datePart}T${hourPart}:${e.target.value}:00Z`);
+                        }}
+                        className="bg-transparent border-none outline-none cursor-pointer font-bold text-center w-8 text-foreground"
+                      >
+                        {Array.from({ length: 60 }).map((_, m) => {
+                          const val = String(m).padStart(2, '0');
+                          return <option key={val} value={val} className="bg-zinc-950 text-white">{val}</option>;
+                        })}
+                      </select>
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold ml-1">HRS</span>
+                    </div>
+                  </div>
                 </div>
                 
                 <div className="space-y-2">
@@ -6909,56 +6965,64 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                     )}
                   </div>
                 )}
-                {(!isApprovedAdmin && latestOrLiveMatch) ? (() => {
-                  const homeTeam = currentTeams.find(t => t.id === latestOrLiveMatch.homeTeamId);
-                  const awayTeam = currentTeams.find(t => t.id === latestOrLiveMatch.awayTeamId);
-                  return (
-                    <button
-                      onClick={() => {
-                        setMatchModalSearch('');
-                        setSelectedMatchDetails(latestOrLiveMatch);
-                      }}
-                      className="flex items-center gap-3 sm:gap-4 bg-zinc-950/80 border animate-border-pulse-blue px-4 py-2 sm:px-5 sm:py-3 transition-all text-left cursor-pointer group shadow-lg rounded-none hover:shadow-[#009deb]/20"
-                      title="Ver todos los datos del último partido"
-                    >
-                      {homeTeam?.flag?.startsWith('http') ? (
-                        <img src={homeTeam.flag} className="w-6 h-6 sm:w-7 sm:h-7 object-contain shrink-0" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="text-lg sm:text-2xl shrink-0">{homeTeam?.flag || "🏳️"}</span>
-                      )}
+                {(!isApprovedAdmin && latestOrLiveMatches.length > 0) ? (
+                  <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+                    {latestOrLiveMatches.map((match) => {
+                      const homeTeam = currentTeams.find(t => t.id === match.homeTeamId);
+                      const awayTeam = currentTeams.find(t => t.id === match.awayTeamId);
+                      const isLive = ['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(match.status || '') || 
+                        (!isSimulationMode && new Date(match.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(match.status || ''));
+                      
+                      return (
+                        <button
+                          key={match.id}
+                          onClick={() => {
+                            setMatchModalSearch('');
+                            setSelectedMatchDetails(match);
+                          }}
+                          className="flex items-center gap-2 sm:gap-3 bg-zinc-950/80 border animate-border-pulse-blue px-3 py-1.5 sm:px-4 sm:py-2 transition-all text-left cursor-pointer group shadow-lg rounded-none hover:shadow-[#009deb]/20"
+                          title={`Ver todos los datos de ${homeTeam?.name || ''} vs ${awayTeam?.name || ''}`}
+                        >
+                          {homeTeam?.flag?.startsWith('http') ? (
+                            <img src={homeTeam.flag} className="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                          ) : (
+                            <span className="text-base sm:text-xl shrink-0">{homeTeam?.flag || "🏳️"}</span>
+                          )}
 
-                      <div className="text-[11px] sm:text-[13px] bg-white/5 border border-border/80 px-2.5 py-0.5 sm:px-3 sm:py-1 font-black flex items-center gap-1.5 leading-none rounded-sm font-mono text-zinc-100">
-                        {(['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') || (!isSimulationMode && new Date(latestOrLiveMatch.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(latestOrLiveMatch.status || ''))) && (
-                          <span className="w-2 h-2 bg-lime rounded-full animate-pulse mr-0.5" />
-                        )}
-                        <span>
-                          {latestOrLiveMatch.actualHomeScore !== null && latestOrLiveMatch.actualHomeScore !== undefined
-                            ? `${latestOrLiveMatch.actualHomeScore} - ${latestOrLiveMatch.actualAwayScore}`
-                            : (['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') || (!isSimulationMode && new Date(latestOrLiveMatch.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(latestOrLiveMatch.status || '')))
-                              ? `${latestOrLiveMatch.actualHomeScore ?? 0} - ${latestOrLiveMatch.actualAwayScore ?? 0}`
-                              : "VS"
-                          }
-                        </span>
-                      </div>
+                          <div className="text-[10px] sm:text-[12px] bg-white/5 border border-border/80 px-2 py-0.5 font-black flex items-center gap-1 leading-none rounded-sm font-mono text-zinc-100">
+                            {isLive && (
+                              <span className="w-1.5 h-1.5 bg-lime rounded-full animate-pulse mr-0.5" />
+                            )}
+                            <span>
+                              {match.actualHomeScore !== null && match.actualHomeScore !== undefined
+                                ? `${match.actualHomeScore} - ${match.actualAwayScore}`
+                                : isLive
+                                  ? `${match.actualHomeScore ?? 0} - ${match.actualAwayScore ?? 0}`
+                                  : "VS"
+                              }
+                            </span>
+                          </div>
 
-                      {awayTeam?.flag?.startsWith('http') ? (
-                        <img src={awayTeam.flag} className="w-6 h-6 sm:w-7 sm:h-7 object-contain shrink-0" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="text-lg sm:text-2xl shrink-0">{awayTeam?.flag || "🏳️"}</span>
-                      )}
+                          {awayTeam?.flag?.startsWith('http') ? (
+                            <img src={awayTeam.flag} className="w-5 h-5 sm:w-6 sm:h-6 object-contain shrink-0" referrerPolicy="no-referrer" />
+                          ) : (
+                            <span className="text-base sm:text-xl shrink-0">{awayTeam?.flag || "🏳️"}</span>
+                          )}
 
-                      {(['LIVE', 'IN_PLAY', 'FIRST_HALF', 'SECOND_HALF', 'PAUSE', 'PAUSED'].includes(latestOrLiveMatch.status || '') || (!isSimulationMode && new Date(latestOrLiveMatch.date) < new Date() && !['FINISHED', 'FT', 'AWARDED'].includes(latestOrLiveMatch.status || ''))) ? (
-                        <span className="text-[8px] sm:text-[9.5px] bg-red-600/25 text-red-500 px-2.5 py-1 font-black uppercase tracking-widest hidden sm:inline-block border border-red-500/35 ml-1 rounded-[2px] animate-pulse font-bold">
-                          EN VIVO
-                        </span>
-                      ) : (
-                        <span className="text-[8px] sm:text-[9.5px] bg-lime/15 text-lime px-2.5 py-1 font-black uppercase tracking-widest hidden sm:inline-block border border-lime/30 ml-1 rounded-[2px]">
-                          DATOS PARTIDO
-                        </span>
-                      )}
-                    </button>
-                  );
-                })() : (!isApprovedAdmin && <div />)}
+                          {isLive ? (
+                            <span className="text-[7.5px] sm:text-[8.5px] bg-red-600/25 text-red-500 px-1.5 py-0.5 font-black uppercase tracking-widest hidden sm:inline-block border border-red-500/35 ml-1 rounded-[2px] animate-pulse font-bold">
+                              VIVO
+                            </span>
+                          ) : (
+                            <span className="text-[7.5px] sm:text-[8.5px] bg-lime/15 text-lime px-1.5 py-0.5 font-black uppercase tracking-widest hidden sm:inline-block border border-lime/30 ml-1 rounded-[2px]">
+                              DATOS
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (!isApprovedAdmin && <div />)}
                 <div className="flex items-center gap-4 sm:gap-6 ml-auto">
                   {isCalculatingLeaderboard && (
                     <div className="flex items-center justify-center bg-lime/10 border border-lime/25 text-lime p-2 animate-pulse rounded-sm" title="Calculando en tiempo real...">
@@ -9481,7 +9545,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       )}
     </AnimatePresence>
 
-    {/* Popup Modal: Datos Último Partido / Estadísticas de Partido */}
+    {/* Popup Modal: Datos Partido / Estadísticas de Partido */}
     <AnimatePresence>
       {selectedMatchDetails && (() => {
         const matchId = selectedMatchDetails.id;
@@ -9596,7 +9660,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               {/* Title Section */}
               <div className="mb-3 flex justify-center text-center">
                 <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-white flex items-center justify-center gap-2">
-                  <Trophy className="w-4 h-4 text-[#009deb]" /> Datos Último Partido
+                  <Trophy className="w-4 h-4 text-[#009deb]" /> Datos Partido
                 </h3>
               </div>
 
