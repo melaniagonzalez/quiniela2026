@@ -116,9 +116,27 @@
         "timestamp": { "type": "number", "description": "Fecha y hora del último guardado" }
       },
       "required": ["teams", "matches"]
+    },
+    "Backup": {
+      "title": "Backup",
+      "description": "Copia de seguridad del estado del juego (usuarios, predicciones, ligas, configuraciones)",
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time", "description": "Fecha de creación del backup" },
+        "label": { "type": "string", "description": "Etiqueta o nota descriptiva del backup" },
+        "snapshot": {
+          "type": "object",
+          "description": "El snapshot completo serializado de la base de datos"
+        }
+      },
+      "required": ["createdAt", "label", "snapshot"]
     }
   },
   "firestore": {
+    "/backups/{backupId}": {
+      "schema": "Backup",
+      "description": "Colección de backups manuales de la base de datos"
+    },
     "/competitions/{compId}": {
       "schema": "CompetitionCache",
       "description": "Cache de respaldo de la competición nacional o internacional a través de Firestore"

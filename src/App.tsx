@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Loader2, BarChart2, Flame, Target, Star, Brain } from 'lucide-react';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Loader2, BarChart2, Flame, Target, Star, Brain, History, Download, CloudUpload } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -798,7 +798,11 @@ export default function App() {
   const [dbAdmins, setDbAdmins] = useState<any[]>([]);
   const [currentUserAdminConfig, setCurrentUserAdminConfig] = useState<any | null>(null);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
-  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'puntos_extras' | 'api_query'>('admins');
+  const [superAdminTab, setSuperAdminTab] = useState<'admins' | 'requests' | 'leagues' | 'puntos_extras' | 'api_query' | 'backups'>('admins');
+  const [backups, setBackups] = useState<any[]>([]);
+  const [isCreatingBackup, setIsCreatingBackup] = useState(false);
+  const [isRestoringBackupId, setIsRestoringBackupId] = useState<string | null>(null);
+  const [backupLabel, setBackupLabel] = useState('');
 
   // Super Admin API Query States
   const [apiConsoleEndpoint, setApiConsoleEndpoint] = useState('competitions/WC/matches');
@@ -1280,6 +1284,21 @@ export default function App() {
         setAllRegisteredUsers(list);
       }, (error) => {
         handleFirebaseError("todos los perfiles de usuario", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, isSuperAdmin, showSuperAdminPanel]);
+
+  // Load ALL backups for the Super Admin
+  useEffect(() => {
+    if (user && isSuperAdmin && showSuperAdminPanel) {
+      const unsubscribe = onSnapshot(collection(db, 'backups'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort by createdAt descending
+        list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setBackups(list);
+      }, (error) => {
+        handleFirebaseError("backups de seguridad", error);
       });
       return () => unsubscribe();
     }
@@ -1919,6 +1938,167 @@ export default function App() {
       toast.error('Error al guardar la configuración de puntos extras.', { id: toastId });
     } finally {
       setIsSavingExtraPoints(false);
+    }
+  };
+
+  const handleCreateBackup = async () => {
+    if (!user || !isSuperAdmin) {
+      toast.error('No tienes permisos de súper administrador para realizar esta acción');
+      return;
+    }
+
+    setIsCreatingBackup(true);
+    const toastId = toast.loading('Creando copia de seguridad, obteniendo datos...');
+    try {
+      // 1. Check existing backups in DB and manage limit of 20
+      const backupsSnap = await getDocs(collection(db, 'backups'));
+      const dbBackups = backupsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      
+      if (dbBackups.length >= 20) {
+        // Sort ascending by createdAt to delete the oldest
+        dbBackups.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        const oldest = dbBackups[0];
+        await deleteDoc(doc(db, 'backups', oldest.id));
+        toast.info(`Límite de 20 backups alcanzado. Se eliminó el backup más antiguo: "${oldest.label}"`);
+      }
+
+      // 2. Fetch users
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const usersData = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // 3. Fetch predictions for all users
+      const predictionsData: any[] = [];
+      for (const uDoc of usersSnap.docs) {
+        const predsSnap = await getDocs(collection(db, 'users', uDoc.id, 'predictions'));
+        predsSnap.forEach(pDoc => {
+          predictionsData.push({
+            userId: uDoc.id,
+            matchId: pDoc.id,
+            ...pDoc.data()
+          });
+        });
+      }
+
+      // 4. Fetch leagues
+      const leaguesSnap = await getDocs(collection(db, 'leagues'));
+      const leaguesData = leaguesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // 5. Fetch configurations
+      const configsSnap = await getDocs(collection(db, 'configurations'));
+      const configsData = configsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // 6. Create the backup document in Firestore
+      const labelText = backupLabel.trim() || `Copia de seguridad - ${new Date().toLocaleString('es-ES')}`;
+      const newBackupRef = doc(collection(db, 'backups'));
+      await setDoc(newBackupRef, {
+        createdAt: new Date().toISOString(),
+        label: labelText,
+        snapshot: {
+          users: usersData,
+          predictions: predictionsData,
+          leagues: leaguesData,
+          configurations: configsData
+        }
+      });
+
+      setBackupLabel('');
+      toast.success('¡Copia de seguridad creada exitosamente!', { id: toastId });
+    } catch (error: any) {
+      console.error('Error al crear backup:', error);
+      toast.error('Error al crear la copia de seguridad: ' + error.message, { id: toastId });
+    } finally {
+      setIsCreatingBackup(false);
+    }
+  };
+
+  const handleRestoreBackup = async (backupDoc: any) => {
+    if (!user || !isSuperAdmin) {
+      toast.error('No tienes permisos de súper administrador para realizar esta acción');
+      return;
+    }
+
+    const confirmRestore = window.confirm(`ATENCIÓN: ¿Estás totalmente seguro de que deseas restaurar el backup "${backupDoc.label}"?\n\nEsta acción eliminará y reemplazará TODAS las predicciones, usuarios, configuraciones y quinielas actuales con las que están guardadas en este backup. Esta operación es irreversible.`);
+    if (!confirmRestore) return;
+
+    setIsRestoringBackupId(backupDoc.id);
+    const toastId = toast.loading('Restaurando base de datos, por favor no cierres la aplicación...');
+    try {
+      const { snapshot } = backupDoc;
+      if (!snapshot) throw new Error("El backup no contiene un snapshot de datos válido");
+
+      // 1. Restore configurations
+      if (snapshot.configurations) {
+        for (const cfg of snapshot.configurations) {
+          const { id, ...cfgData } = cfg;
+          await setDoc(doc(db, 'configurations', id), cfgData);
+        }
+      }
+
+      // 2. Restore leagues
+      // Delete current leagues first to ensure clean state
+      const currentLeagues = await getDocs(collection(db, 'leagues'));
+      for (const lDoc of currentLeagues.docs) {
+        await deleteDoc(doc(db, 'leagues', lDoc.id));
+      }
+      if (snapshot.leagues) {
+        for (const lg of snapshot.leagues) {
+          const { id, ...lgData } = lg;
+          await setDoc(doc(db, 'leagues', id), lgData);
+        }
+      }
+
+      // 3. Restore users and their subcollection predictions
+      // Delete current users and their predictions first
+      const currentUsers = await getDocs(collection(db, 'users'));
+      for (const uDoc of currentUsers.docs) {
+        const preds = await getDocs(collection(db, 'users', uDoc.id, 'predictions'));
+        for (const pDoc of preds.docs) {
+          await deleteDoc(doc(db, 'users', uDoc.id, 'predictions', pDoc.id));
+        }
+        await deleteDoc(doc(db, 'users', uDoc.id));
+      }
+
+      // Restore user profiles
+      if (snapshot.users) {
+        for (const u of snapshot.users) {
+          const { id, ...uData } = u;
+          await setDoc(doc(db, 'users', id), uData);
+        }
+      }
+
+      // Restore individual predictions
+      if (snapshot.predictions) {
+        for (const pred of snapshot.predictions) {
+          const { userId, matchId, ...predData } = pred;
+          await setDoc(doc(db, 'users', userId, 'predictions', matchId), predData);
+        }
+      }
+
+      toast.success('¡Base de datos restaurada correctamente a partir de la copia de seguridad!', { id: toastId });
+    } catch (error: any) {
+      console.error('Error al restaurar backup:', error);
+      toast.error('Error al restaurar la copia de seguridad: ' + error.message, { id: toastId });
+    } finally {
+      setIsRestoringBackupId(null);
+    }
+  };
+
+  const handleDeleteBackup = async (backupId: string, backupLabelStr: string) => {
+    if (!user || !isSuperAdmin) {
+      toast.error('No tienes permisos de súper administrador para realizar esta acción');
+      return;
+    }
+
+    const confirmDelete = window.confirm(`¿Estás seguro de que deseas eliminar permanentemente el backup "${backupLabelStr}"?`);
+    if (!confirmDelete) return;
+
+    const toastId = toast.loading('Eliminando backup...');
+    try {
+      await deleteDoc(doc(db, 'backups', backupId));
+      toast.success('Copia de seguridad eliminada exitosamente.', { id: toastId });
+    } catch (error: any) {
+      console.error('Error al eliminar backup:', error);
+      toast.error('Error al eliminar backup: ' + error.message, { id: toastId });
     }
   };
 
@@ -4504,7 +4684,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
               </div>
 
               {/* Sub-navegación del Panel Súper Admin */}
-              <div className="flex flex-nowrap overflow-x-auto md:grid md:grid-cols-5 border-b border-border w-full !mt-0 gap-0 scrollbar-none">
+              <div className="flex flex-nowrap overflow-x-auto md:grid md:grid-cols-6 border-b border-border w-full !mt-0 gap-0 scrollbar-none">
                 <button
                   type="button"
                   onClick={() => {
@@ -4589,6 +4769,22 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 >
                   <Database className="w-5 h-5 text-primary" />
                   <span className="hidden sm:inline font-black">Consola API</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuperAdminTab('backups');
+                    setEditingAdminId(null);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-0 sm:gap-2 px-4 sm:px-6 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all rounded-none shrink-0 md:shrink w-auto md:w-full",
+                    superAdminTab === 'backups' 
+                      ? "border-primary text-primary bg-primary/5 font-black" 
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <History className="w-5 h-5 text-primary" />
+                  <span className="hidden sm:inline font-black">Backups</span>
                 </button>
               </div>
 
@@ -5332,6 +5528,194 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             <div className="max-h-[500px] overflow-auto bg-black p-4 font-mono text-[11px] leading-relaxed text-emerald-400">
                               <pre>{JSON.stringify(apiConsoleResult, null, 2)}</pre>
                             </div>
+                          </div>
+                        )}
+                      </div>
+
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : superAdminTab === 'backups' ? (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <Card className="bg-card border-2 border-border rounded-none shadow-xl">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                        <History className="w-5 h-5 text-primary" /> Respaldos de Seguridad de la Base de Datos
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground leading-relaxed">
+                        Crea y administra copias de seguridad completas de las quinielas, predicciones y perfiles de usuarios. Al llegar al límite de 20 respaldos, se borrará automáticamente el más viejo para dar espacio al nuevo.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                      
+                      {/* Create Backup Input & Button */}
+                      <div className="bg-muted/30 p-5 border border-border space-y-4">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                          Crear Nuevo Respaldo Manual
+                        </h4>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <div className="flex-1">
+                            <input
+                              type="text"
+                              value={backupLabel}
+                              onChange={(e) => setBackupLabel(e.target.value)}
+                              placeholder="Ej: Antes de la Fecha 3, Respaldo de Gaby reconstituido..."
+                              className="w-full bg-background border border-border h-11 px-3 text-xs font-bold text-foreground focus:outline-none focus:border-primary placeholder:text-muted-foreground/50 rounded-none uppercase"
+                            />
+                            <span className="text-[9px] text-muted-foreground mt-1 block uppercase font-medium">
+                              Deja en blanco para usar la fecha y hora actuales como título
+                            </span>
+                          </div>
+                          <Button
+                            onClick={handleCreateBackup}
+                            disabled={isCreatingBackup || isRestoringBackupId !== null}
+                            className="h-11 px-6 text-[10px] font-black uppercase tracking-widest bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center gap-2 rounded-none shrink-0"
+                          >
+                            {isCreatingBackup ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                CREANDO RESPALDO...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-3.5 h-3.5" />
+                                CREAR BACKUP AHORA
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Backup List Table */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            Historial de Respaldos ({backups.length} de 20 guardados)
+                          </span>
+                        </div>
+
+                        {backups.length === 0 ? (
+                          <div className="p-12 border border-dashed border-border flex flex-col justify-center items-center text-center">
+                            <History className="w-8 h-8 text-muted-foreground mb-2" />
+                            <h4 className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                              Sin Respaldos Guardados
+                            </h4>
+                            <p className="text-[9px] text-muted-foreground uppercase font-bold max-w-[320px] mt-1 leading-normal">
+                              Aún no has creado ninguna copia de seguridad de la base de datos. Utiliza el formulario de arriba para generar tu primer respaldo.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="border border-border overflow-x-auto">
+                            <table className="w-full text-left border-collapse font-sans">
+                              <thead>
+                                <tr className="bg-muted border-b border-border text-[9px] font-black uppercase tracking-wider text-muted-foreground">
+                                  <th className="p-3.5">Fecha y Hora</th>
+                                  <th className="p-3.5">Descripción / Nota</th>
+                                  <th className="p-3.5 text-center">Registros</th>
+                                  <th className="p-3.5 text-right">Acciones</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {backups.map((backup) => {
+                                  const stats = backup.snapshot || {};
+                                  const usersCount = stats.users?.length || 0;
+                                  const predsCount = stats.predictions?.length || 0;
+                                  const leaguesCount = stats.leagues?.length || 0;
+
+                                  const formattedDate = new Date(backup.createdAt).toLocaleString('es-ES', {
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit'
+                                  });
+
+                                  const isRestoringThis = isRestoringBackupId === backup.id;
+
+                                  return (
+                                    <tr key={backup.id} className="hover:bg-muted/30 transition-colors text-xs font-bold text-foreground">
+                                      <td className="p-3.5 font-mono text-[10px] text-muted-foreground select-all">
+                                        {formattedDate}
+                                      </td>
+                                      <td className="p-3.5 text-foreground font-black uppercase tracking-tight select-all">
+                                        {backup.label}
+                                      </td>
+                                      <td className="p-3.5 text-center font-mono text-[10px]">
+                                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                          <span className="bg-primary/10 text-primary px-1.5 py-0.5 border border-primary/20 rounded-none uppercase select-none font-bold">
+                                            👥 {usersCount} User{usersCount !== 1 ? 's' : ''}
+                                          </span>
+                                          <span className="bg-secondary/10 text-secondary px-1.5 py-0.5 border border-secondary/20 rounded-none uppercase select-none font-bold">
+                                            ⚽ {predsCount} Pred{predsCount !== 1 ? 's' : ''}
+                                          </span>
+                                          <span className="bg-purple/10 text-purple px-1.5 py-0.5 border border-purple/20 rounded-none uppercase select-none font-bold">
+                                            🏆 {leaguesCount} Quiniela{leaguesCount !== 1 ? 's' : ''}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="p-3.5 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                          {/* Restore action */}
+                                          <Button
+                                            onClick={() => handleRestoreBackup(backup)}
+                                            disabled={isCreatingBackup || isRestoringBackupId !== null}
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 px-3 border-amber-500/30 text-amber-500 hover:bg-amber-500/10 hover:text-amber-500 text-[9px] font-black uppercase tracking-widest flex items-center gap-1"
+                                          >
+                                            {isRestoringThis ? (
+                                              <>
+                                                <Loader2 className="w-3 animate-spin text-amber-500" />
+                                                RESTAURANDO...
+                                              </>
+                                            ) : (
+                                              <>
+                                                <CloudUpload className="w-3.5 h-3.5" />
+                                                RESTAURAR
+                                              </>
+                                            )}
+                                          </Button>
+
+                                          {/* Download JSON action */}
+                                          <Button
+                                            onClick={() => {
+                                              const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
+                                              const downloadAnchor = document.createElement('a');
+                                              downloadAnchor.setAttribute("href", dataStr);
+                                              downloadAnchor.setAttribute("download", `backup_${backup.label.replace(/\s+/g, '_')}_${backup.id}.json`);
+                                              document.body.appendChild(downloadAnchor);
+                                              downloadAnchor.click();
+                                              downloadAnchor.remove();
+                                              toast.success("¡Backup JSON descargado exitosamente!");
+                                            }}
+                                            disabled={isCreatingBackup || isRestoringBackupId !== null}
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 px-2 border-border text-muted-foreground hover:text-foreground text-[9px] font-black uppercase tracking-widest flex items-center gap-1"
+                                            title="Descargar respaldo en formato JSON"
+                                          >
+                                            <Download className="w-3.5 h-3.5" />
+                                            JSON
+                                          </Button>
+
+                                          {/* Delete action */}
+                                          <Button
+                                            onClick={() => handleDeleteBackup(backup.id, backup.label)}
+                                            disabled={isCreatingBackup || isRestoringBackupId !== null}
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 px-2 border-red-500/30 hover:bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest flex items-center gap-1"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         )}
                       </div>

@@ -67,7 +67,7 @@ async function run() {
   console.log(`Using DB Matches (46 finished):`);
   console.log(`  Points: ${gabyCalcDB.totalPoints}, Results: ${gabyCalcDB.correctResults}, Winners: ${gabyCalcDB.correctWinners}`);
   console.log(`Using Local MATCHES constants:`);
-  console.log(`  Points: ${gabyCalcLocal.totalPoints}, Results: ${gabyCalcLocal.localScore !== undefined ? '?' : gabyCalcLocal.totalPoints}, Results: ${gabyCalcLocal.correctResults}, Winners: ${gabyCalcLocal.correctWinners}`);
+  console.log(`  Points: ${gabyCalcLocal.totalPoints}, Results: ${gabyCalcLocal.correctResults}, Winners: ${gabyCalcLocal.correctWinners}`);
 
   process.exit(0);
 }
