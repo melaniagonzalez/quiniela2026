@@ -761,6 +761,7 @@ export default function App() {
   const [scorerPrediction, setScorerPrediction] = useState<Prediction | null>(null);
   const [bestPlayerPrediction, setBestPlayerPrediction] = useState<Prediction | null>(null);
   const [bestGoalkeeperPrediction, setBestGoalkeeperPrediction] = useState<Prediction | null>(null);
+  const [localOtherExtraPoints, setLocalOtherExtraPoints] = useState<number>(0);
 
   // Backup references to safely revert to last clean database values on discard
   const dbPredictionsRef = useRef<Prediction[]>([]);
@@ -770,6 +771,7 @@ export default function App() {
   const dbScorerPredictionRef = useRef<Prediction | null>(null);
   const dbBestPlayerPredictionRef = useRef<Prediction | null>(null);
   const dbBestGoalkeeperPredictionRef = useRef<Prediction | null>(null);
+  const dbOtherExtraPointsRef = useRef<number>(0);
 
   const [participants, setParticipants] = useState<any[]>([]);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
@@ -2426,7 +2428,10 @@ export default function App() {
 
     const breakdown = participants.map(p => {
       const preds = participantsPredictions[p.uid] || [];
-      const { totalPoints, correctResults, correctWinners } = calculateUserPoints(preds, activeLeague?.competition);
+      const { totalPoints: baseTotalPoints, correctResults, correctWinners } = calculateUserPoints(preds, activeLeague?.competition);
+
+      const otherPts = activeLeague?.configType === 'B' ? (p.otherExtraPoints || 0) : 0;
+      const totalPoints = baseTotalPoints + otherPts;
 
       let userFinishedPredsCount = 0;
       preds.forEach(pred => {
@@ -2693,6 +2698,8 @@ export default function App() {
       dbBestPlayerPredictionRef.current = null;
       setBestGoalkeeperPrediction(null);
       dbBestGoalkeeperPredictionRef.current = null;
+      setLocalOtherExtraPoints(0);
+      dbOtherExtraPointsRef.current = 0;
       return;
     }
 
@@ -2713,6 +2720,8 @@ export default function App() {
       dbBestPlayerPredictionRef.current = null;
       setBestGoalkeeperPrediction(null);
       dbBestGoalkeeperPredictionRef.current = null;
+      setLocalOtherExtraPoints(0);
+      dbOtherExtraPointsRef.current = 0;
       return;
     }
 
@@ -2725,6 +2734,24 @@ export default function App() {
     setScorerPrediction(null);
     setBestPlayerPrediction(null);
     setBestGoalkeeperPrediction(null);
+    setLocalOtherExtraPoints(0);
+    dbOtherExtraPointsRef.current = 0;
+
+    // Subscribe to participant user doc for otherExtraPoints
+    const userRef = doc(db, 'users', targetId);
+    const userUnsubscribe = onSnapshot(userRef, (userSnap) => {
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        const otherPtsVal = uData.otherExtraPoints || 0;
+        setLocalOtherExtraPoints(otherPtsVal);
+        dbOtherExtraPointsRef.current = otherPtsVal;
+      } else {
+        setLocalOtherExtraPoints(0);
+        dbOtherExtraPointsRef.current = 0;
+      }
+    }, (error) => {
+      console.warn("Could not load user extra points snapshot:", error);
+    });
 
     const predictionsRef = collection(db, 'users', targetId, 'predictions');
     const unsubscribe = onSnapshot(predictionsRef, (snapshot) => {
@@ -2814,7 +2841,10 @@ export default function App() {
       handleFirebaseError("predicciones", error);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      userUnsubscribe();
+    };
   }, [user, isAuthReady, activeParticipantId, selectedLeagueId, guestLeagueId, currentMatches]);
 
   // Recalculate leaderboard dynamically whenever participants list, their predictions, or matches change
@@ -2849,13 +2879,15 @@ export default function App() {
         prevPoints = computedPrev;
       }
 
+      const otherPts = activeLeague?.configType === 'B' ? (p.otherExtraPoints || 0) : 0;
+
       return {
         ...p,
-        totalPoints,
+        totalPoints: totalPoints + otherPts,
         correctResults,
         correctWinners,
         extraPoints,
-        prevPoints
+        prevPoints: prevPoints + otherPts
       };
     });
     
@@ -3404,15 +3436,23 @@ export default function App() {
         }
 
         const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(updatedPredictions, activeLeague?.competition);
+        const otherPts = activeLeague?.configType === 'B' ? localOtherExtraPoints : 0;
+        
         const userRef = doc(db, 'users', targetId);
-        batch.set(userRef, {
-          totalPoints,
+        const userUpdateObj: any = {
+          totalPoints: totalPoints + otherPts,
           correctResults,
           correctWinners,
           extraPoints,
           lastUpdatedAt: new Date().toISOString(),
           appVersion: APP_VERSION
-        }, { merge: true });
+        };
+
+        if (activeLeague?.configType === 'B') {
+          userUpdateObj.otherExtraPoints = localOtherExtraPoints;
+        }
+
+        batch.set(userRef, userUpdateObj, { merge: true });
 
         await batch.commit();
       }
@@ -3432,6 +3472,7 @@ export default function App() {
       dbScorerPredictionRef.current = finalScorer;
       dbBestPlayerPredictionRef.current = finalBestPlayer;
       dbBestGoalkeeperPredictionRef.current = finalBestGoalkeeper;
+      dbOtherExtraPointsRef.current = localOtherExtraPoints;
 
       localStorage.setItem('wc_predictions', JSON.stringify(updatedPredictions));
       if (finalChampion) localStorage.setItem('wc_champion_prediction', JSON.stringify(finalChampion));
@@ -3601,6 +3642,7 @@ export default function App() {
     setScorerPrediction(dbScorerPredictionRef.current);
     setBestPlayerPrediction(dbBestPlayerPredictionRef.current);
     setBestGoalkeeperPrediction(dbBestGoalkeeperPredictionRef.current);
+    setLocalOtherExtraPoints(dbOtherExtraPointsRef.current);
 
     setHasUnsavedChanges(false);
     if (pendingNavigation) {
@@ -6997,7 +7039,65 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                             )}
                           </div>
 
-                          <div className="text-[10px] text-muted-foreground/80 leading-relaxed font-semibold uppercase tracking-wider bg-white/5 p-4 border border-white/5">
+                          {activeLeague?.configType === 'B' && (() => {
+                            const pData = participants.find(pi => pi.uid === activeParticipantId);
+                            const otherPtsVal = localOtherExtraPoints;
+                            return (
+                              <div className="bg-card border-2 border-purple-500/30 p-6 space-y-4 relative overflow-hidden mt-6">
+                                <div className="absolute top-0 left-0 w-1.5 h-full bg-purple-500" />
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
+                                      <span className="text-purple-400 font-black text-xs">B</span>
+                                    </div>
+                                    <div>
+                                      <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                                        Otros Pts Extras
+                                      </h3>
+                                      <p className="text-[9px] font-bold text-purple-400 uppercase tracking-widest mt-0.5">
+                                        Suma de puntos directos al Ranking
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                                      {isApprovedAdmin ? 'Ingresar puntos:' : 'Puntos asignados:'}
+                                    </span>
+                                    {isApprovedAdmin ? (
+                                      <input
+                                        type="number"
+                                        id="otherExtraPointsInput"
+                                        value={otherPtsVal}
+                                        min={0}
+                                        onChange={(e) => {
+                                          const rawVal = e.target.value;
+                                          const numVal = parseInt(rawVal) || 0;
+                                          if (numVal >= 0) {
+                                            setLocalOtherExtraPoints(numVal);
+                                            setHasUnsavedChanges(true);
+                                          }
+                                        }}
+                                        className="bg-background border border-border text-foreground rounded-none h-10 w-24 px-3 font-mono text-center font-black focus:outline-none focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    ) : (
+                                      <span className="font-mono text-base font-black text-purple-400 bg-purple-500/10 border border-purple-500/20 px-4 py-1 text-center min-w-[60px]">
+                                        {otherPtsVal}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-[9px] text-muted-foreground uppercase font-semibold">
+                                  {isApprovedAdmin 
+                                    ? "Este valor solo es editable por Administradores y se suma de manera inmediata al Ranking." 
+                                    : "Este valor solo es editable por el Administrador y se suma directamente al Ranking de este participante."
+                                  }
+                                </p>
+                              </div>
+                            );
+                          })()}
+
+                          <div className="text-[10px] text-muted-foreground/80 leading-relaxed font-semibold uppercase tracking-wider bg-white/5 p-4 border border-white/5 mt-6">
                             ⚠️ NOTA: Estos pronósticos se cerrarán al inicio de los octavos de final y los puntos se acreditarán al final del último partido cuando se sepan los resultados.
                           </div>
                         </div>
@@ -9390,7 +9490,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
             {(() => {
               const targetId = activeParticipantId;
               const userPreds = participantsPredictions[targetId] || predictions || [];
-              const { totalPoints, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds, activeLeague?.competition);
+              const { totalPoints: baseTotal, correctResults, correctWinners, extraPoints } = calculateUserPoints(userPreds, activeLeague?.competition);
+              const pData = targetId ? participants.find(pi => pi.uid === targetId) : null;
+              const otherPts = (activeLeague?.configType === 'B')
+                ? (targetId === activeParticipantId ? localOtherExtraPoints : (pData?.otherExtraPoints || 0))
+                : 0;
+              const totalPoints = baseTotal + otherPts;
               return (
                 <div className="bg-zinc-900 border border-border/40 p-4 space-y-2.5 rounded-none">
                   <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Desglose de Puntos</h4>
@@ -9411,6 +9516,12 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       <span className="text-muted-foreground">EXTRAS:</span>
                       <span className="text-foreground">{extraPoints}</span>
                     </div>
+                    {activeLeague?.configType === 'B' && (
+                      <div className="flex justify-between border-b border-border/10 pb-1 col-span-2">
+                        <span className="text-muted-foreground">OTROS PTS EXTRAS:</span>
+                        <span className="text-foreground">{otherPts}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

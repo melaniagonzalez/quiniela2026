@@ -65,10 +65,10 @@ service cloud.firestore {
           hasCurrentVersion(request.resource.data) &&
           (
             (isSignedIn() && userId == request.auth.uid && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus'])
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'otherExtraPoints'])
             )) ||
             ((userId.matches('^p_.*') || resource.data.get('isParticipant', false) == true) && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'isParticipant', 'leagueId', 'email', 'searchEmail'])
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'adminRole', 'adminRequestStatus', 'isParticipant', 'leagueId', 'email', 'searchEmail', 'otherExtraPoints'])
             )) ||
             (
               // Allow the creator/administrator of the league to update participant scores and stats
@@ -76,7 +76,7 @@ service cloud.firestore {
               'leagueId' in resource.data &&
               exists(/databases/$(database)/documents/leagues/$(resource.data.leagueId)) &&
               get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.creatorId == request.auth.uid &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalPoints', 'correctResults', 'correctWinners', 'extraPoints', 'lastUpdatedAt', 'appVersion'])
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalPoints', 'correctResults', 'correctWinners', 'extraPoints', 'otherExtraPoints', 'lastUpdatedAt', 'appVersion'])
             )
           )
         )
