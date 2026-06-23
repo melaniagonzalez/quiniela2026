@@ -2,5 +2,7 @@
   "name": "Mundial Quiniela",
   "description": "Una quiniela interactiva para el mundial. Crea hasta 3 ligas privadas, invita a tus amigos y compite por el primer lugar en el ranking.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

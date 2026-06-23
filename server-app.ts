@@ -6,6 +6,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { APP_VERSION } from "./src/version";
 import { Resend } from "resend";
+import { TEAMS, MATCHES } from "./src/constants";
 
 
 dotenv.config();
@@ -56,8 +57,6 @@ function getDynamicCacheDuration(competition: string): number {
 async function serveLocalConstantsFallback(competition: string, res: any, now: number) {
   try {
     console.log(`[Sync Fallback] Loading baseline matches and teams from src/constants.ts for ${competition}`);
-    const { TEAMS, MATCHES } = await import("./src/constants");
-    
     const fallbackData = {
       teams: TEAMS,
       matches: MATCHES,
@@ -325,7 +324,6 @@ app.get("/api/sync/:competition", async (req, res) => {
     } catch (err: any) {
       console.error(`[Sync Matches Error] Could not load live matches for ${competition}:`, err.message || err);
       // If we don't even have matches, load from local constants fallback safely inside syncPromise so it produces usable local/cached data!
-      const { MATCHES, TEAMS } = await import("./src/constants");
       const teamsObj = Object.fromEntries(TEAMS.map(t => [String(t.id), t]));
       matchesResponse = { data: { matches: MATCHES.map(m => {
         const homeTeam = teamsObj[String(m.homeTeamId)];
@@ -384,7 +382,6 @@ app.get("/api/sync/:competition", async (req, res) => {
         await delay(350);
       } catch (e: any) {
         console.warn("[Sync Warning] Teams fetch failed, using constants TEAMS as fallback:", e.message || e);
-        const { TEAMS } = await import("./src/constants");
         formattedTeams = TEAMS.map(t => ({
           id: t.id,
           name: t.name,
@@ -560,7 +557,6 @@ app.get("/api/sync/:competition", async (req, res) => {
 
     // Fallback 2: Constant baseline fallback
     try {
-      const { TEAMS, MATCHES } = await import("./src/constants");
       const fallbackData = {
         teams: TEAMS,
         matches: MATCHES,
