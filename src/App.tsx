@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Loader2, BarChart2, Flame, Target, Star, Brain, History, Download, CloudUpload } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { Trophy, Calendar, Table as TableIcon, Share2, Save, RotateCcw, ChevronRight, ChevronLeft, Settings, FlaskConical, Users, Plus, UserPlus, UserMinus, Trash2, Home, Search, Check, Edit, Info, Newspaper, FileText, LayoutDashboard, Eye, X, AlertTriangle, Lock, Unlock, Copy, Award, Shield, Database, Terminal, Play, Pause, TrendingUp, Sparkles, Loader2, BarChart2, Flame, Target, Star, Brain, History, Download, CloudUpload, FileSpreadsheet } from 'lucide-react';
 import { TEAMS, MATCHES } from './constants';
 import { TEAMS_2022, MATCHES_2022, SCORERS_MOCK } from './simulationData';
 import { Prediction, GroupStanding, Match, Team, League, LeagueMember } from './types';
@@ -1059,6 +1060,9 @@ export default function App() {
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
   const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('leaderboard');
+  const [animStep, setAnimStep] = useState(0);
+  const [isAnimPlaying, setIsAnimPlaying] = useState(false);
+  const [animSpeed, setAnimSpeed] = useState(1200);
   const [predictionsEditMode, setPredictionsEditMode] = useState(false);
   const [predictionsReadOnly, setPredictionsReadOnly] = useState(false);
 
@@ -1943,6 +1947,20 @@ export default function App() {
     }
   };
 
+  const runInChunks = async <T, R>(
+    items: T[],
+    chunkSize: number,
+    fn: (item: T) => Promise<R>
+  ): Promise<R[]> => {
+    const results: R[] = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const chunkResults = await Promise.all(chunk.map(fn));
+      results.push(...chunkResults);
+    }
+    return results;
+  };
+
   const handleCreateBackup = async () => {
     if (!user || !isSuperAdmin) {
       toast.error('No tienes permisos de súper administrador para realizar esta acción');
@@ -1968,9 +1986,9 @@ export default function App() {
       const usersSnap = await getDocs(collection(db, 'users'));
       const usersData = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // 3. Fetch predictions for all users
+      // 3. Fetch predictions for all users in parallel chunks
       const predictionsData: any[] = [];
-      for (const uDoc of usersSnap.docs) {
+      await runInChunks(usersSnap.docs, 15, async (uDoc) => {
         const predsSnap = await getDocs(collection(db, 'users', uDoc.id, 'predictions'));
         predsSnap.forEach(pDoc => {
           predictionsData.push({
@@ -1979,7 +1997,7 @@ export default function App() {
             ...pDoc.data()
           });
         });
-      }
+      });
 
       // 4. Fetch leagues
       const leaguesSnap = await getDocs(collection(db, 'leagues'));
@@ -2013,6 +2031,88 @@ export default function App() {
     }
   };
 
+  const handleDownloadExcelBackup = (backup: any) => {
+    try {
+      const snapshot = backup.snapshot || {};
+      
+      // 1. Format Users Data
+      const users = snapshot.users || [];
+      const formattedUsers = users.map((u: any) => ({
+        "ID Usuario": u.id || u.uid || "",
+        "Nombre": u.displayName || u.name || "Anónimo",
+        "Email": u.email || "",
+        "Puntos Totales": u.totalPoints ?? 0,
+        "Resultados Exactos (Goles)": u.correctResults ?? 0,
+        "Ganadores Exactos (1X2)": u.correctWinners ?? 0,
+        "Puntos de Bonos/Extras": u.extraPoints ?? 0,
+        "Otros Pts Extras (Config B)": u.otherExtraPoints ?? 0,
+        "Última Actualización": u.lastUpdatedAt || "",
+        "Administrador": u.isAdmin ? "SÍ" : "NO",
+        "Super Admin": u.isSuperAdmin ? "SÍ" : "NO"
+      }));
+
+      // 2. Format Predictions Data
+      const predictions = snapshot.predictions || [];
+      const userMap = new Map(users.map((u: any) => [u.id || u.uid, u.displayName || u.name || "Anónimo"]));
+      const formattedPredictions = predictions.map((p: any) => ({
+        "ID Usuario": p.userId || "",
+        "Nombre Usuario": userMap.get(p.userId) || "Desconocido",
+        "ID Partido": p.matchId || "",
+        "Goles Local": p.homeScore ?? "",
+        "Goles Visitante": p.awayScore ?? ""
+      }));
+
+      // 3. Format Leagues Data
+      const leagues = snapshot.leagues || [];
+      const formattedLeagues = leagues.map((l: any) => ({
+        "ID Quiniela": l.id || "",
+        "Nombre de Quiniela": l.name || "",
+        "Competición": l.competition || "world_cup_2026",
+        "ID Creador": l.creatorUid || "",
+        "Código de Acceso": l.code || "",
+        "Configuración": l.configType || "A",
+        "Fecha Creación": l.createdAt || "",
+        "Cant. Participantes": l.memberUids?.length || 0,
+        "Participantes (IDs)": l.memberUids ? l.memberUids.join(", ") : ""
+      }));
+
+      // 4. Format Configurations Data
+      const configurations = snapshot.configurations || [];
+      const formattedConfigurations = configurations.map((c: any) => {
+        const { id, ...rest } = c;
+        return {
+          "Clave / ID Config": id || "",
+          "Detalles JSON": JSON.stringify(rest)
+        };
+      });
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+
+      // Create sheets from json arrays
+      const wsUsers = XLSX.utils.json_to_sheet(formattedUsers);
+      const wsPredictions = XLSX.utils.json_to_sheet(formattedPredictions);
+      const wsLeagues = XLSX.utils.json_to_sheet(formattedLeagues);
+      const wsConfigs = XLSX.utils.json_to_sheet(formattedConfigurations);
+
+      // Append sheets to workbook
+      XLSX.utils.book_append_sheet(wb, wsUsers, "Usuarios");
+      XLSX.utils.book_append_sheet(wb, wsPredictions, "Pronosticos");
+      XLSX.utils.book_append_sheet(wb, wsLeagues, "Quinielas");
+      XLSX.utils.book_append_sheet(wb, wsConfigs, "Configuraciones");
+
+      // Write file
+      const safeLabel = backup.label.replace(/[^a-zA-Z0-9]/g, "_");
+      const filename = `backup_excel_${safeLabel}_${backup.id || Date.now()}.xlsx`;
+      XLSX.writeFile(wb, filename);
+
+      toast.success("¡Backup exportado a Excel (.xlsx) exitosamente!");
+    } catch (error: any) {
+      console.error("Error exporting to Excel:", error);
+      toast.error("Error al exportar a Excel: " + error.message);
+    }
+  };
+
   const handleRestoreBackup = async (backupDoc: any) => {
     if (!user || !isSuperAdmin) {
       toast.error('No tienes permisos de súper administrador para realizar esta acción');
@@ -2030,50 +2130,51 @@ export default function App() {
 
       // 1. Restore configurations
       if (snapshot.configurations) {
-        for (const cfg of snapshot.configurations) {
+        await runInChunks(snapshot.configurations, 20, async (cfg: any) => {
           const { id, ...cfgData } = cfg;
           await setDoc(doc(db, 'configurations', id), cfgData);
-        }
+        });
       }
 
       // 2. Restore leagues
       // Delete current leagues first to ensure clean state
       const currentLeagues = await getDocs(collection(db, 'leagues'));
-      for (const lDoc of currentLeagues.docs) {
+      await runInChunks(currentLeagues.docs, 20, async (lDoc) => {
         await deleteDoc(doc(db, 'leagues', lDoc.id));
-      }
+      });
+
       if (snapshot.leagues) {
-        for (const lg of snapshot.leagues) {
+        await runInChunks(snapshot.leagues, 20, async (lg: any) => {
           const { id, ...lgData } = lg;
           await setDoc(doc(db, 'leagues', id), lgData);
-        }
+        });
       }
 
       // 3. Restore users and their subcollection predictions
-      // Delete current users and their predictions first
+      // Delete current users and their predictions first in parallel chunked operations
       const currentUsers = await getDocs(collection(db, 'users'));
-      for (const uDoc of currentUsers.docs) {
+      await runInChunks(currentUsers.docs, 10, async (uDoc) => {
         const preds = await getDocs(collection(db, 'users', uDoc.id, 'predictions'));
-        for (const pDoc of preds.docs) {
+        await runInChunks(preds.docs, 50, async (pDoc) => {
           await deleteDoc(doc(db, 'users', uDoc.id, 'predictions', pDoc.id));
-        }
+        });
         await deleteDoc(doc(db, 'users', uDoc.id));
-      }
+      });
 
       // Restore user profiles
       if (snapshot.users) {
-        for (const u of snapshot.users) {
+        await runInChunks(snapshot.users, 50, async (u: any) => {
           const { id, ...uData } = u;
           await setDoc(doc(db, 'users', id), uData);
-        }
+        });
       }
 
       // Restore individual predictions
       if (snapshot.predictions) {
-        for (const pred of snapshot.predictions) {
+        await runInChunks(snapshot.predictions, 100, async (pred: any) => {
           const { userId, matchId, ...predData } = pred;
           await setDoc(doc(db, 'users', userId, 'predictions', matchId), predData);
-        }
+        });
       }
 
       toast.success('¡Base de datos restaurada correctamente a partir de la copia de seguridad!', { id: toastId });
@@ -2570,6 +2671,236 @@ export default function App() {
 
     return stats;
   }, [participants, participantsPredictions, currentMatches, isSimulationMode, simulatedDate, apiMatches, activeLeague, currentTeams, calculateUserPoints]);
+
+  const evolutionData = useMemo(() => {
+    if (!participants || participants.length === 0 || !currentMatches || currentMatches.length === 0) {
+      return null;
+    }
+
+    const finishedMatches = currentMatches
+      .filter(m => {
+        const isFinished = isSimulationMode 
+          ? new Date(m.date) < new Date(simulatedDate)
+          : (['FINISHED', 'FT', 'AWARDED'].includes(m.status || '') || (apiMatches.length === 0 && new Date(m.date) < new Date()));
+        return isFinished && m.actualHomeScore !== null && m.actualAwayScore !== null;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (finishedMatches.length === 0) {
+      return null;
+    }
+
+    const daysMap: Record<string, Match[]> = {};
+    finishedMatches.forEach(m => {
+      if (m.date) {
+        const dateStr = new Date(m.date).toISOString().split('T')[0];
+        if (!daysMap[dateStr]) {
+          daysMap[dateStr] = [];
+        }
+        daysMap[dateStr].push(m);
+      }
+    });
+
+    const sortedDates = Object.keys(daysMap).sort();
+    
+    const timeline: { dateStr: string; label: string; matches: Match[] }[] = [
+      { dateStr: 'start', label: 'Inicio', matches: [] }
+    ];
+
+    sortedDates.forEach((dStr) => {
+      const dateObj = new Date(dStr + 'T12:00:00');
+      const formattedDate = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+      timeline.push({
+        dateStr: dStr,
+        label: formattedDate,
+        matches: daysMap[dStr]
+      });
+    });
+
+    const stepsData = timeline.map((step, stepIdx) => {
+      const matchesUpToStep = timeline
+        .slice(1, stepIdx + 1)
+        .flatMap(s => s.matches);
+
+      const matchesUpToStepIds = new Set(matchesUpToStep.map(m => m.id));
+
+      const participantsPoints = participants.map(p => {
+        const preds = participantsPredictions[p.uid] || [];
+        const predsUpToStep = preds.filter(pred => matchesUpToStepIds.has(pred.matchId));
+
+        let predPoints = 0;
+        let correctResultsCount = 0;
+        let correctWinnersCount = 0;
+
+        predsUpToStep.forEach(pred => {
+          const match = matchesUpToStep.find(m => m.id === pred.matchId);
+          if (match && pred.homeScore !== null && pred.awayScore !== null && match.actualHomeScore !== null && match.actualAwayScore !== null) {
+            const homeRes = match.actualHomeScore;
+            const awayRes = match.actualAwayScore;
+            
+            if (pred.homeScore === homeRes && pred.awayScore === awayRes) {
+              predPoints += 3;
+              correctResultsCount++;
+            } else {
+              const predResult = Math.sign(pred.homeScore - pred.awayScore);
+              const actualResult = Math.sign(homeRes - awayRes);
+              if (predResult === actualResult) {
+                predPoints += 1;
+                correctWinnersCount++;
+              }
+            }
+          }
+        });
+
+        let bonusPoints = 0;
+        const finalMatch = currentMatches.find(m => m.matchday === 8 || m.matchday === 17 || (m.group || '').toLowerCase().includes('final'));
+        const isFinalInStep = finalMatch && matchesUpToStepIds.has(finalMatch.id);
+        
+        if (isFinalInStep && finalMatch) {
+          let actualChampionId = '';
+          if (finalMatch.actualHomeScore !== null && finalMatch.actualAwayScore !== null) {
+            if (finalMatch.actualHomeScore > finalMatch.actualAwayScore) {
+              actualChampionId = finalMatch.homeTeamId || '';
+            } else if (finalMatch.actualAwayScore > finalMatch.actualHomeScore) {
+              actualChampionId = finalMatch.awayTeamId || '';
+            } else {
+              let val = 0;
+              for (let i = 0; i < finalMatch.id.length; i++) {
+                val += finalMatch.id.charCodeAt(i);
+              }
+              actualChampionId = (val % 2 === 0 ? finalMatch.homeTeamId : finalMatch.awayTeamId) || '';
+            }
+          }
+
+          let actualRunnerUpId = '';
+          if (actualChampionId) {
+            actualRunnerUpId = finalMatch.homeTeamId === actualChampionId
+              ? (finalMatch.awayTeamId || '')
+              : (finalMatch.homeTeamId || '');
+          }
+
+          const champPred = preds.find(pr => pr.matchId === 'world_champion');
+          if (champPred && champPred.championTeamId === actualChampionId && actualChampionId) {
+            bonusPoints += 5;
+          }
+          const runPred = preds.find(pr => pr.matchId === 'runner_up');
+          if (runPred && runPred.championTeamId === actualRunnerUpId && actualRunnerUpId) {
+            bonusPoints += 3;
+          }
+
+          const thirdPlaceMatch = currentMatches.find(m => 
+            (m.group || '').toLowerCase().includes('tercer') || 
+            (m.group || '').toLowerCase().includes('third') || 
+            m.id.endsWith('_m64') || 
+            m.id === 'm537389'
+          );
+          const isThirdInStep = thirdPlaceMatch && matchesUpToStepIds.has(thirdPlaceMatch.id);
+          if (isThirdInStep && thirdPlaceMatch) {
+            let actualThirdPlaceId = '';
+            if (thirdPlaceMatch.actualHomeScore !== null && thirdPlaceMatch.actualAwayScore !== null) {
+              if (thirdPlaceMatch.actualHomeScore > thirdPlaceMatch.actualAwayScore) {
+                actualThirdPlaceId = thirdPlaceMatch.homeTeamId || '';
+              } else if (thirdPlaceMatch.actualAwayScore > thirdPlaceMatch.actualHomeScore) {
+                actualThirdPlaceId = thirdPlaceMatch.awayTeamId || '';
+              } else {
+                let val = 0;
+                for (let i = 0; i < thirdPlaceMatch.id.length; i++) {
+                  val += thirdPlaceMatch.id.charCodeAt(i);
+                }
+                actualThirdPlaceId = (val % 2 === 0 ? thirdPlaceMatch.homeTeamId : thirdPlaceMatch.awayTeamId) || '';
+              }
+            }
+            const thirdPred = preds.find(pr => pr.matchId === 'third_place');
+            if (thirdPred && thirdPred.championTeamId === actualThirdPlaceId && actualThirdPlaceId) {
+              bonusPoints += 3;
+            }
+          }
+
+          let actualTopScorers: string[] = [];
+          if (currentScorers && currentScorers.length > 0) {
+            const maxGoals = Math.max(...currentScorers.map(s => s.goals || 0));
+            if (maxGoals > 0) {
+              actualTopScorers = currentScorers
+                .filter(s => s.goals === maxGoals)
+                .map(s => (s.player?.name || '').toLowerCase().trim());
+            }
+          }
+          const scorerPred = preds.find(pr => pr.matchId === 'top_scorer');
+          if (scorerPred && scorerPred.scorerPlayerName && actualTopScorers.includes(scorerPred.scorerPlayerName.toLowerCase().trim())) {
+            bonusPoints += 5;
+          }
+
+          const comp = activeLeague?.competition || 'WC';
+          const config = compConfigs[comp as 'WC' | 'CL'];
+          
+          const bPlayerPred = preds.find(pr => pr.matchId === 'best_player');
+          if (config?.actualBestPlayerName && bPlayerPred && bPlayerPred.scorerPlayerName && bPlayerPred.scorerPlayerName.toLowerCase().trim() === config.actualBestPlayerName.toLowerCase().trim()) {
+            bonusPoints += 5;
+          }
+
+          const bGoalkPred = preds.find(pr => pr.matchId === 'best_goalkeeper');
+          if (config?.actualBestGoalkeeperName && bGoalkPred && bGoalkPred.scorerPlayerName && bGoalkPred.scorerPlayerName.toLowerCase().trim() === config.actualBestGoalkeeperName.toLowerCase().trim()) {
+            bonusPoints += 5;
+          }
+        }
+
+        const otherPts = activeLeague?.configType === 'B' ? (p.otherExtraPoints || 0) : 0;
+        const totalPoints = predPoints + bonusPoints + otherPts;
+
+        return {
+          uid: p.uid,
+          name: p.displayName || 'Anónimo',
+          photoURL: p.photoURL,
+          points: totalPoints,
+          predPoints,
+          bonusPoints,
+          correctResults: correctResultsCount,
+          correctWinners: correctWinnersCount
+        };
+      });
+
+      const sortedParticipants = [...participantsPoints].sort((a, b) => b.points - a.points);
+      const rankedParticipants = sortedParticipants.map((p, idx) => ({
+        ...p,
+        rank: idx + 1
+      }));
+
+      return {
+        stepIdx,
+        dateStr: step.dateStr,
+        label: step.label,
+        matchesCount: step.matches.length,
+        participants: rankedParticipants
+      };
+    });
+
+    return stepsData;
+  }, [currentMatches, participants, participantsPredictions, isSimulationMode, simulatedDate, apiMatches, activeLeague, currentScorers, compConfigs]);
+
+  useEffect(() => {
+    let timer: any = null;
+    if (isAnimPlaying) {
+      timer = setInterval(() => {
+        setAnimStep((prev) => {
+          if (evolutionData && prev >= evolutionData.length - 1) {
+            setIsAnimPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, animSpeed);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isAnimPlaying, animSpeed, evolutionData]);
+
+  // Set default animStep to the latest day/step when evolution data is loaded or changed
+  useEffect(() => {
+    if (evolutionData && evolutionData.length > 0) {
+      setAnimStep(evolutionData.length - 1);
+    }
+  }, [evolutionData]);
 
   // Seed Test Users
   const seedTestUsers = async () => {
@@ -5741,6 +6072,19 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                             JSON
                                           </Button>
 
+                                          {/* Download Excel action */}
+                                          <Button
+                                            onClick={() => handleDownloadExcelBackup(backup)}
+                                            disabled={isCreatingBackup || isRestoringBackupId !== null}
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8 px-2 border-green-600/30 text-green-500 hover:text-green-400 hover:bg-green-500/10 text-[9px] font-black uppercase tracking-widest flex items-center gap-1"
+                                            title="Descargar respaldo en formato Excel (.xlsx)"
+                                          >
+                                            <FileSpreadsheet className="w-3.5 h-3.5 text-green-500" />
+                                            EXCEL
+                                          </Button>
+
                                           {/* Delete action */}
                                           <Button
                                             onClick={() => handleDeleteBackup(backup.id, backup.label)}
@@ -8691,6 +9035,209 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 </p>
               </Card>
             </div>
+
+            {/* Dynamic Position Evolution (Leaderboard Race & Progression) */}
+            {evolutionData && evolutionData.length > 1 ? (() => {
+              const finalStep = evolutionData[evolutionData.length - 1];
+              const overallTop5 = finalStep.participants.slice(0, 5);
+              const maxPointsReached = Math.max(...evolutionData.map(step => Math.max(...step.participants.map(p => p.points), 0)), 10);
+              
+              // Helper to assign colors to participants
+              const getParticipantColor = (index: number) => {
+                const colors = ['#a855f7', '#a3e635', '#06b6d4', '#f97316', '#f43f5e'];
+                return colors[index % colors.length];
+              };
+
+              const lastStepIdx = evolutionData.length - 1;
+
+              // Active step details
+              const currentStep = evolutionData[animStep] || evolutionData[0];
+              const activeStepParticipants = currentStep.participants.slice(0, 5);
+
+              return (
+                <div className="space-y-4 col-span-full border border-zinc-900 bg-zinc-950/20 px-2 py-4 md:p-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-900 pb-4 px-2 md:px-0">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-purple-400 animate-pulse" />
+                        <h3 className="text-sm font-black uppercase tracking-wider text-white">Carrera de Puestos y Evolución</h3>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
+                        Visualiza la evolución de los primeros 5 puestos día tras día a lo largo de la Quiniela
+                      </p>
+                    </div>
+
+                    {/* Controls Toolbar */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Play/Pause Button */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (animStep >= evolutionData.length - 1) {
+                            setAnimStep(0);
+                          }
+                          setIsAnimPlaying(!isAnimPlaying);
+                        }}
+                        className={`h-9 px-3 rounded-none uppercase font-black text-[9px] tracking-widest flex items-center gap-1.5 transition-all ${
+                          isAnimPlaying ? 'bg-purple-950/50 border-purple-500 text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'border-zinc-800'
+                        }`}
+                      >
+                        {isAnimPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                        {isAnimPlaying ? 'Pause' : 'Play'}
+                      </Button>
+
+
+
+                      {/* Manual Step controls */}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          disabled={animStep === 0 || isAnimPlaying}
+                          onClick={() => setAnimStep(prev => prev - 1)}
+                          className="w-9 h-9 border-zinc-800 rounded-none disabled:opacity-40"
+                        >
+                          <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          disabled={animStep === lastStepIdx || isAnimPlaying}
+                          onClick={() => setAnimStep(prev => prev + 1)}
+                          className="w-9 h-9 border-zinc-800 rounded-none disabled:opacity-40"
+                        >
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={() => {
+                            setIsAnimPlaying(false);
+                            setAnimStep(0);
+                          }}
+                          className="w-9 h-9 border-zinc-800 rounded-none"
+                          title="Reiniciar"
+                        >
+                          <RotateCcw className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Slider scrub bar */}
+                  <div className="bg-zinc-950/80 border border-zinc-900 px-2 py-2.5 md:px-4 md:py-3 flex items-center gap-2 md:gap-4">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest shrink-0 w-24">
+                      {currentStep.label === 'Inicio' ? 'DÍA: INICIO' : `DÍA: ${currentStep.label.toUpperCase()}`}
+                    </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max={lastStepIdx}
+                      value={animStep}
+                      onChange={(e) => {
+                        setIsAnimPlaying(false);
+                        setAnimStep(Number(e.target.value));
+                      }}
+                      className="flex-1 accent-purple-500 h-1 bg-zinc-800 rounded-lg cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Main Visualization Area */}
+                  <div className="max-w-3xl mx-auto space-y-4 pt-2">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2 px-2 md:px-0">
+                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                        Clasificación del Día
+                      </span>
+                    </div>
+
+                    {/* Animated Top 5 Rows container */}
+                    <div className="space-y-3 relative">
+                      <AnimatePresence mode="popLayout">
+                        {activeStepParticipants.map((p, idx) => {
+                          const overallIdx = overallTop5.findIndex(o => o.uid === p.uid);
+                          const color = overallIdx !== -1 ? getParticipantColor(overallIdx) : '#a1a1aa';
+                          
+                          // Check rank change relative to previous step to draw badge arrows
+                          const previousRank = animStep > 0 
+                            ? evolutionData[animStep - 1].participants.find(prev => prev.uid === p.uid)?.rank 
+                            : p.rank;
+                          const rankDiff = previousRank ? previousRank - p.rank : 0;
+
+                          return (
+                            <motion.div
+                              layout
+                              key={p.uid}
+                              transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                              className="flex items-center gap-1.5 md:gap-3 bg-zinc-950/40 border border-zinc-900/60 px-0 py-2 md:px-0 md:py-3 relative rounded-none h-12 md:h-14"
+                            >
+                              {/* Rank indicators */}
+                              <div className="flex flex-col items-center justify-center shrink-0 w-7 md:w-10">
+                                <span className={`text-xs md:text-sm font-black leading-none ${
+                                  p.rank === 1 ? 'text-yellow-400' :
+                                  p.rank === 2 ? 'text-zinc-300' :
+                                  p.rank === 3 ? 'text-amber-600' :
+                                  'text-muted-foreground'
+                                }`}>
+                                  #{p.rank}
+                                </span>
+                                {rankDiff !== 0 && (
+                                  <span className={`text-[8px] font-black leading-none mt-0.5 flex items-center ${
+                                    rankDiff > 0 ? 'text-green-500' : 'text-red-500'
+                                  }`}>
+                                    {rankDiff > 0 ? `▲${rankDiff}` : `▼${Math.abs(rankDiff)}`}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Avatar */}
+                              <img 
+                                src={p.photoURL || getAvatarForUser(p.name)} 
+                                className="w-7 h-7 md:w-10 md:h-10 rounded-full border border-zinc-800 object-cover shrink-0"
+                                onError={(e) => { (e.target as HTMLImageElement).src = getAvatarForUser(p.name); }}
+                              />
+
+                              {/* Name, Progress bar & Scores */}
+                              <div className="flex-1 min-w-0 space-y-0.5 md:space-y-1">
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="text-[10px] md:text-xs font-black uppercase text-zinc-200 truncate">{p.name}</span>
+                                  <span className="text-[10px] md:text-xs font-mono font-black shrink-0" style={{ color }}>
+                                    {p.points} <span className="text-[8px] text-muted-foreground/80">PTS</span>
+                                  </span>
+                                </div>
+                                
+                                {/* Bar gauge */}
+                                <div className="w-full bg-zinc-900/40 h-1.5 md:h-2.5 border border-zinc-900 relative">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${(p.points / maxPointsReached) * 100}%` }}
+                                    transition={{ type: "spring", stiffness: 80, damping: 15 }}
+                                    className="h-full"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </div>
+              );
+            })() : (
+              <div className="col-span-full">
+                <Card className="p-8 border border-zinc-900 bg-zinc-950/20 flex flex-col items-center justify-center text-center space-y-4">
+                  <div className="text-3xl">📈</div>
+                  <div className="space-y-1">
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Evolución de Clasificación</h4>
+                    <p className="text-[9px] text-muted-foreground/60 max-w-sm uppercase font-black tracking-widest leading-relaxed">
+                      Aún no hay suficientes partidos evaluados en la liga activa para graficar la evolución día a día. Los datos aparecerán automáticamente en esta sección una vez se completen y evalúen los partidos.
+                    </p>
+                  </div>
+                </Card>
+              </div>
+            )}
 
             {/* Pillar 2: Distinctive High-Performing Stars */}
             <div className="space-y-4">
