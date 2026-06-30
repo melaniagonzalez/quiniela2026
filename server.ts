@@ -98,8 +98,16 @@ async function cronUpdateLocalConstants() {
         stadium: m.venue || "TBD",
         matchday: matchday || 1,
         status: override?.status || m.status,
-        actualHomeScore: override !== undefined ? override.actualHomeScore : m.score.fullTime.home,
-        actualAwayScore: override !== undefined ? override.actualAwayScore : m.score.fullTime.away
+        actualHomeScore: override !== undefined 
+          ? override.actualHomeScore 
+          : ((m.score?.regularTime?.home !== null && m.score?.regularTime?.home !== undefined)
+              ? (m.score.regularTime.home + (m.score.extraTime?.home ?? 0))
+              : (m.score?.fullTime?.home ?? null)),
+        actualAwayScore: override !== undefined 
+          ? override.actualAwayScore 
+          : ((m.score?.regularTime?.away !== null && m.score?.regularTime?.away !== undefined)
+              ? (m.score.regularTime.away + (m.score.extraTime?.away ?? 0))
+              : (m.score?.fullTime?.away ?? null))
       };
     });
 

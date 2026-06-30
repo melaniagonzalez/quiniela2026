@@ -453,8 +453,17 @@ app.get("/api/sync/:competition", async (req, res) => {
       const matchId = `m${m.id}`;
       const override = MATCH_OVERRIDES[matchId];
 
-      let actualHomeScore = override !== undefined ? override.actualHomeScore : (m.score?.fullTime?.home ?? null);
-      let actualAwayScore = override !== undefined ? override.actualAwayScore : (m.score?.fullTime?.away ?? null);
+      let actualHomeScore = override !== undefined 
+        ? override.actualHomeScore 
+        : ((m.score?.regularTime?.home !== null && m.score?.regularTime?.home !== undefined)
+            ? (m.score.regularTime.home + (m.score.extraTime?.home ?? 0))
+            : (m.score?.fullTime?.home ?? null));
+
+      let actualAwayScore = override !== undefined 
+        ? override.actualAwayScore 
+        : ((m.score?.regularTime?.away !== null && m.score?.regularTime?.away !== undefined)
+            ? (m.score.regularTime.away + (m.score.extraTime?.away ?? 0))
+            : (m.score?.fullTime?.away ?? null));
 
       const halfTimeHomeScore = m.score?.halfTime?.home ?? null;
       const halfTimeAwayScore = m.score?.halfTime?.away ?? null;

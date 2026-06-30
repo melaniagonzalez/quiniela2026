@@ -1113,28 +1113,37 @@ export default function App() {
       headers.set('X-App-Version', currentVersion);
     }
 
-    try {
-      const response = await fetch(input, {
-        ...init,
-        headers
-      });
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      try {
+        const response = await fetch(input, {
+          ...init,
+          headers
+        });
 
-      if (!isDev && response.status === 426) {
-        setNewVersionAvailable(true);
-      } else if (!isDev) {
-        try {
-          const cloned = response.clone();
-          const json = await cloned.json();
-          if (json && (json.error === 'outdated_version' || json.updateRequired)) {
-            setNewVersionAvailable(true);
-          }
-        } catch (_) {}
+        if (!isDev && response.status === 426) {
+          setNewVersionAvailable(true);
+        } else if (!isDev) {
+          try {
+            const cloned = response.clone();
+            const json = await cloned.json();
+            if (json && (json.error === 'outdated_version' || json.updateRequired)) {
+              setNewVersionAvailable(true);
+            }
+          } catch (_) {}
+        }
+
+        return response;
+      } catch (err) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          throw err;
+        }
+        await new Promise(resolve => setTimeout(resolve, attempts * 500));
       }
-
-      return response;
-    } catch (err) {
-      throw err;
     }
+    throw new Error('Fetch failed after retries');
   };
 
   useEffect(() => {
@@ -1984,18 +1993,53 @@ export default function App() {
 
       // 2. Fetch users
       const usersSnap = await getDocs(collection(db, 'users'));
-      const usersData = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const usersData = usersSnap.docs.map(d => {
+        const data = d.data();
+        const cleaned: any = { id: d.id };
+        Object.keys(data).forEach(key => {
+          if (data[key] !== null && data[key] !== undefined && data[key] !== '') {
+            cleaned[key] = data[key];
+          }
+        });
+        return cleaned;
+      });
 
       // 3. Fetch predictions for all users in parallel chunks
       const predictionsData: any[] = [];
       await runInChunks(usersSnap.docs, 15, async (uDoc) => {
         const predsSnap = await getDocs(collection(db, 'users', uDoc.id, 'predictions'));
         predsSnap.forEach(pDoc => {
-          predictionsData.push({
-            userId: uDoc.id,
-            matchId: pDoc.id,
-            ...pDoc.data()
+          const data = pDoc.data();
+          const matchId = pDoc.id;
+
+          // Determine if there is actual prediction data
+          let hasData = false;
+          const ignoreKeys = ['appVersion', 'updatedAt', 'userId', 'matchId', 'uid'];
+          
+          Object.keys(data).forEach(key => {
+            if (!ignoreKeys.includes(key)) {
+              const val = data[key];
+              if (val !== null && val !== undefined && val !== '') {
+                hasData = true;
+              }
+            }
           });
+
+          if (!hasData) return; // Skip entirely empty prediction documents to optimize size
+
+          // Build cleaned copy of prediction to save additional space
+          const cleaned: any = {
+            userId: uDoc.id,
+            matchId: matchId
+          };
+
+          Object.keys(data).forEach(key => {
+            if (data[key] !== null && data[key] !== undefined && data[key] !== '') {
+              cleaned[key] = data[key];
+            }
+          });
+
+          predictionsData.push(cleaned);
         });
       });
 
@@ -8601,7 +8645,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       {(() => {
                         const knockoutMatches = isSimulationMode 
                           ? currentMatches.filter(m => m.matchday === 4)
-                          : apiMatches.filter(m => m.stage === 'LAST_32');
+                          : currentMatches.filter(m => (m.stage || m.group) === 'LAST_32' || m.matchday === 4);
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 16).map(m => {
@@ -8648,7 +8692,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       {(() => {
                         const knockoutMatches = isSimulationMode 
                           ? currentMatches.filter(m => m.matchday === 5)
-                          : apiMatches.filter(m => m.stage === 'LAST_16');
+                          : currentMatches.filter(m => (m.stage || m.group) === 'LAST_16' || m.matchday === 5);
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 8).map(m => {
@@ -8695,7 +8739,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       {(() => {
                         const knockoutMatches = isSimulationMode 
                           ? currentMatches.filter(m => m.matchday === 6)
-                          : apiMatches.filter(m => m.stage === 'QUARTER_FINALS');
+                          : currentMatches.filter(m => (m.stage || m.group) === 'QUARTER_FINALS' || m.matchday === 6);
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 4).map(m => {
@@ -8742,7 +8786,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       {(() => {
                         const knockoutMatches = isSimulationMode 
                           ? currentMatches.filter(m => m.matchday === 7)
-                          : apiMatches.filter(m => m.stage === 'SEMI_FINALS');
+                          : currentMatches.filter(m => (m.stage || m.group) === 'SEMI_FINALS' || m.matchday === 7);
                         
                         if (knockoutMatches.length > 0) {
                           return knockoutMatches.slice(0, 2).map(m => {
