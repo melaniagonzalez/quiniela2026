@@ -807,6 +807,13 @@ export default function App() {
   const [isRestoringBackupId, setIsRestoringBackupId] = useState<string | null>(null);
   const [backupLabel, setBackupLabel] = useState('');
 
+  // States for consulting backups
+  const [selectedQueryBackupId, setSelectedQueryBackupId] = useState<string>('');
+  const [selectedQueryLeagueId, setSelectedQueryLeagueId] = useState<string>('');
+  const [selectedQueryUserId, setSelectedQueryUserId] = useState<string>('');
+  const [selectedQueryMatchDate, setSelectedQueryMatchDate] = useState<string>('');
+  const [livePredictionsForQueryUser, setLivePredictionsForQueryUser] = useState<any[]>([]);
+
   // Super Admin API Query States
   const [apiConsoleEndpoint, setApiConsoleEndpoint] = useState('competitions/WC/matches');
   const [apiConsoleLoading, setApiConsoleLoading] = useState(false);
@@ -1318,6 +1325,21 @@ export default function App() {
       return () => unsubscribe();
     }
   }, [user, isSuperAdmin, showSuperAdminPanel]);
+
+  // Load real-time live predictions of the selected query user for backup consultation
+  useEffect(() => {
+    if (user && isSuperAdmin && selectedQueryUserId) {
+      const unsubscribe = onSnapshot(collection(db, 'users', selectedQueryUserId, 'predictions'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ matchId: doc.id, ...doc.data() }));
+        setLivePredictionsForQueryUser(list);
+      }, (error) => {
+        console.error("Error al cargar predicciones reales del usuario de consulta:", error);
+      });
+      return () => unsubscribe();
+    } else {
+      setLivePredictionsForQueryUser([]);
+    }
+  }, [user, isSuperAdmin, selectedQueryUserId]);
 
   // Load ALL admin requests for the Super Admin
   useEffect(() => {
@@ -6146,6 +6168,290 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                                 })}
                               </tbody>
                             </table>
+                          </div>
+                        )}
+                      </div>
+
+                    </CardContent>
+                  </Card>
+
+                  {/* CONSULTAR MARCADORES DE BACKUP ESPECÍFICO */}
+                  <Card className="bg-card border-2 border-border rounded-none shadow-xl">
+                    <CardHeader className="border-b border-border bg-primary/5">
+                      <CardTitle className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                        <Search className="w-5 h-5 text-primary" /> Consultar Predicciones en un Respaldo
+                      </CardTitle>
+                      <CardDescription className="text-[10px] uppercase font-bold text-muted-foreground leading-relaxed">
+                        Selecciona un respaldo específico, la quiniela, el jugador y una fecha de partidos para ver exactamente cuáles eran las predicciones que el usuario tenía guardadas en ese momento de la copia de seguridad.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                      
+                      {/* Selectors grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        {/* 1. Seleccionar Backup */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            1. Seleccionar Respaldo
+                          </label>
+                          <select
+                            value={selectedQueryBackupId}
+                            onChange={(e) => {
+                              const bId = e.target.value;
+                              setSelectedQueryBackupId(bId);
+                              const backup = backups.find(b => b.id === bId);
+                              const snapshot = backup?.snapshot || {};
+                              const leagues = snapshot.leagues || [];
+                              if (leagues.length > 0) {
+                                setSelectedQueryLeagueId(leagues[0].id);
+                                const users = snapshot.users || [];
+                                const firstLeague = leagues[0];
+                                const leagueUsers = users.filter((u: any) => u.leagueId === firstLeague.id || (firstLeague.participants || []).includes(u.id));
+                                if (leagueUsers.length > 0) {
+                                  setSelectedQueryUserId(leagueUsers[0].id || leagueUsers[0].uid || '');
+                                } else {
+                                  setSelectedQueryUserId('');
+                                }
+                              } else {
+                                setSelectedQueryLeagueId('');
+                                setSelectedQueryUserId('');
+                              }
+                            }}
+                            className="w-full bg-background border border-border px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary uppercase rounded-none h-11"
+                          >
+                            <option value="">-- SELECCIONA UN RESPALDO --</option>
+                            {backups.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.label} ({new Date(b.createdAt).toLocaleDateString('es-ES')})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 2. Seleccionar Quiniela / Liga */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            2. Seleccionar Quiniela
+                          </label>
+                          <select
+                            value={selectedQueryLeagueId}
+                            disabled={!selectedQueryBackupId}
+                            onChange={(e) => {
+                              const lId = e.target.value;
+                              setSelectedQueryLeagueId(lId);
+                              const backup = backups.find(b => b.id === selectedQueryBackupId);
+                              const snapshot = backup?.snapshot || {};
+                              const leagues = snapshot.leagues || [];
+                              const users = snapshot.users || [];
+                              const selectedLeague = leagues.find((l: any) => l.id === lId);
+                              const leagueUsers = users.filter((u: any) => u.leagueId === lId || (selectedLeague?.participants || []).includes(u.id));
+                              if (leagueUsers.length > 0) {
+                                setSelectedQueryUserId(leagueUsers[0].id || leagueUsers[0].uid || '');
+                              } else {
+                                setSelectedQueryUserId('');
+                              }
+                            }}
+                            className="w-full bg-background border border-border px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary uppercase rounded-none h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <option value="">-- SELECCIONA QUINIELA --</option>
+                            {(backups.find(b => b.id === selectedQueryBackupId)?.snapshot?.leagues || []).map((l: any) => (
+                              <option key={l.id} value={l.id}>
+                                {l.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 3. Seleccionar Jugador */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            3. Seleccionar Jugador
+                          </label>
+                          <select
+                            value={selectedQueryUserId}
+                            disabled={!selectedQueryLeagueId}
+                            onChange={(e) => setSelectedQueryUserId(e.target.value)}
+                            className="w-full bg-background border border-border px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary uppercase rounded-none h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <option value="">-- SELECCIONA JUGADOR --</option>
+                            {(() => {
+                              const backup = backups.find(b => b.id === selectedQueryBackupId);
+                              const snapshot = backup?.snapshot || {};
+                              const leagues = snapshot.leagues || [];
+                              const users = snapshot.users || [];
+                              const selectedLeague = leagues.find((l: any) => l.id === selectedQueryLeagueId);
+                              const leagueUsers = users.filter((u: any) => u.leagueId === selectedQueryLeagueId || (selectedLeague?.participants || []).includes(u.id));
+                              return leagueUsers.map((u: any) => (
+                                <option key={u.id || u.uid} value={u.id || u.uid}>
+                                  {u.displayName || u.name || 'Anónimo'} ({u.email || 'Sin correo'})
+                                </option>
+                              ));
+                            })()}
+                          </select>
+                        </div>
+
+                        {/* 4. Seleccionar Fecha */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            4. Seleccionar Fecha de Partidos
+                          </label>
+                          <select
+                            value={selectedQueryMatchDate}
+                            onChange={(e) => setSelectedQueryMatchDate(e.target.value)}
+                            className="w-full bg-background border border-border px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary uppercase rounded-none h-11"
+                          >
+                            <option value="">-- SELECCIONA FECHA --</option>
+                            {Array.from(new Set(
+                              apiMatches.map(m => {
+                                if (!m.date) return '';
+                                try {
+                                  const d = new Date(m.date);
+                                  const year = d.getFullYear();
+                                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                                  const day = String(d.getDate()).padStart(2, '0');
+                                  return `${year}-${month}-${day}`;
+                                } catch {
+                                  return '';
+                                }
+                              }).filter(Boolean)
+                            )).sort().map((dateStr) => {
+                              const dateObj = new Date(dateStr + 'T12:00:00');
+                              const formattedDate = dateObj.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+                              return (
+                                <option key={dateStr} value={dateStr}>
+                                  {formattedDate.toUpperCase()} ({dateStr})
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Results display */}
+                      <div className="pt-4 border-t border-border">
+                        {!selectedQueryBackupId || !selectedQueryLeagueId || !selectedQueryUserId || !selectedQueryMatchDate ? (
+                          <div className="p-8 border border-dashed border-border flex flex-col justify-center items-center text-center">
+                            <Search className="w-6 h-6 text-muted-foreground mb-2" />
+                            <h5 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                              Faltan Parámetros por Seleccionar
+                            </h5>
+                            <p className="text-[9px] text-muted-foreground uppercase font-bold max-w-[400px] mt-1 leading-normal">
+                              Por favor selecciona un respaldo, una quiniela, un jugador y una fecha de partidos para poder consultar y comparar sus marcadores guardados.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4 animate-in fade-in duration-300">
+                            {/* Stats/Summary header of consultation */}
+                            <div className="bg-primary/5 p-4 border border-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                              <div>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Consulta en Respaldo</span>
+                                <h4 className="text-xs font-black text-foreground uppercase mt-0.5">
+                                  {backups.find(b => b.id === selectedQueryBackupId)?.label}
+                                </h4>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Jugador Consultando</span>
+                                <span className="text-xs font-black text-primary uppercase">
+                                  {(() => {
+                                    const backup = backups.find(b => b.id === selectedQueryBackupId);
+                                    const userObj = backup?.snapshot?.users?.find((u: any) => (u.id === selectedQueryUserId || u.uid === selectedQueryUserId));
+                                    return userObj ? `${userObj.displayName || userObj.name || 'Anónimo'} (${userObj.email || ''})` : 'Usuario Desconocido';
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* List of matches with predictions */}
+                            <div className="border border-border divide-y divide-border overflow-hidden">
+                              {(() => {
+                                const backup = backups.find(b => b.id === selectedQueryBackupId);
+                                const snapshot = backup?.snapshot || {};
+                                const predictions = snapshot.predictions || [];
+                                const userPredictions = predictions.filter((p: any) => p.userId === selectedQueryUserId);
+
+                                const livePreds = livePredictionsForQueryUser;
+
+                                const matchesOnDate = apiMatches.filter(m => {
+                                  if (!m.date) return false;
+                                  try {
+                                    const d = new Date(m.date);
+                                    const year = d.getFullYear();
+                                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                                    const day = String(d.getDate()).padStart(2, '0');
+                                    const mDateStr = `${year}-${month}-${day}`;
+                                    return mDateStr === selectedQueryMatchDate;
+                                  } catch {
+                                    return false;
+                                  }
+                                });
+
+                                if (matchesOnDate.length === 0) {
+                                  return (
+                                    <div className="p-8 text-center text-[10px] font-black text-muted-foreground uppercase">
+                                      No hay partidos programados para la fecha seleccionada ({selectedQueryMatchDate}).
+                                    </div>
+                                  );
+                                }
+
+                                return matchesOnDate.map((match) => {
+                                  const pred = userPredictions.find((p: any) => p.matchId === match.id);
+                                  const homeScore = pred?.homeScore !== undefined && pred?.homeScore !== null ? pred.homeScore : '-';
+                                  const awayScore = pred?.awayScore !== undefined && pred?.awayScore !== null ? pred.awayScore : '-';
+
+                                  const livePred = livePreds.find((p: any) => p.matchId === match.id);
+                                  const liveHomeScore = livePred?.homeScore !== undefined && livePred?.homeScore !== null ? livePred.homeScore : '-';
+                                  const liveAwayScore = livePred?.awayScore !== undefined && livePred?.awayScore !== null ? livePred.awayScore : '-';
+
+                                  const hTeam = currentTeams.find(t => t.id === match.homeTeamId) || { name: 'Por definir', flag: '🏳️' };
+                                  const aTeam = currentTeams.find(t => t.id === match.awayTeamId) || { name: 'Por definir', flag: '🏳️' };
+
+                                  return (
+                                    <div key={match.id} className="p-4 bg-muted/10 flex flex-col sm:flex-row items-center justify-between gap-4 hover:bg-muted/20 transition-colors">
+                                      {/* Teams info */}
+                                      <div className="flex items-center gap-3 w-full sm:w-1/2">
+                                        <div className="flex flex-col items-start gap-1">
+                                          <span className="text-[8px] font-black text-muted-foreground uppercase tracking-widest">Partido ID: {match.id}</span>
+                                          <div className="flex items-center gap-2 animate-in slide-in-from-left duration-200">
+                                            {hTeam.flag?.startsWith('http') ? (
+                                              <img src={hTeam.flag} className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                                            ) : (
+                                              <span className="text-sm">{hTeam.flag}</span>
+                                            )}
+                                            <span className="text-xs font-black text-foreground uppercase">{hTeam.name}</span>
+                                            <span className="text-[10px] font-black text-muted-foreground uppercase px-1">vs</span>
+                                            {aTeam.flag?.startsWith('http') ? (
+                                              <img src={aTeam.flag} className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                                            ) : (
+                                              <span className="text-sm">{aTeam.flag}</span>
+                                            )}
+                                            <span className="text-xs font-black text-foreground uppercase">{aTeam.name}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Prediction in Backup vs Real result */}
+                                      <div className="flex items-center gap-6 w-full sm:w-1/2 justify-between sm:justify-end">
+                                        {/* Current/Today Prediction */}
+                                        <div className="text-center">
+                                          <span className="text-[8px] font-black text-muted-foreground uppercase tracking-widest block mb-1">Pronóstico Actual (Hoy)</span>
+                                          <span className="bg-muted px-2.5 py-1 text-xs font-black text-foreground border border-border rounded-none">
+                                            {livePred ? `${liveHomeScore} - ${liveAwayScore}` : 'SIN PRONÓSTICO'}
+                                          </span>
+                                        </div>
+
+                                        {/* Prediction in Backup */}
+                                        <div className="text-center">
+                                          <span className="text-[8px] font-black text-primary uppercase tracking-widest block mb-1">Pronóstico en Respaldo</span>
+                                          <span className="bg-primary/10 px-3 py-1 text-xs font-black text-primary border-2 border-primary/20 rounded-none animate-in scale-in duration-200">
+                                            {pred ? `${homeScore} - ${awayScore}` : 'SIN PRONÓSTICO'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
+                            </div>
                           </div>
                         )}
                       </div>

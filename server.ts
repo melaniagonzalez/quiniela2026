@@ -6,8 +6,12 @@ import axios from "axios";
 import fs from "fs";
 import app from "./server-app";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const _filename = typeof __filename !== "undefined"
+  ? __filename
+  : (import.meta && import.meta.url ? fileURLToPath(import.meta.url) : "");
+const _dirname = typeof __dirname !== "undefined"
+  ? __dirname
+  : path.dirname(_filename);
 
 const MATCH_OVERRIDES: Record<string, { actualHomeScore: number | null, actualAwayScore: number | null, status?: string }> = {
   "m537327": { actualHomeScore: 2, actualAwayScore: 0, status: "FINISHED" }

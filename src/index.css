@@ -136,3 +136,14 @@
 .animate-border-pulse-blue {
   animation: border-pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Hide spin-buttons / up and down arrows in numeric inputs */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
