@@ -4623,8 +4623,8 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         {/* Isolated aesthetic workspace header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl sm:text-4xl font-black leading-none uppercase tracking-tight">
-            <span className="text-purple">Quiniela</span>
-            <span className="text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)] ml-2 animate-pulse">Mundial</span>
+            <span className="text-purple">Qui</span>
+            <span className="text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)] animate-pulse">Mela</span>
           </h1>
           <p className="text-[9px] text-[#71717a] uppercase font-black tracking-widest mt-2 leading-none">Sistema Administrativo Cerrado</p>
         </div>
@@ -4781,9 +4781,9 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
       <header ref={headerRef} className="px-4 lg:px-16 py-3 sm:py-6 border-b border-border flex flex-row justify-between items-center gap-4 bg-gradient-to-br from-purple/10 via-background to-primary/10 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex flex-col">
-            <h1 className="text-[20px] sm:text-[32px] lg:text-[42px] font-black leading-none tracking-tight uppercase flex flex-col sm:block">
-              <span className="text-purple">Quiniela</span>
-              <span className="sm:inline-block sm:ml-2 text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mundial</span>
+            <h1 className="text-[20px] sm:text-[32px] lg:text-[42px] font-black leading-none tracking-tight uppercase">
+              <span className="text-purple">Qui</span>
+              <span className="text-primary drop-shadow-[0_0_15px_rgba(237,28,36,0.3)]">Mela</span>
             </h1>
           </div>
           {!isApprovedAdmin && (guestLeagueId || selectedLeagueId) && (
@@ -11331,7 +11331,7 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
         {/* Footer Core Info Row */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left pt-6 border-t border-border/40 w-full mb-2">
           <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest shrink-0 mx-auto md:mx-0">
-            © 2026 Quiniela Mundial
+            © 2026 QuiMela
           </div>
         </div>
       </footer>
