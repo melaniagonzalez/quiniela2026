@@ -171,7 +171,8 @@ service cloud.firestore {
 
     // Rules for Backups
     match /backups/{backupId} {
-      allow read, write: if isSuperAdmin();
+      allow read: if true;
+      allow write: if isSuperAdmin();
     }
   }
 }

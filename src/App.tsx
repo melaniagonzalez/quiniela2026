@@ -1064,6 +1064,7 @@ export default function App() {
   const [newsData, setNewsData] = useState<any>(null);
   const [loadingNews, setLoadingNews] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isPredictionsLoading, setIsPredictionsLoading] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
   const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('leaderboard');
@@ -3097,6 +3098,7 @@ export default function App() {
       dbBestGoalkeeperPredictionRef.current = null;
       setLocalOtherExtraPoints(0);
       dbOtherExtraPointsRef.current = 0;
+      setIsPredictionsLoading(false);
       return;
     }
 
@@ -3119,10 +3121,12 @@ export default function App() {
       dbBestGoalkeeperPredictionRef.current = null;
       setLocalOtherExtraPoints(0);
       dbOtherExtraPointsRef.current = 0;
+      setIsPredictionsLoading(false);
       return;
     }
 
     // Reset local state first to prevent showing stale data from previous participant while loading
+    setIsPredictionsLoading(true);
     const blank = currentMatches.map(m => ({ matchId: m.id, homeScore: null, awayScore: null }));
     setPredictions(blank);
     setChampionPrediction(null);
@@ -3234,8 +3238,10 @@ export default function App() {
       };
       setBestGoalkeeperPrediction(initialBestGoalkeeper);
       dbBestGoalkeeperPredictionRef.current = initialBestGoalkeeper;
+      setIsPredictionsLoading(false);
     }, (error) => {
       handleFirebaseError("predicciones", error);
+      setIsPredictionsLoading(false);
     });
 
     return () => {
@@ -3679,7 +3685,7 @@ export default function App() {
   };
 
   const handleSavePredictions = async () => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges || isPredictionsLoading) return;
     
     setIsSyncing(true);
     try {
@@ -7094,10 +7100,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                       {!predictionsReadOnly && (
                         <Button 
                           onClick={handleSavePredictions}
-                          disabled={!hasUnsavedChanges || isSyncing}
+                          disabled={!hasUnsavedChanges || isSyncing || isPredictionsLoading}
                           className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                         >
-                          {isSyncing ? 'Guardando...' : 'Guardar'}
+                          {isSyncing ? 'Guardando...' : (isPredictionsLoading ? 'Cargando...' : 'Guardar')}
                         </Button>
                       )}
                     </div>
@@ -8024,10 +8030,10 @@ Recuerda que la clave de usuario es secreta. ¡No la compartas!`;
                 <div className="pt-6 flex justify-end">
                   <Button 
                     onClick={handleSavePredictions}
-                    disabled={!hasUnsavedChanges || isSyncing}
+                    disabled={!hasUnsavedChanges || isSyncing || isPredictionsLoading}
                     className="bg-sky-600 hover:bg-sky-700 text-white uppercase text-[10px] font-black tracking-widest px-4 h-9 w-fit shadow-[0_0_20px_rgba(2,132,199,0.2)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   >
-                    {isSyncing ? 'Guardando...' : 'Guardar'}
+                    {isSyncing ? 'Guardando...' : (isPredictionsLoading ? 'Cargando...' : 'Guardar')}
                   </Button>
                 </div>
               )}
